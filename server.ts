@@ -9,7 +9,7 @@ import { NERDC_SUBJECTS_DATABASE, NERDC_STATS } from './src/data/nerdcDatabase';
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 8080;
 
 app.use(express.json());
 
