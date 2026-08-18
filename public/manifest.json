@@ -1,0 +1,64 @@
+{
+  "name": "CurriculumFlow - School & Academic Management System",
+  "short_name": "CurriculumFlow",
+  "description": "Curriculum-driven AI academic management, lesson tracking, timetable, student registers, exams and biometric monitoring.",
+  "start_url": "/",
+  "id": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#090d16",
+  "theme_color": "#0f172a",
+  "orientation": "any",
+  "categories": ["education", "productivity", "management", "utilities"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Biometric Monitoring",
+      "short_name": "Biometrics",
+      "description": "Live campus gate turnstile & attendance monitoring",
+      "url": "/?tab=biometric_attendance",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Master Timetable",
+      "short_name": "Timetable",
+      "description": "School timetable and clash detection",
+      "url": "/?tab=school_timetable",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Class Registers",
+      "short_name": "Registers",
+      "description": "Student attendance registers",
+      "url": "/?tab=student_registers",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Secure Exams",
+      "short_name": "Exams",
+      "description": "Anti-leak examination vault & question banks",
+      "url": "/?tab=secure_exams",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    }
+  ]
+}

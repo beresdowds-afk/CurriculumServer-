@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>CurriculumFlow - School & Academic Management System</title>
+    <meta name="description" content="Curriculum-driven AI academic management, lesson tracking, master timetable, student registers, secure exams, and biometric attendance." />
+    
+    <!-- PWA Web App Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icon-192.svg" />
+    <link rel="mask-icon" href="/icon.svg" color="#059669" />
+
+    <!-- Mobile Web App & iOS Standalone Optimization -->
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="CurriculumFlow" />
+    <meta name="application-name" content="CurriculumFlow" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- Open Graph & Social Sharing -->
+    <meta property="og:title" content="CurriculumFlow - Academic & School Management" />
+    <meta property="og:description" content="Curriculum-driven AI academic management, lesson delivery tracking, timetable, and biometric monitoring for schools." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/icon-512.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body class="bg-slate-950 text-slate-100 antialiased selection:bg-emerald-500 selection:text-white">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('CurriculumFlow PWA Service Worker Registered', reg.scope))
+            .catch(err => console.log('Service Worker registration skipped or failed', err));
+        });
+      }
+    </script>
+  </body>
+</html>
+

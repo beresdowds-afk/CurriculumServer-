@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#090d16"/>
+    </linearGradient>
+    <linearGradient id="emGrad512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="cyGrad512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad512)"/>
+  <path d="M 256 96 C 330 96 384 120 384 180 C 384 290 310 380 256 416 C 202 380 128 290 128 180 C 128 120 182 96 256 96 Z" fill="#1e293b" stroke="url(#emGrad512)" stroke-width="14"/>
+  <path d="M 256 220 C 230 205 190 200 160 206 C 160 270 160 290 160 310 C 190 304 230 310 256 325 C 282 310 322 304 352 310 C 352 290 352 270 352 206 C 322 200 282 205 256 220 Z" fill="#0f172a" stroke="url(#cyGrad512)" stroke-width="12" stroke-linejoin="round"/>
+  <line x1="256" y1="220" x2="256" y2="325" stroke="url(#emGrad512)" stroke-width="10"/>
+  <polygon points="256,130 330,165 256,200 182,165" fill="url(#emGrad512)"/>
+</svg>

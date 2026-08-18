@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="50%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#090d16"/>
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#059669" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  <rect width="504" height="504" x="4" y="4" rx="108" fill="none" stroke="#334155" stroke-width="4" stroke-opacity="0.6"/>
+
+  <!-- Modern Academic Emblem Shield & Book Layers -->
+  <g filter="url(#glow)">
+    <!-- Shield Outline -->
+    <path d="M 256 96 C 330 96 384 120 384 180 C 384 290 310 380 256 416 C 202 380 128 290 128 180 C 128 120 182 96 256 96 Z" 
+          fill="#1e293b" 
+          stroke="url(#emeraldGrad)" 
+          stroke-width="12" 
+          stroke-linejoin="round"/>
+
+    <!-- Open Book Symbol -->
+    <path d="M 256 220 C 230 205 190 200 160 206 C 160 270 160 290 160 310 C 190 304 230 310 256 325 C 282 310 322 304 352 310 C 352 290 352 270 352 206 C 322 200 282 205 256 220 Z" 
+          fill="#0f172a" 
+          stroke="url(#cyanGrad)" 
+          stroke-width="10" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"/>
+    
+    <line x1="256" y1="220" x2="256" y2="325" stroke="url(#emeraldGrad)" stroke-width="8" stroke-linecap="round"/>
+
+    <!-- Graduation Cap / Diamond Crest -->
+    <polygon points="256,130 330,165 256,200 182,165" fill="url(#emeraldGrad)"/>
+    <path d="M 330 165 L 340 220" stroke="#34d399" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="340" cy="226" r="6" fill="#34d399"/>
+  </g>
+
+  <!-- Flow Circuit Dots -->
+  <circle cx="160" cy="206" r="8" fill="#38bdf8"/>
+  <circle cx="352" cy="206" r="8" fill="#38bdf8"/>
+  <circle cx="256" cy="325" r="8" fill="#34d399"/>
+</svg>
