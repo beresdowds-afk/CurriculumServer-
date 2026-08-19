@@ -1,6 +1,6 @@
 {
   "name": "CurriculumFlow",
-  "description": "Comprehensive School Academic OS & Management Platform featuring the Principal Executive Dashboard, NERDC-aligned curriculum engine, lesson planning, biometric attendance, secure exams, broadsheets, bursary finances, admissions, and multi-tenant SaaS provisioning via Curriculum Server.",
+  "description": "Comprehensive School Academic OS & Multi-Tenant Platform featuring Principal Executive Governance, NERDC curriculum delivery, official terminal report cards & transcripts studio, promotional & WAEC/NECO mock exam council, biometric attendance, bursary finances, and phased Docker-per-tenant runtime isolation.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

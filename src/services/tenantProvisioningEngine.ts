@@ -5,6 +5,8 @@ import {
   ProvisioningState, 
   ProvisioningStepId 
 } from '../types';
+import { TamperEvidentAuditService } from './tamperEvidentAuditService';
+import { TenantLifecycleManager } from './tenantLifecycleManager';
 
 export const PROVISIONING_STEP_DEFINITIONS: { id: ProvisioningStepId; title: string; description: string }[] = [
   {
@@ -84,6 +86,20 @@ export function createInitialProvisioningJob(
     logs: []
   }));
 
+  // Log job creation to tamper-evident audit ledger
+  TamperEvidentAuditService.logPlatformAction({
+    actor: 'Provisioning Orchestrator',
+    actorRole: 'system_daemon',
+    tenantId,
+    tenantSchoolName: schoolName,
+    action: 'tenant_provisioning_started',
+    target: `job:prov_job_${tenantId}`,
+    result: 'SUCCESS',
+    ipAddress: '127.0.0.1',
+    deviceMetadata: 'Control Plane Provisioning Worker',
+    details: `Initiated automated Docker-per-tenant provisioning workflow for '${schoolName}' (Ref: ${transactionRef})`
+  });
+
   return {
     jobId: `prov_job_${Date.now()}`,
     tenantId,
@@ -116,15 +132,24 @@ export function executeNextProvisioningStep(
     currentJob.currentState = 'ACTIVE';
     currentJob.completedAt = new Date().toISOString();
     currentJob.overallProgress = 100;
+    
+    // Use TenantLifecycleManager to transition state
+    const finalized = TenantLifecycleManager.transitionTenantState(
+      {
+        ...tenantDraft,
+        id: currentJob.tenantId,
+        status: 'active'
+      },
+      'active',
+      'All 12 provisioning phases completed and verified by orchestrator',
+      'Control Plane Automation Engine'
+    );
+
     return {
       updatedJob: currentJob,
       isComplete: true,
       isFailed: false,
-      provisionedTenant: {
-        ...tenantDraft,
-        id: currentJob.tenantId,
-        status: 'active'
-      }
+      provisionedTenant: finalized
     };
   }
 
@@ -142,6 +167,19 @@ export function executeNextProvisioningStep(
     currentJob.currentState = 'FAILED';
     currentJob.canRetry = true;
     currentJob.errorSummary = step.error;
+
+    TamperEvidentAuditService.logPlatformAction({
+      actor: 'Provisioning Orchestrator',
+      actorRole: 'system_daemon',
+      tenantId: currentJob.tenantId,
+      tenantSchoolName: currentJob.schoolName,
+      action: 'tenant_provisioning_failed',
+      target: `step:${step.id}`,
+      result: 'FAILED',
+      ipAddress: '127.0.0.1',
+      deviceMetadata: 'Provisioning Worker Pod',
+      details: `Provisioning phase failed at '${step.title}': ${step.error}`
+    });
     
     return {
       updatedJob: currentJob,
@@ -244,19 +282,28 @@ export function executeNextProvisioningStep(
   currentJob.overallProgress = Math.round((currentJob.activeStepIndex / currentJob.steps.length) * 100);
 
   const isDone = currentJob.activeStepIndex >= currentJob.steps.length;
+  let finalizedTenant: TenantSchoolApp | undefined = undefined;
+
   if (isDone) {
     currentJob.completedAt = new Date().toISOString();
     currentJob.currentState = 'ACTIVE';
+
+    finalizedTenant = TenantLifecycleManager.transitionTenantState(
+      {
+        ...tenantDraft,
+        id: currentJob.tenantId,
+        status: 'active'
+      },
+      'active',
+      'Completed automated 12-phase multi-tenant container stack deployment',
+      'Control Plane Orchestrator'
+    );
   }
 
   return {
     updatedJob: currentJob,
     isComplete: isDone,
     isFailed: false,
-    provisionedTenant: isDone ? {
-      ...tenantDraft,
-      id: currentJob.tenantId,
-      status: 'active'
-    } : undefined
+    provisionedTenant: finalizedTenant
   };
 }

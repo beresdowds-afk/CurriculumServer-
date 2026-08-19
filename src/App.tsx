@@ -130,6 +130,9 @@ import { PrincipalFeatureGovernanceTab } from './components/PrincipalFeatureGove
 import { UserProfilesTab } from './components/UserProfilesTab';
 import { ParentDatabaseTab } from './components/ParentDatabaseTab';
 import { UserOnboardingSuiteTab } from './components/UserOnboardingSuiteTab';
+import { TerminalReportCardStudio } from './components/TerminalReportCardStudio';
+import { PromotionalMockExamPortal } from './components/PromotionalMockExamPortal';
+import { DockerOrchestrationConsole } from './components/DockerOrchestrationConsole';
 import { NavigationDrawer } from './components/NavigationDrawer';
 import { CurriculumAdvisorModal } from './components/CurriculumAdvisorModal';
 
@@ -1750,6 +1753,30 @@ export default function App() {
             kpis={kpis}
             studentProfiles={studentProfiles}
             onGeneratePersonalizedWorksheet={handleGeneratePersonalizedWorksheet}
+          />
+        )}
+
+        {activeTab === 'report_card_studio' && (
+          <TerminalReportCardStudio
+            currentUser={currentUser}
+            brandProfile={schoolBrand}
+            activeTenant={activeTenant}
+          />
+        )}
+
+        {activeTab === 'promotional_mock_exams' && (
+          <PromotionalMockExamPortal
+            currentUser={currentUser}
+            brandProfile={schoolBrand}
+            activeTenant={activeTenant}
+          />
+        )}
+
+        {activeTab === 'docker_orchestration' && (
+          <DockerOrchestrationConsole
+            tenants={clonedTenants}
+            currentUser={currentUser}
+            onBackToCockpit={() => setActiveTab('tenant_control_center')}
           />
         )}
       </main>

@@ -36,7 +36,11 @@ import {
   Plus,
   ArrowRightLeft,
   ChevronDown,
-  Globe
+  Globe,
+  Radio,
+  ExternalLink,
+  Cpu,
+  Boxes
 } from 'lucide-react';
 import { CurriculumServerIcon, CurriculumFlowIcon } from './brand/BrandAssets';
 
@@ -73,7 +77,10 @@ export type MainTabType =
   | 'question_bank'
   | 'secure_exams'
   | 'taught_assessment'
-  | 'academic_analytics';
+  | 'academic_analytics'
+  | 'report_card_studio'
+  | 'promotional_mock_exams'
+  | 'docker_orchestration';
 
 interface NavbarProps {
   currentUser: UserProfile;
@@ -124,6 +131,35 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenCloneModal,
   onOpenConnectModal
 }) => {
+  const isTenantSchoolInstance = platformMode === 'tenant_school_instance';
+
+  // Extract effective branding based on platformMode and activeTenant
+  const effectiveBrand: SchoolBrandProfile | undefined = 
+    isTenantSchoolInstance && activeTenant?.brandProfile
+      ? activeTenant.brandProfile
+      : brandProfile;
+
+  // Dynamic School Brand Identity
+  const primaryColor = effectiveBrand?.brandTheme?.primaryColor || '#059669';
+  const secondaryColor = effectiveBrand?.brandTheme?.secondaryColor || '#0f766e';
+  const accentColor = effectiveBrand?.brandTheme?.accentColor || '#10b981';
+  const schoolName = effectiveBrand?.schoolName || activeTenant?.schoolName || 'CurriculumFlow';
+  const schoolShortName = effectiveBrand?.shortName || activeTenant?.schoolSlug || 'School OS';
+  const crestLogoUrl = effectiveBrand?.crestLogoUrl;
+  const logoShape = effectiveBrand?.logoShape || 'rounded';
+  const tenantAppId = activeTenant?.appId || 'CF-ROOT-INSTANCE';
+  const tenantDomain = activeTenant?.customDomain || activeTenant?.subdomain || (activeTenant ? `${activeTenant.schoolSlug}.curriculumflow.com` : 'curriculumflow.com');
+
+  const getLogoShapeClass = (shape: string) => {
+    switch (shape) {
+      case 'circle': return 'rounded-full';
+      case 'square': return 'rounded-none';
+      case 'shield': return 'rounded-b-2xl rounded-t-lg';
+      case 'rounded':
+      default: return 'rounded-xl';
+    }
+  };
+
   const getRoleBadge = (role: UserRole) => {
     switch (role) {
       case 'principal_admin':
@@ -166,7 +202,13 @@ export const Navbar: React.FC<NavbarProps> = ({
       case 'curriculum_server_landing':
         return { label: 'Curriculum Server (Public Showcase)', category: 'SaaS Cloud', icon: Globe };
       case 'curriculum_server':
-        return { label: 'Curriculum Server (SaaS Master)', category: 'SaaS Cloud', icon: Server };
+        return { label: 'Curriculum Server (SaaS Hub)', category: 'SaaS Cloud', icon: Server };
+      case 'tenant_control_center':
+        return { label: 'Control Plane Cockpit (Phased Docker-per-Tenant)', category: 'SaaS Cloud', icon: Boxes };
+      case 'customer_self_service':
+        return { label: 'Customer Self-Service Portal', category: 'SaaS Cloud', icon: ShieldCheck };
+      case 'api_webhooks':
+        return { label: 'API Keys & Webhooks Engine', category: 'SaaS Cloud', icon: KeyRound };
       case 'domain_management':
         return { label: 'Domain Registrar & DNS Governance', category: 'SaaS Cloud', icon: Globe };
       case 'command_center':
@@ -179,16 +221,20 @@ export const Navbar: React.FC<NavbarProps> = ({
         return { label: 'Student Learning Dashboard', category: 'Student Portal', icon: GraduationCap };
       case 'parent_dashboard':
         return { label: 'Parent & Guardian Portal', category: 'Parent Hub', icon: Users };
-      case 'bursary_accounts':
-        return { label: 'Bursary, Accounts & PSP Payments', category: 'Governance', icon: Building2 };
-      case 'iam_governance':
-        return { label: 'Office of Principal (IAM)', category: 'Governance', icon: ShieldCheck };
+      case 'principal_governance':
+        return { label: 'Principal Governance & Approvals', category: 'Governance', icon: ShieldCheck };
+      case 'user_onboarding':
+        return { label: 'User Provisioning & Onboarding Suite', category: 'IAM & Governance', icon: Users };
       case 'user_profiles':
         return { label: 'Institutional Profiles', category: 'Governance', icon: Users };
       case 'parent_database':
         return { label: 'Supervised Parents DB & Ward Mapping', category: 'Governance', icon: UserCheck };
       case 'brand_management':
         return { label: 'School Brand & Identity', category: 'Governance', icon: Palette };
+      case 'bursary_accounts':
+        return { label: 'Bursary, Accounts & PSP Payments', category: 'Governance', icon: Building2 };
+      case 'iam_governance':
+        return { label: 'Office of Principal (IAM)', category: 'Governance', icon: Lock };
       case 'academic_calendar':
         return { label: 'Academic Calendar', category: 'Operations', icon: CalendarDays };
       case 'teacher_pool':
@@ -220,7 +266,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       case 'academic_analytics':
         return { label: 'Academic Analytics & Mastery', category: 'Assessment', icon: ShieldCheck };
       default:
-        return { label: 'CurriculumFlow', category: 'Module', icon: School };
+        return { label: schoolName, category: 'Module', icon: School };
     }
   };
 
@@ -229,9 +275,23 @@ export const Navbar: React.FC<NavbarProps> = ({
   const TabIcon = activeTabInfo.icon;
 
   return (
-    <header className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-md border-b border-slate-800 shadow-xl">
+    <header className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-md border-b border-slate-800 shadow-xl transition-colors duration-300">
+      {/* Dynamic Top Brand Indicator Ribbon Line */}
+      <div 
+        className="h-1 w-full transition-all duration-500"
+        style={{
+          background: isTenantSchoolInstance 
+            ? `linear-gradient(90deg, ${primaryColor} 0%, ${accentColor} 50%, ${secondaryColor} 100%)`
+            : 'linear-gradient(90deg, #4F46E5 0%, #06B6D4 50%, #2563EB 100%)'
+        }}
+      />
+
       {/* Top Universal SaaS Multi-Tenant Switcher Ribbon */}
-      <div className="w-full bg-slate-900/90 border-b border-slate-800/80 px-3 sm:px-4 lg:px-6 py-1.5 flex items-center justify-between gap-3 text-xs">
+      <div className={`w-full border-b px-3 sm:px-4 lg:px-6 py-1.5 flex items-center justify-between gap-3 text-xs transition-colors duration-300 ${
+        isTenantSchoolInstance 
+          ? 'bg-slate-900/90 border-slate-800/80' 
+          : 'bg-slate-950 border-indigo-950/80'
+      }`}>
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* SaaS Master vs Tenant View Pill */}
           <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800">
@@ -241,7 +301,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onSelectTab('curriculum_server_landing');
               }}
               className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                activeTab === 'curriculum_server_landing'
+                activeTab === 'curriculum_server_landing' && !isTenantSchoolInstance
                   ? 'bg-sky-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
@@ -253,16 +313,31 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={() => {
                 if (onSwitchPlatformMode) onSwitchPlatformMode('saas_master_console');
+                onSelectTab('tenant_control_center');
+              }}
+              className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                activeTab === 'tenant_control_center' && !isTenantSchoolInstance
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Boxes className="w-3 h-3 text-indigo-300" />
+              <span>Control Plane Cockpit</span>
+            </button>
+
+            <button
+              onClick={() => {
+                if (onSwitchPlatformMode) onSwitchPlatformMode('saas_master_console');
                 onSelectTab('curriculum_server');
               }}
               className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                activeTab === 'curriculum_server'
+                activeTab === 'curriculum_server' && !isTenantSchoolInstance
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Server className="w-3 h-3" />
-              <span>CURRICULUM SERVER (SaaS Hub)</span>
+              <Server className="w-3 h-3 text-emerald-300" />
+              <span>SaaS Hub</span>
             </button>
 
             <button
@@ -271,7 +346,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onSelectTab('domain_management');
               }}
               className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                activeTab === 'domain_management'
+                activeTab === 'domain_management' && !isTenantSchoolInstance
                   ? 'bg-amber-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
@@ -283,11 +358,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={() => {
                 if (onSwitchPlatformMode) onSwitchPlatformMode('tenant_school_instance');
-                if (activeTab === 'curriculum_server' || activeTab === 'curriculum_server_landing' || activeTab === 'domain_management') onSelectTab('command_center');
+                if (activeTab === 'curriculum_server' || activeTab === 'curriculum_server_landing' || activeTab === 'domain_management' || activeTab === 'tenant_control_center' || activeTab === 'customer_self_service' || activeTab === 'api_webhooks') {
+                  onSelectTab('command_center');
+                }
               }}
+              style={
+                isTenantSchoolInstance 
+                  ? { backgroundColor: primaryColor, color: '#ffffff' }
+                  : undefined
+              }
               className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                activeTab !== 'curriculum_server' && activeTab !== 'curriculum_server_landing' && activeTab !== 'domain_management' && platformMode === 'tenant_school_instance'
-                  ? 'bg-purple-600 text-white shadow-sm'
+                isTenantSchoolInstance
+                  ? 'shadow-sm text-white'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -296,15 +378,30 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           </div>
 
-          {/* Active Tenant App ID Chip */}
-          {activeTenant && (
-            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono">
-              <span className="text-slate-500">Tenant:</span>
-              <span className="font-bold text-slate-200">{activeTenant.schoolName}</span>
-              <span className="text-emerald-400">({activeTenant.appId})</span>
-              <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-800 ml-1">
+          {/* Active Tenant App ID & White-Label Indicator Chip */}
+          {activeTenant && isTenantSchoolInstance ? (
+            <div className="hidden md:flex items-center gap-2 px-2.5 py-0.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono">
+              <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: primaryColor }} />
+              <span className="text-slate-400 font-sans font-medium">School:</span>
+              <span className="font-bold text-slate-100">{schoolName}</span>
+              <span className="font-mono text-[10px]" style={{ color: accentColor }}>({tenantAppId})</span>
+              <span 
+                className="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded border ml-0.5"
+                style={{
+                  backgroundColor: `${primaryColor}20`,
+                  borderColor: `${primaryColor}50`,
+                  color: primaryColor
+                }}
+              >
                 {activeTenant.businessModel.replace(/_/g, ' ')}
               </span>
+            </div>
+          ) : (
+            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-950/40 border border-indigo-800/60 text-[11px] text-indigo-300 font-mono">
+              <Server className="w-3 h-3 text-indigo-400" />
+              <span>SaaS Control Plane:</span>
+              <span className="font-bold text-white">Curriculum Server Core</span>
+              <span className="text-[9px] px-1.5 py-0.2 rounded bg-indigo-900/60 text-indigo-200 font-bold ml-1">MASTER ROOT</span>
             </div>
           )}
         </div>
@@ -322,10 +419,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                   if (target) {
                     onSelectTenant(target);
                     if (onSwitchPlatformMode) onSwitchPlatformMode('tenant_school_instance');
-                    if (activeTab === 'curriculum_server') onSelectTab('command_center');
+                    if (activeTab === 'curriculum_server' || activeTab === 'curriculum_server_landing' || activeTab === 'domain_management') {
+                      onSelectTab('command_center');
+                    }
                   }
                 }}
-                className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-0.5 text-[11px] text-emerald-300 font-semibold focus:outline-none cursor-pointer max-w-[150px] sm:max-w-[200px]"
+                className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-0.5 text-[11px] font-semibold focus:outline-none cursor-pointer max-w-[150px] sm:max-w-[200px] transition-colors"
+                style={{ color: isTenantSchoolInstance ? accentColor : '#818CF8' }}
                 aria-label="Switch Active Cloned School Instance"
               >
                 {allTenants.map(t => (
@@ -351,7 +451,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           {onOpenCloneModal && (
             <button
               onClick={onOpenCloneModal}
-              className="px-2.5 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 shadow-sm transition-all"
+              className="px-2.5 py-0.5 rounded-md text-white text-[11px] font-bold flex items-center gap-1 shadow-sm transition-all"
+              style={{
+                backgroundColor: isTenantSchoolInstance ? primaryColor : '#4F46E5',
+              }}
               title="Clone and deploy a new CurriculumFlow school"
             >
               <Plus className="w-3 h-3" />
@@ -374,54 +477,110 @@ export const Navbar: React.FC<NavbarProps> = ({
               title="Toggle Feature Navigation Drawer"
               aria-label="Toggle Feature Navigation Drawer"
             >
-              <Menu className="w-5 h-5 group-hover:text-emerald-400 transition-colors" />
+              <Menu 
+                className="w-5 h-5 transition-colors" 
+                style={{ color: isTenantSchoolInstance ? accentColor : '#818CF8' }}
+              />
             </button>
 
             {/* Desktop Panel Collapse Button (when drawer is visible) */}
             {onToggleCollapse && (
               <button
                 onClick={onToggleCollapse}
-                className="hidden lg:flex items-center justify-center p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-emerald-400 border border-slate-800 transition-all shadow-sm"
+                className="hidden lg:flex items-center justify-center p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800 transition-all shadow-sm"
                 title={isDrawerCollapsed ? "Expand Drawer (Ctrl+B)" : "Collapse Drawer (Ctrl+B)"}
                 aria-label={isDrawerCollapsed ? "Expand Drawer" : "Collapse Drawer"}
               >
                 {isDrawerCollapsed ? (
-                  <PanelLeftOpen className="w-4 h-4 text-emerald-400" />
+                  <PanelLeftOpen className="w-4 h-4" style={{ color: isTenantSchoolInstance ? accentColor : '#818CF8' }} />
                 ) : (
                   <PanelLeftClose className="w-4 h-4" />
                 )}
               </button>
             )}
 
-            {/* Brand Logo & Name (hidden on small mobile if breadcrumb takes space) */}
-            <div className="hidden md:flex items-center gap-2.5 shrink-0 border-r border-slate-800/80 pr-3.5">
-              <div 
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-md shadow-emerald-950/40 border border-emerald-400/30 overflow-hidden"
-                style={{
-                  background: brandProfile?.brandTheme?.primaryColor
-                    ? `linear-gradient(135deg, ${brandProfile.brandTheme.primaryColor}, ${brandProfile.brandTheme.secondaryColor})`
-                    : 'linear-gradient(135deg, #059669, #0f766e)'
-                }}
-              >
-                {brandProfile?.crestLogoUrl ? (
-                  <img src={brandProfile.crestLogoUrl} alt="Logo" className="w-full h-full object-contain p-0.5" />
-                ) : (
-                  <School className="w-4 h-4 text-white" />
-                )}
+            {/* Dynamic Brand Logo & Identity Block */}
+            {isTenantSchoolInstance ? (
+              // WHITE-LABELED TENANT SCHOOL BRANDING
+              <div className="hidden md:flex items-center gap-2.5 shrink-0 border-r border-slate-800/80 pr-3.5">
+                <div 
+                  className={`w-9 h-9 ${getLogoShapeClass(logoShape)} flex items-center justify-center text-white shadow-md border overflow-hidden p-0.5 transition-all`}
+                  style={{
+                    background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
+                    borderColor: `${accentColor}80`,
+                    boxShadow: `0 4px 14px -2px ${primaryColor}40`
+                  }}
+                >
+                  {crestLogoUrl ? (
+                    <img 
+                      src={crestLogoUrl} 
+                      alt={`${schoolName} Logo`} 
+                      className="w-full h-full object-contain" 
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <School className="w-5 h-5 text-white" />
+                  )}
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-extrabold text-sm text-white tracking-tight leading-tight truncate max-w-[170px] lg:max-w-[220px]">
+                      {schoolShortName || schoolName}
+                    </span>
+                    <span 
+                      className="text-[8px] font-bold uppercase px-1 rounded"
+                      style={{
+                        backgroundColor: `${primaryColor}25`,
+                        color: accentColor,
+                        border: `1px solid ${primaryColor}40`
+                      }}
+                    >
+                      School OS
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1 truncate max-w-[170px] lg:max-w-[220px]">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: accentColor }} />
+                    {tenantDomain}
+                  </span>
+                </div>
               </div>
-              <div className="flex flex-col">
-                <span className="font-extrabold text-sm text-white tracking-tight leading-tight">
-                  {brandProfile?.shortName || activeTenant?.schoolName || 'CurriculumFlow'}
-                </span>
-                <span className="text-[10px] text-slate-400 font-mono">
-                  {activeTenant?.appId || 'CF-ROOT-INSTANCE'}
-                </span>
+            ) : (
+              // CURRICULUM SERVER MASTER B2B SAAS BRANDING
+              <div className="hidden md:flex items-center gap-2.5 shrink-0 border-r border-slate-800/80 pr-3.5">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gradient-to-br from-indigo-600 via-indigo-700 to-sky-700 shadow-md shadow-indigo-950/60 border border-indigo-400/40 shrink-0">
+                  <CurriculumServerIcon className="w-6 h-6" />
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-black text-sm text-white tracking-tight uppercase leading-tight">
+                      CURRICULUM<span className="text-indigo-400 ml-1">SERVER</span>
+                    </span>
+                    <span className="text-[8px] font-black uppercase px-1 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
+                      SaaS Control
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-indigo-300/80 font-mono tracking-wide">
+                    Multi-Tenant Cloud Orchestrator
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Current Active Tab Breadcrumb Banner */}
-            <div className="flex items-center gap-2 min-w-0 bg-slate-900/60 border border-slate-800/70 py-1 px-2.5 rounded-xl">
-              <div className="p-1 rounded-md bg-emerald-950 border border-emerald-700/50 text-emerald-400 shrink-0">
+            <div 
+              className="flex items-center gap-2 min-w-0 bg-slate-900/60 border py-1 px-2.5 rounded-xl transition-all"
+              style={{
+                borderColor: isTenantSchoolInstance ? `${primaryColor}30` : 'rgba(51, 65, 85, 0.7)'
+              }}
+            >
+              <div 
+                className="p-1 rounded-md border shrink-0 transition-colors"
+                style={{
+                  backgroundColor: isTenantSchoolInstance ? `${primaryColor}20` : 'rgba(79, 70, 229, 0.2)',
+                  borderColor: isTenantSchoolInstance ? `${primaryColor}60` : 'rgba(79, 70, 229, 0.5)',
+                  color: isTenantSchoolInstance ? accentColor : '#A5B4FC'
+                }}
+              >
                 <TabIcon className="w-3.5 h-3.5" />
               </div>
               <div className="flex items-center gap-1.5 min-w-0">
@@ -464,13 +623,21 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* AI Advisor Button */}
+            {/* AI Advisor Button - Accented with Active Brand Tone */}
             <button
               onClick={onOpenAdvisorModal}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition-all shadow-sm"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm border"
+              style={{
+                backgroundColor: isTenantSchoolInstance ? `${primaryColor}20` : 'rgba(79, 70, 229, 0.2)',
+                borderColor: isTenantSchoolInstance ? `${primaryColor}60` : 'rgba(99, 102, 241, 0.4)',
+                color: isTenantSchoolInstance ? accentColor : '#C7D2FE'
+              }}
               title="Open Curriculum & Pedagogical AI Advisor"
             >
-              <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
+              <Sparkles 
+                className="w-4 h-4 animate-pulse" 
+                style={{ color: isTenantSchoolInstance ? accentColor : '#818CF8' }}
+              />
               <span className="hidden md:inline">AI Advisor</span>
             </button>
 
@@ -511,5 +678,3 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
-
-

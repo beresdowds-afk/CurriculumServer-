@@ -5,6 +5,10 @@ import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { NERDC_SUBJECTS_DATABASE, NERDC_STATS } from './src/data/nerdcDatabase';
+import { TenantSecurityContextManager } from './src/services/tenantSecurityContext';
+import { EntitlementEnforcementService } from './src/services/entitlementEnforcementService';
+import { TamperEvidentAuditService } from './src/services/tamperEvidentAuditService';
+import { TenantLifecycleManager } from './src/services/tenantLifecycleManager';
 
 dotenv.config();
 
@@ -14,14 +18,38 @@ const PORT = Number(process.env.PORT) || 8080;
 app.use(express.json());
 
 // Initialize Google Gemini AI SDK on the server side
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || '',
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
+// Supports both Application Default Credentials (ADC) for Google Cloud / Eastforte Fabrications & Equipments,
+// and API Key authentication when provided.
+function createGenAIClient(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const project = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || process.env.PROJECT_ID;
+  const location = process.env.GOOGLE_CLOUD_LOCATION || process.env.GCP_LOCATION || 'us-central1';
+
+  if (apiKey && apiKey.trim() !== '' && apiKey !== 'MY_GEMINI_API_KEY') {
+    return new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  }
+
+  // Application Default Credentials (ADC) mode for GCP projects under Eastforte Fabrications and Equipments
+  return new GoogleGenAI({
+    vertexai: true,
+    project: project || undefined,
+    location: location || 'us-central1',
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
     },
-  },
-});
+  });
+}
+
+const ai = createGenAIClient();
 
 // Helper for fallback generation if API key is not yet set or returns empty
 function generateExamId(classGrade: string, subjectCode: string, term: string): string {
@@ -923,6 +951,105 @@ app.get('/api/v1/tenants/:id/health', (req: Request, res: Response) => {
       storageQuotaMb: 10240
     }
   });
+});
+
+// -------------------------------------------------------------
+// CONTROL PLANE SECURITY, QUOTA & LIFECYCLE MANAGEMENT ENDPOINTS
+// -------------------------------------------------------------
+
+// Security context token issuer
+app.post('/api/v1/control-plane/issue-token', (req: Request, res: Response) => {
+  const { tenant } = req.body;
+  if (!tenant || !tenant.id) {
+    res.status(400).json({ error: 'Missing tenant payload' });
+    return;
+  }
+  const token = TenantSecurityContextManager.issueTenantToken(tenant);
+  res.json({ token, tenantId: tenant.id, issuedAt: new Date().toISOString() });
+});
+
+// Control Plane Audit Ledger (Tamper-Evident SHA-256 HMAC Chain)
+app.get('/api/v1/control-plane/audit-ledger', (req: Request, res: Response) => {
+  const records = TamperEvidentAuditService.getAuditRecords();
+  const integrity = TamperEvidentAuditService.verifyLedgerIntegrity();
+  res.json({
+    totalRecords: records.length,
+    ledgerIntegrity: integrity,
+    records: records.slice(0, 100)
+  });
+});
+
+// Verify cryptographic integrity of entire audit ledger
+app.get('/api/v1/control-plane/verify-ledger', (req: Request, res: Response) => {
+  const result = TamperEvidentAuditService.verifyLedgerIntegrity();
+  res.json(result);
+});
+
+// Control Plane Security Violations & Breaches
+app.get('/api/v1/control-plane/security-violations', (req: Request, res: Response) => {
+  const violations = TenantSecurityContextManager.getSecurityViolations();
+  res.json({
+    totalViolationsRecorded: violations.length,
+    activeThreatsBlocked: violations.filter(v => v.blocked).length,
+    violations
+  });
+});
+
+// Tenant Lifecycle State Transition (Suspend / Reactivate / Archive)
+app.post('/api/v1/tenants/:id/lifecycle-state', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { targetState, reason, actor } = req.body;
+  if (!targetState) {
+    res.status(400).json({ error: 'Missing targetState (active | suspended | archived | decommissioned)' });
+    return;
+  }
+  
+  TamperEvidentAuditService.logPlatformAction({
+    actor: actor || 'Platform Super Admin',
+    actorRole: 'super_admin',
+    tenantId: id,
+    tenantSchoolName: `Tenant (${id})`,
+    action: targetState === 'suspended' ? 'tenant_suspended' : targetState === 'active' ? 'tenant_reactivated' : 'tenant_archived',
+    target: `tenant:${id}`,
+    result: 'SUCCESS',
+    ipAddress: req.ip || '127.0.0.1',
+    deviceMetadata: 'Control Plane API Gateway',
+    details: `Transitioned state to ${targetState.toUpperCase()}. Reason: ${reason || 'Administrative action'}`
+  });
+
+  res.json({
+    tenantId: id,
+    newState: targetState,
+    updatedAt: new Date().toISOString(),
+    message: `Tenant ${id} successfully transitioned to state ${targetState.toUpperCase()}`
+  });
+});
+
+// Tenant Backup Snapshots (List / Create)
+app.get('/api/v1/tenants/:id/snapshots', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const snapshots = TenantLifecycleManager.getSnapshotsForTenant(id);
+  res.json({
+    tenantId: id,
+    totalSnapshots: snapshots.length,
+    snapshots
+  });
+});
+
+app.post('/api/v1/tenants/:id/snapshots', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { schoolName } = req.body;
+  const dummyTenant: any = { id, schoolName: schoolName || `School-${id}`, subscriptionTier: 'Enterprise' };
+  const snapshot = TenantLifecycleManager.createBackupSnapshot(dummyTenant, false, req.body.actor || 'Platform Admin');
+  res.json({ success: true, snapshot });
+});
+
+// Tenant Lease-To-Own Buyout Status
+app.get('/api/v1/tenants/:id/lease-to-own', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const dummyTenant: any = { id, schoolName: (req.query.schoolName as string) || `School-${id}`, subscriptionTier: (req.query.tier as string) || 'Enterprise' };
+  const contract = TenantLifecycleManager.calculateLeaseToOwnStatus(dummyTenant);
+  res.json(contract);
 });
 
 // 7. API v1 - Embeddable School Widgets (for School Websites)

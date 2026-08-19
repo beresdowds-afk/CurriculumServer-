@@ -4,11 +4,17 @@ import {
   OptionalFeatureKey,
   FeatureEntitlementState,
   TenantBillingInvoice,
-  PlatformAuditRecord
+  PlatformAuditRecord,
+  CurriculumServerSaaSMetrics
 } from '../types';
-import { OPTIONAL_FEATURE_DEFINITIONS } from '../mockCurriculumServerData';
+import { OPTIONAL_FEATURE_DEFINITIONS, INITIAL_SAAS_METRICS } from '../mockCurriculumServerData';
 import { globalBackupService } from '../services/backupRestoreService';
 import { globalAuditLogService } from '../services/auditLogService';
+import { TenantSecurityContextManager } from '../services/tenantSecurityContext';
+import { EntitlementEnforcementService, DEFAULT_PLAN_POLICIES } from '../services/entitlementEnforcementService';
+import { TenantLifecycleManager } from '../services/tenantLifecycleManager';
+import { TamperEvidentAuditService } from '../services/tamperEvidentAuditService';
+import { ControlPlaneCockpit } from './ControlPlaneCockpit';
 import { 
   Building2, 
   Server, 
@@ -37,15 +43,30 @@ import {
   Check,
   Zap,
   RefreshCw,
-  Trash2
+  Trash2,
+  Copy,
+  FileText,
+  DollarSign,
+  ShieldAlert,
+  Gauge
 } from 'lucide-react';
 
 interface TenantControlCenterProps {
-  tenant: TenantSchoolApp;
-  onBack: () => void;
-  onUpdateTenant: (updated: TenantSchoolApp) => void;
-  onLaunchTenant: (tenant: TenantSchoolApp) => void;
-  invoices: TenantBillingInvoice[];
+  tenant?: TenantSchoolApp;
+  tenants?: TenantSchoolApp[];
+  metrics?: CurriculumServerSaaSMetrics;
+  invoices?: TenantBillingInvoice[];
+  onBack?: () => void;
+  onUpdateTenant?: (updated: TenantSchoolApp) => void;
+  onLaunchTenant?: (tenant: TenantSchoolApp) => void;
+  onSelectTenantToLaunch?: (tenant: TenantSchoolApp) => void;
+  onOpenProvisionTerminal?: (draft?: Partial<TenantSchoolApp>) => void;
+  onOpenIsolationTestModal?: () => void;
+  onOpenVersionRolloutModal?: () => void;
+  onOpenDomainPortal?: () => void;
+  onOpenApiWebhooks?: () => void;
+  onToggleTenantStatus?: (tenantId: string) => void;
+  onUpdateTenantFeatures?: (tenantId: string, features: Record<OptionalFeatureKey, boolean>) => void;
 }
 
 export type TenantInspectorTab = 
@@ -59,27 +80,96 @@ export type TenantInspectorTab =
   | 'backups';
 
 export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
-  tenant,
+  tenant: initialTenant,
+  tenants = [],
+  metrics,
+  invoices = [],
   onBack,
   onUpdateTenant,
   onLaunchTenant,
-  invoices
+  onSelectTenantToLaunch,
+  onOpenProvisionTerminal,
+  onOpenIsolationTestModal,
+  onOpenVersionRolloutModal,
+  onOpenDomainPortal,
+  onOpenApiWebhooks,
+  onToggleTenantStatus,
+  onUpdateTenantFeatures
 }) => {
+  const [selectedTenant, setSelectedTenant] = useState<TenantSchoolApp | null>(initialTenant || null);
   const [activeTab, setActiveTab] = useState<TenantInspectorTab>('overview');
+
+  // If no specific tenant is selected, render the fleet Control Plane Cockpit
+  if (!selectedTenant) {
+    return (
+      <ControlPlaneCockpit
+        tenants={tenants}
+        metrics={metrics || INITIAL_SAAS_METRICS}
+        invoices={invoices}
+        onSelectTenantToLaunch={(t) => {
+          if (onSelectTenantToLaunch) onSelectTenantToLaunch(t);
+          else if (onLaunchTenant) onLaunchTenant(t);
+        }}
+        onOpenProvisionTerminal={onOpenProvisionTerminal}
+        onOpenIsolationTestModal={onOpenIsolationTestModal}
+        onOpenVersionRolloutModal={onOpenVersionRolloutModal}
+        onOpenDomainPortal={onOpenDomainPortal}
+        onOpenApiWebhooks={onOpenApiWebhooks}
+        onToggleTenantStatus={onToggleTenantStatus}
+        onUpdateTenantFeatures={onUpdateTenantFeatures}
+      />
+    );
+  }
+
+  const tenant = selectedTenant;
   const [snapshots, setSnapshots] = useState(globalBackupService.getSnapshots(tenant.id));
   const [isTakingBackup, setIsTakingBackup] = useState(false);
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
   const [featuresState, setFeaturesState] = useState<Record<OptionalFeatureKey, boolean>>(tenant.enabledFeatures);
   const [isSavingFeatures, setIsSavingFeatures] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
+  const [ledgerIntegrity, setLedgerIntegrity] = useState<{ isValid: boolean; totalRecords: number; reason?: string } | null>(null);
+  const [isVerifyingLedger, setIsVerifyingLedger] = useState(false);
 
   const tenantInvoices = invoices.filter(inv => inv.tenantAppId === tenant.id || inv.tenantSchoolName === tenant.schoolName);
   const tenantAuditLogs = globalAuditLogService.getLogs({ tenantId: tenant.id });
+  const tenantToken = TenantSecurityContextManager.issueTenantToken(tenant);
+  const usageTracker = EntitlementEnforcementService.getUsageTracker(tenant.id);
+  const planPolicy = DEFAULT_PLAN_POLICIES[tenant.subscriptionTier] || DEFAULT_PLAN_POLICIES.Starter;
+  const leaseToOwnInfo = TenantLifecycleManager.calculateLeaseToOwnStatus(tenant);
+  const securityViolations = TenantSecurityContextManager.getSecurityViolations().filter(v => v.sourceTenantId === tenant.id || v.targetTenantId === tenant.id);
 
   const handleToggleFeature = (key: OptionalFeatureKey) => {
     setFeaturesState(prev => ({
       ...prev,
       [key]: !prev[key]
     }));
+  };
+
+  const handleCopyToken = () => {
+    navigator.clipboard.writeText(tenantToken);
+    setCopiedToken(true);
+    setTimeout(() => setCopiedToken(false), 3000);
+  };
+
+  const handleStateChange = (targetState: 'active' | 'suspended' | 'archived') => {
+    const updated = TenantLifecycleManager.transitionTenantState(
+      tenant,
+      targetState,
+      `Super admin manual state transition via Control Center`,
+      'admin@curriculumserver.ng'
+    );
+    setSelectedTenant(updated);
+    if (onUpdateTenant) onUpdateTenant(updated);
+  };
+
+  const handleVerifyLedger = () => {
+    setIsVerifyingLedger(true);
+    setTimeout(() => {
+      const result = TamperEvidentAuditService.verifyLedgerIntegrity();
+      setLedgerIntegrity(result);
+      setIsVerifyingLedger(false);
+    }, 600);
   };
 
   const handleSaveFeatures = () => {
@@ -89,7 +179,8 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
         ...tenant,
         enabledFeatures: featuresState
       };
-      onUpdateTenant(updated);
+      setSelectedTenant(updated);
+      if (onUpdateTenant) onUpdateTenant(updated);
       globalAuditLogService.logEvent({
         actor: 'admin@curriculumserver.ng',
         actorRole: 'SaaS Platform Architect',
@@ -152,11 +243,18 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900/80 backdrop-blur-md border border-slate-800 p-5 rounded-2xl">
         <div className="flex items-center gap-4">
           <button
-            onClick={onBack}
-            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
-            title="Back to Tenants Cockpit"
+            onClick={() => {
+              if (tenants && tenants.length > 0) {
+                setSelectedTenant(null);
+              } else if (onBack) {
+                onBack();
+              }
+            }}
+            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+            title="Return to Control Plane Cockpit"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="w-4 h-4" />
+            <span className="hidden sm:inline">Cockpit</span>
           </button>
           
           <div>
@@ -183,9 +281,40 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Lifecycle State Switcher */}
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+            <button
+              onClick={() => handleStateChange('active')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                tenant.status === 'active' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Active
+            </button>
+            <button
+              onClick={() => handleStateChange('suspended')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                tenant.status === 'suspended' ? 'bg-amber-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Suspend
+            </button>
+            <button
+              onClick={() => handleStateChange('archived')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                tenant.status === 'archived' ? 'bg-rose-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Archive
+            </button>
+          </div>
+
           <button
-            onClick={() => onLaunchTenant(tenant)}
+            onClick={() => {
+              if (onLaunchTenant) onLaunchTenant(tenant);
+              else if (onSelectTenantToLaunch) onSelectTenantToLaunch(tenant);
+            }}
             className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
@@ -305,6 +434,30 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
                   {tenant.licenseHash}
                 </p>
               </div>
+
+              {/* Signed Tenant Security Token */}
+              <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-800/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-emerald-400 font-bold flex items-center gap-1.5 text-xs">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>Signed Security Token (HMAC-SHA256)</span>
+                  </span>
+                  <button
+                    onClick={handleCopyToken}
+                    className="px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                  >
+                    {copiedToken ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedToken ? 'Copied' : 'Copy JWT'}</span>
+                  </button>
+                </div>
+                <p className="font-mono text-[10px] text-emerald-300 break-all bg-slate-950/80 p-2 rounded border border-emerald-900/50 max-h-16 overflow-y-auto">
+                  {tenantToken}
+                </p>
+                <div className="flex items-center justify-between text-[10px] text-emerald-400/80">
+                  <span>Zero Data Leakage Boundary: Enforced</span>
+                  <span>Payload: {tenant.id} ({tenant.subscriptionTier})</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -333,13 +486,62 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
             </div>
 
             <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl">
-              <span className="text-xs text-slate-400 font-medium">Lease-to-Own Equity (If Applicable)</span>
+              <span className="text-xs text-slate-400 font-medium">Lease-to-Own Equity Status</span>
               <p className="text-xl font-bold text-amber-400 mt-1">
-                {tenant.leaseToOwnContract ? `₦${tenant.leaseToOwnContract.totalEquityAccumulated.toLocaleString()}` : 'N/A (Standard SaaS)'}
+                ₦{leaseToOwnInfo.equityAccruedNgn.toLocaleString()}
               </p>
               <div className="mt-3 flex items-center justify-between text-xs text-slate-300 pt-3 border-t border-slate-800">
-                <span>Target Buyout: {tenant.leaseToOwnContract ? `₦${tenant.leaseToOwnContract.totalBuyoutPrice.toLocaleString()}` : 'None'}</span>
-                <span>{tenant.leaseToOwnContract ? `${tenant.leaseToOwnContract.monthsPaid}/${tenant.leaseToOwnContract.amortizationPeriodMonths} mo` : ''}</span>
+                <span>Equity: <strong>{leaseToOwnInfo.equityPercentage}%</strong></span>
+                <span>Remaining: <strong>₦{leaseToOwnInfo.remainingBuyoutPriceNgn.toLocaleString()}</strong></span>
+              </div>
+            </div>
+          </div>
+
+          {/* Lease to Own Amortization Bar */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-amber-400" />
+                  <span>Lease-to-Own Buyout Amortization Schedule</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Allows schools to acquire full intellectual property buyout & migrate to self-hosted on-premise infrastructure.
+                </p>
+              </div>
+              <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                leaseToOwnInfo.isBuyoutEligible ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+              }`}>
+                {leaseToOwnInfo.isBuyoutEligible ? 'Eligible for On-Premise Export' : `Accumulating (${leaseToOwnInfo.monthsPaid}/${leaseToOwnInfo.totalTermMonths} Months)`}
+              </span>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+                <span>Total Equity Accrued: ₦{leaseToOwnInfo.equityAccruedNgn.toLocaleString()}</span>
+                <span>Total Contract Buyout: ₦{leaseToOwnInfo.totalContractPriceNgn.toLocaleString()}</span>
+              </div>
+              <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800">
+                <div 
+                  className="bg-gradient-to-r from-amber-500 to-emerald-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, Math.max(5, leaseToOwnInfo.equityPercentage))}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-2">
+              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl">
+                <span className="text-slate-400">Monthly Contribution</span>
+                <p className="font-bold text-slate-100 mt-0.5">₦{leaseToOwnInfo.monthlyPaymentNgn.toLocaleString()}/mo</p>
+              </div>
+              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl">
+                <span className="text-slate-400">Self-Hosted Export Status</span>
+                <p className="font-bold text-emerald-400 mt-0.5">Automated Tarball Generator Ready</p>
+              </div>
+              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl">
+                <span className="text-slate-400">Perpetual Source License</span>
+                <p className="font-bold text-teal-400 mt-0.5">Included upon 100% completion</p>
               </div>
             </div>
           </div>
@@ -543,41 +745,93 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
 
       {/* TAB 5: INFRASTRUCTURE & CONTAINER TELEMETRY */}
       {activeTab === 'infrastructure' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
-            <div className="flex items-center justify-between text-slate-400 text-xs">
-              <span>Database Instance</span>
-              <Database className="w-4 h-4 text-emerald-400" />
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between text-slate-400 text-xs">
+                <span>Database Instance</span>
+                <Database className="w-4 h-4 text-emerald-400" />
+              </div>
+              <p className="text-base font-mono font-bold text-slate-100">db_{tenant.id.replace(/[^a-zA-Z0-9_]/g, '_')}</p>
+              <p className="text-[11px] text-slate-400">Isolated PostgreSQL 16 • 48 Tables</p>
             </div>
-            <p className="text-base font-mono font-bold text-slate-100">db_{tenant.id.replace(/[^a-zA-Z0-9_]/g, '_')}</p>
-            <p className="text-[11px] text-slate-400">Isolated PostgreSQL 16 • 48 Tables</p>
+
+            <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between text-slate-400 text-xs">
+                <span>Storage Namespace</span>
+                <HardDrive className="w-4 h-4 text-indigo-400" />
+              </div>
+              <p className="text-base font-mono font-bold text-slate-100 truncate">/storage/tenants/{tenant.id}</p>
+              <p className="text-[11px] text-slate-400">{tenant.storageUsageMb} MB / {tenant.maxStorageMb} MB ({Math.round((tenant.storageUsageMb / tenant.maxStorageMb) * 100)}% utilized)</p>
+            </div>
+
+            <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between text-slate-400 text-xs">
+                <span>CPU Allocation</span>
+                <Cpu className="w-4 h-4 text-teal-400" />
+              </div>
+              <p className="text-base font-mono font-bold text-teal-400">18.4% of 2.0 vCPU</p>
+              <p className="text-[11px] text-slate-400">Throttling Limit: 2.0 Cores Max</p>
+            </div>
+
+            <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between text-slate-400 text-xs">
+                <span>Memory RSS</span>
+                <Activity className="w-4 h-4 text-amber-400" />
+              </div>
+              <p className="text-base font-mono font-bold text-amber-400">412 MB / 4096 MB</p>
+              <p className="text-[11px] text-slate-400">OOM Buffer: 3684 MB Available</p>
+            </div>
           </div>
 
-          <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
-            <div className="flex items-center justify-between text-slate-400 text-xs">
-              <span>Storage Namespace</span>
-              <HardDrive className="w-4 h-4 text-indigo-400" />
-            </div>
-            <p className="text-base font-mono font-bold text-slate-100 truncate">/storage/tenants/{tenant.id}</p>
-            <p className="text-[11px] text-slate-400">{tenant.storageUsageMb} MB / {tenant.maxStorageMb} MB ({Math.round((tenant.storageUsageMb / tenant.maxStorageMb) * 100)}% utilized)</p>
-          </div>
+          {/* Quota Guard Real-Time Entitlement Policy */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+              <Gauge className="w-4 h-4 text-emerald-400" />
+              <span>Quota Guard™ Live Rate Limiting & Resource Consumption</span>
+            </h3>
 
-          <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
-            <div className="flex items-center justify-between text-slate-400 text-xs">
-              <span>CPU Allocation</span>
-              <Cpu className="w-4 h-4 text-teal-400" />
-            </div>
-            <p className="text-base font-mono font-bold text-teal-400">18.4% of 2.0 vCPU</p>
-            <p className="text-[11px] text-slate-400">Throttling Limit: 2.0 Cores Max</p>
-          </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+              <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                <span className="text-slate-400 font-medium">Monthly AI Token Consumption</span>
+                <p className="text-base font-bold text-emerald-400 font-mono">
+                  {usageTracker.aiTokensUsed.toLocaleString()} / {planPolicy.aiMonthlyTokenLimit.toLocaleString()}
+                </p>
+                <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
+                  <div 
+                    className="bg-emerald-500 h-full rounded-full" 
+                    style={{ width: `${Math.min(100, Math.max(5, (usageTracker.aiTokensUsed / planPolicy.aiMonthlyTokenLimit) * 100))}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500">Soft warning threshold: 80% • Hard cut-off: 100%</p>
+              </div>
 
-          <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
-            <div className="flex items-center justify-between text-slate-400 text-xs">
-              <span>Memory RSS</span>
-              <Activity className="w-4 h-4 text-amber-400" />
+              <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                <span className="text-slate-400 font-medium">Student Capacity Ceiling</span>
+                <p className="text-base font-bold text-indigo-400 font-mono">
+                  {tenant.activeStudentsCount.toLocaleString()} / {planPolicy.maxStudentsLimit.toLocaleString()}
+                </p>
+                <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
+                  <div 
+                    className="bg-indigo-500 h-full rounded-full" 
+                    style={{ width: `${Math.min(100, Math.max(5, (tenant.activeStudentsCount / planPolicy.maxStudentsLimit) * 100))}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500">Capacity headroom: {planPolicy.maxStudentsLimit - tenant.activeStudentsCount} seats remaining</p>
+              </div>
+
+              <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                <span className="text-slate-400 font-medium">API Ingress Rate Limiting</span>
+                <p className="text-base font-bold text-teal-400 font-mono">
+                  {planPolicy.rateLimitReqPerMin} req/min
+                </p>
+                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                  <span>Concurrent Workers: {planPolicy.maxConcurrentBackgroundJobs}</span>
+                  <span className="text-emerald-400 font-semibold">Leaky Bucket: Healthy</span>
+                </div>
+                <p className="text-[10px] text-slate-500">Enforced by Envoy Ingress Edge Filter</p>
+              </div>
             </div>
-            <p className="text-base font-mono font-bold text-amber-400">412 MB / 4096 MB</p>
-            <p className="text-[11px] text-slate-400">OOM Buffer: 3684 MB Available</p>
           </div>
         </div>
       )}
@@ -619,10 +873,57 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
       {/* TAB 7: SECURITY & AUDIT TRAIL */}
       {activeTab === 'security' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5">
-          <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Immutable Platform Audit Trail for {tenant.schoolName}</span>
-          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-800">
+            <div>
+              <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>Immutable Platform Audit Trail for {tenant.schoolName}</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Cryptographically hash-chained (SHA-256 HMAC) ledger guaranteeing tamper-proof auditability.
+              </p>
+            </div>
+
+            <button
+              onClick={handleVerifyLedger}
+              disabled={isVerifyingLedger}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {isVerifyingLedger ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+              <span>Verify Cryptographic Ledger</span>
+            </button>
+          </div>
+
+          {ledgerIntegrity && (
+            <div className={`p-3.5 rounded-xl border text-xs flex items-center gap-2 ${
+              ledgerIntegrity.isValid 
+                ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300' 
+                : 'bg-rose-950/60 border-rose-800 text-rose-300'
+            }`}>
+              {ledgerIntegrity.isValid ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <ShieldAlert className="w-4 h-4 text-rose-400" />}
+              <span>
+                {ledgerIntegrity.isValid 
+                  ? `Cryptographic Audit Ledger is 100% Intact. Verified ${ledgerIntegrity.totalRecords} consecutive HMAC hashes without discrepancy.` 
+                  : `Integrity Alert: ${ledgerIntegrity.reason}`}
+              </span>
+            </div>
+          )}
+
+          {/* Cross-tenant Boundary Status */}
+          <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Cross-Tenant Boundary Isolation Matrix</span>
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400">
+                ZERO LEAKAGE DETECTED
+              </span>
+            </div>
+            <p className="text-slate-400 text-[11px]">
+              School database schema <code className="text-emerald-400 font-mono">db_{tenant.id.replace(/[^a-zA-Z0-9_]/g, '_')}</code> and storage bucket are strictly bound to signed tenant context. All unauthorized cross-tenant requests are dropped with HTTP 403 Forbidden.
+            </p>
+          </div>
 
           <div className="space-y-2 max-h-[400px] overflow-y-auto">
             {tenantAuditLogs.length === 0 ? (

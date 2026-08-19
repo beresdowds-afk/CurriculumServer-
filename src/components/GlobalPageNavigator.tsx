@@ -32,7 +32,9 @@ import {
   Cpu,
   Code,
   Sliders,
-  UserPlus
+  UserPlus,
+  Printer,
+  Award
 } from 'lucide-react';
 
 export interface PageNavigationDomain {
@@ -97,6 +99,12 @@ export const ALL_PROJECT_DOMAINS: PageNavigationDomain[] = [
         title: 'REST API & Webhooks Gateway',
         description: 'REST v1 endpoints, cryptographic HMAC webhook events & embed widgets',
         icon: Code
+      },
+      {
+        id: 'docker_orchestration',
+        title: 'Docker Tenant Orchestrator & Shards',
+        description: 'Phased container runtime, cgroup v2 resource limits & live shard migrations',
+        icon: Server
       }
     ]
   },
@@ -112,6 +120,13 @@ export const ALL_PROJECT_DOMAINS: PageNavigationDomain[] = [
         title: 'School Command Center',
         description: 'Principal executive cockpit, NERDC velocity KPIs & institutional approvals',
         icon: ShieldCheck,
+        isCore: true
+      },
+      {
+        id: 'promotional_mock_exams',
+        title: 'Promotional & Mock Exams Governance',
+        description: 'Promotion council cutoff thresholds, WAEC/NECO/BECE mock series & readiness',
+        icon: Award,
         isCore: true
       },
       {
@@ -305,6 +320,13 @@ export const ALL_PROJECT_DOMAINS: PageNavigationDomain[] = [
         title: 'Academic Analytics & Mastery',
         description: 'Cohort performance distributions, teacher velocity & topic heatmaps',
         icon: BarChart3
+      },
+      {
+        id: 'report_card_studio',
+        title: 'Terminal Report Card & Transcript Studio',
+        description: 'Printable termly report sheets with affective/psychomotor grids & official seal',
+        icon: Printer,
+        isCore: true
       }
     ]
   },

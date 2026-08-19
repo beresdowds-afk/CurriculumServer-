@@ -2072,8 +2072,10 @@ export type TenantStatus =
   | 'trialing' 
   | 'grace_period' 
   | 'suspended' 
+  | 'archived'
   | 'lease_completed_perpetual' 
-  | 'deprovisioned';
+  | 'deprovisioned'
+  | 'decommissioned';
 
 // -----------------------------------------------------------------
 // 4-BUNDLE ARCHITECTURE (Administration, Teaching, Assessment, Accounts & Billing)
@@ -2162,6 +2164,15 @@ export interface LeaseToOwnContract {
   perpetualCertificateId?: string;
   escrowSourceCodeReleaseStatus: 'locked_in_escrow' | 'partial_escrow_audit' | 'released_to_client';
   earlyBuyoutDiscountPercent: number; // e.g. 10%
+  // Computed & helper properties
+  monthlyPaymentNgn?: number;
+  monthlyLeasePaymentNgn?: number;
+  equityAccruedNgn?: number;
+  equityPercentage?: number;
+  remainingBuyoutPriceNgn?: number;
+  isBuyoutEligible?: boolean;
+  totalContractPriceNgn?: number;
+  totalTermMonths?: number;
 }
 
 export interface TenantBillingInvoice {
@@ -2660,7 +2671,7 @@ export interface ApiSubscriptionKey {
 export interface TenantIsolationTestResult {
   testId: string;
   name: string;
-  category: 'database' | 'storage' | 'api' | 'entitlement' | 'noisy_neighbor' | 'dns' | 'secrets';
+  category: 'database' | 'storage' | 'api' | 'entitlement' | 'noisy_neighbor' | 'dns' | 'secrets' | 'security';
   tenantA: string;
   tenantB: string;
   passed: boolean;
@@ -2956,6 +2967,257 @@ export interface RLSAccessContext {
   allowedParentIds: string[]; // RLS filter: Parents this user is allowed to view
   isSuperAdmin: boolean;
   isPrincipalAdmin: boolean;
+}
+
+// -----------------------------------------------------------------
+// 1. TERMINAL REPORT CARD & TRANSCRIPT PRINT STUDIO
+// -----------------------------------------------------------------
+export interface SubjectScoreBreakdown {
+  subjectId: string;
+  subjectName: string;
+  subjectCode: string;
+  ca1Score: number; // Max 20
+  ca2Score: number; // Max 20
+  examScore: number; // Max 60
+  totalScore: number; // Max 100
+  grade: 'A1' | 'B2' | 'B3' | 'C4' | 'C5' | 'C6' | 'D7' | 'E8' | 'F9';
+  remark: 'Distinction' | 'Very Good' | 'Good' | 'Credit' | 'Pass' | 'Fail';
+  classHighest: number;
+  classLowest: number;
+  classAverage: number;
+  positionInSubject: number;
+  subjectTeacherName: string;
+}
+
+export interface AffectiveDomainRating {
+  trait: string; // e.g. 'Punctuality', 'Neatness', 'Politeness', 'Honesty', 'Leadership', 'Teamwork'
+  rating: 1 | 2 | 3 | 4 | 5; // 5: Excellent, 4: Good, 3: Fair, 2: Poor, 1: Very Poor
+}
+
+export interface PsychomotorDomainRating {
+  skill: string; // e.g. 'Handwriting', 'Sports & Games', 'Crafts & Arts', 'Laboratory Skills', 'Public Speaking'
+  rating: 1 | 2 | 3 | 4 | 5;
+}
+
+export interface TerminalReportCard {
+  id: string;
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  classGrade: ClassGrade;
+  classArm: string; // e.g. 'SS 2 Alpha'
+  academicSession: string; // '2025/2026'
+  term: Term;
+  avatarUrl?: string;
+  dob?: string;
+  gender: 'Male' | 'Female';
+  
+  // Attendance metrics
+  timesSchoolOpened: number;
+  timesPresent: number;
+  timesPunctual: number;
+  
+  // Academic metrics
+  subjectScores: SubjectScoreBreakdown[];
+  totalMarksObtained: number;
+  totalMarksPossible: number;
+  averagePercentage: number;
+  gpa: number; // 0.0 - 5.0 scale
+  classPosition: number;
+  totalStudentsInClass: number;
+  cohortPosition: number;
+  totalStudentsInCohort: number;
+  
+  // Domains
+  affectiveRatings: AffectiveDomainRating[];
+  psychomotorRatings: PsychomotorDomainRating[];
+  
+  // Remarks & Signatures
+  formTeacherRemark: string;
+  formTeacherName: string;
+  principalRemark: string;
+  principalName: string;
+  principalSignatureStampUrl?: string;
+  nextTermBeginsDate: string;
+  nextTermFeesNGN: number;
+  
+  // Official security seal
+  qrSecurityVerificationCode: string;
+  issueDate: string;
+  isPublished: boolean;
+}
+
+export interface MultiYearTranscriptRecord {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  graduationYear?: string;
+  cumulativeGPA: number;
+  classRankPercentile: number;
+  termlySummaries: {
+    session: string;
+    term: Term;
+    classGrade: ClassGrade;
+    termAverage: number;
+    gpa: number;
+    position: number;
+    totalStudents: number;
+    subjectsCount: number;
+    status: 'Pass' | 'Distinction' | 'Promoted' | 'Trial';
+  }[];
+}
+
+// -----------------------------------------------------------------
+// 2. IN-HOUSE PROMOTIONS & MOCK EXAMINATION MANAGEMENT
+// -----------------------------------------------------------------
+export type PromotionOutcome = 
+  | 'promoted' 
+  | 'promoted_on_trial' 
+  | 'repeat_class' 
+  | 'recommended_for_withdrawal' 
+  | 'pending_deliberation';
+
+export interface PromotionRuleCriteria {
+  id: string;
+  targetClassGrade: ClassGrade; // e.g., 'SS 2'
+  promotedToGrade: ClassGrade; // e.g., 'SS 3'
+  minimumCumulativeAverage: number; // e.g., 50%
+  mustPassEnglish: boolean;
+  mustPassMathematics: boolean;
+  minimumCreditPassesCount: number; // e.g., 5 subjects with >= 50%
+  minimumAttendancePercentage: number; // e.g., 75%
+  maxAllowedFails: number;
+  trialEligibilityMargin: number; // e.g., within 5% of cutoff
+}
+
+export interface StudentPromotionRecord {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  classGrade: ClassGrade;
+  classArm: string;
+  term1Average: number;
+  term2Average: number;
+  term3Average: number;
+  annualCumulativeAverage: number;
+  totalCreditsCount: number;
+  passedEnglish: boolean;
+  passedMathematics: boolean;
+  overallAttendanceRate: number;
+  computedOutcome: PromotionOutcome;
+  finalDecision: PromotionOutcome;
+  councilRemarks: string;
+  deliberatedBy?: string;
+  deliberatedAt?: string;
+}
+
+export type MockExamType = 'waec_mock' | 'neco_mock' | 'bece_mock' | 'jamb_utme_trial';
+
+export interface MockExamSchedule {
+  id: string;
+  title: string; // e.g. "2026 SS 3 Joint WAEC Pre-Mock Examinations"
+  examType: MockExamType;
+  academicSession: string;
+  targetGrades: ClassGrade[];
+  startDate: string;
+  endDate: string;
+  status: 'draft' | 'scheduled' | 'in_progress' | 'grading' | 'published';
+  totalCandidates: number;
+  participatingArms: string[];
+  chiefExaminer: string;
+  centerCode: string;
+}
+
+export interface MockCandidateScore {
+  id: string;
+  mockExamId: string;
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  indexNumber: string; // e.g., 'WAEC/MOCK/2026/042'
+  classArm: string;
+  subjectScores: {
+    subjectName: string;
+    subjectCode: string;
+    paper1ObjScore: number; // 40
+    paper2TheoryScore: number; // 60
+    totalScore: number; // 100
+    grade: 'A1' | 'B2' | 'B3' | 'C4' | 'C5' | 'C6' | 'D7' | 'E8' | 'F9';
+    predictedWaecScore: string; // e.g. "Likely Credit (B3-C4)"
+  }[];
+  totalAggregatePoints: number;
+  aggregateAverage: number;
+  waecReadinessIndex: 'High Distinction' | 'Credit Ready' | 'Borderline at Risk' | 'Critical Intervention';
+}
+
+// -----------------------------------------------------------------
+// 3. PHASED DOCKER-PER-TENANT ORCHESTRATION & RUNTIME SERVICE
+// -----------------------------------------------------------------
+export type ContainerLifecycleState = 
+  | 'PROVISIONING'
+  | 'WARM_STANDBY'
+  | 'ACTIVE_RUNNING'
+  | 'ISOLATED_SANDBOX'
+  | 'DRAINING'
+  | 'MIGRATING'
+  | 'COLD_HIBERNATED'
+  | 'FAILED_OOM'
+  | 'TERMINATED';
+
+export interface ContainerCgroupLimits {
+  cpuCoresLimit: number; // e.g. 2.0
+  memoryLimitMb: number; // e.g. 2048 MB
+  memorySwapMb: number;
+  cpuShares: number; // 1024
+  ioBandwidthMbPerSec: number;
+  maxProcesses: number; // 256
+  networkNamespace: string; // 'ns-tenant-kings-lagos'
+}
+
+export interface DockerTenantContainer {
+  containerId: string;
+  tenantId: string;
+  tenantSchoolName: string;
+  subdomain: string;
+  dockerImageTag: string; // e.g. 'curriculumflow/tenant-runtime:v2.4.8-alpine'
+  lifecycleState: ContainerLifecycleState;
+  nodeHostName: string; // e.g. 'gcp-eu-west2-worker-pod-04'
+  ipAddress: string; // e.g. '10.244.12.84'
+  port: number; // 3000
+  uptimeSeconds: number;
+  cgroupLimits: ContainerCgroupLimits;
+  
+  // Real-time telemetry
+  currentCpuUsagePercent: number;
+  currentMemoryUsageMb: number;
+  currentMemoryPercent: number;
+  activeRequestsPerSec: number;
+  lastHealthCheckTimestamp: string;
+  healthCheckStatus: 'HEALTHY' | 'DEGRADED' | 'UNRESPONSIVE';
+  coldStartRecoveryTimeMs: number;
+  
+  // Storage & Database Shard Isolation
+  databaseShardId: string;
+  databaseHost: string;
+  databaseSchema: string; // e.g. 'tenant_kings_lagos_prod'
+  isEncryptedAtRest: boolean;
+  isolationSecurityLevel: 'L3_CGROUP_NAMESPACE_ISOLATED' | 'L4_VIRTUAL_MACHINE_MICROVM';
+}
+
+export interface ShardMigrationJob {
+  migrationId: string;
+  tenantId: string;
+  sourceNode: string;
+  targetNode: string;
+  sourceShard: string;
+  targetShard: string;
+  status: 'QUEUED' | 'COPYING_DATA' | 'REPLAYING_WAL' | 'DRAINING_TRAFFIC' | 'COMPLETED' | 'ROLLBACK';
+  progressPercent: number;
+  startedAt: string;
+  estimatedCompletionAt: string;
+  zeroDowntimeCutoverMs: number;
+  bytesTransferredMb: number;
+  totalBytesMb: number;
 }
 
 

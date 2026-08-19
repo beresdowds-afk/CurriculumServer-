@@ -40,7 +40,10 @@ import {
   Code,
   Sliders,
   Terminal,
-  UserPlus
+  UserPlus,
+  Printer,
+  Award,
+  FileText
 } from 'lucide-react';
 import { MainTabType } from './Navbar';
 
@@ -151,6 +154,15 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       category: 'saas_cloud',
       highlight: true
     },
+    {
+      id: 'docker_orchestration',
+      label: 'Docker Tenant Orchestrator & Shards',
+      shortLabel: 'Docker Orchestrator',
+      description: 'Phased container runtime, cgroup v2 resource limits & live shard migrations',
+      icon: Server,
+      category: 'saas_cloud',
+      highlight: true
+    },
 
     // 1. Executive & Governance
     {
@@ -204,6 +216,15 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       shortLabel: 'Bundle Governance',
       description: 'Principal admin control for Administration, Teaching, Assessment & Billing suites',
       icon: Sliders,
+      category: 'governance',
+      highlight: true
+    },
+    {
+      id: 'promotional_mock_exams',
+      label: 'Promotional & Mock Exams Governance',
+      shortLabel: 'Promotions & Mocks',
+      description: 'Promotion council cutoff thresholds, WAEC/NECO/BECE mock series & readiness',
+      icon: Award,
       category: 'governance',
       highlight: true
     },
@@ -385,6 +406,15 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       description: 'Cohort mastery index, subject trends & predictive grades',
       icon: ShieldCheck,
       category: 'assessment'
+    },
+    {
+      id: 'report_card_studio',
+      label: 'Terminal Report Card & Transcript Studio',
+      shortLabel: 'Report Card Studio',
+      description: 'Formal print-ready report sheets, psychomotor ratings, GPA & transcripts',
+      icon: Printer,
+      category: 'assessment',
+      highlight: true
     }
   ], [pendingApprovalsCount, pendingRemedialsCount]);
 
