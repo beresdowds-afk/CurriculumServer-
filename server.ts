@@ -13,10 +13,12 @@ import { TenantLifecycleManager } from './src/services/tenantLifecycleManager';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`CurriculumFlow Academic Server running on http://0.0.0.0:${port}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(
+    `CurriculumFlow Academic Server running on http://0.0.0.0:${PORT}`
+  );
 });
 
 app.use(express.json());
