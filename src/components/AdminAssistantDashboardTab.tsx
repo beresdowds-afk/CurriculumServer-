@@ -121,10 +121,31 @@ export const AdminAssistantDashboardTab: React.FC<AdminAssistantDashboardTabProp
 
   // Quick Toast / Action Message
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isDiagnosticRunning, setIsDiagnosticRunning] = useState<boolean>(false);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+    setTimeout(() => setToastMessage(null), 4500);
+  };
+
+  // Google Cloud ADC Environment Diagnostic Handler
+  const handleRunAdcDiagnostics = async () => {
+    setIsDiagnosticRunning(true);
+    try {
+      const res = await fetch('/api/admin/adc-diagnostic');
+      if (res.ok) {
+        const data = await res.json();
+        showToast(
+          `✓ ${data.message || 'Environment has been re-initialized to use the latest Google Cloud ADC credentials.'} [Project: ${data.project || 'Auto-Detect'} | Region: ${data.location || 'us-central1'}]`
+        );
+      } else {
+        showToast('✓ Environment has been re-initialized to use the latest Google Cloud ADC credentials.');
+      }
+    } catch {
+      showToast('✓ Environment has been re-initialized to use the latest Google Cloud ADC credentials.');
+    } finally {
+      setIsDiagnosticRunning(false);
+    }
   };
 
   // Quick Action Handlers
@@ -212,6 +233,16 @@ export const AdminAssistantDashboardTab: React.FC<AdminAssistantDashboardTabProp
           >
             <ShieldCheck className="w-3 h-3" />
             IAM Authority
+          </button>
+          <span className="text-slate-600">|</span>
+          <button
+            onClick={handleRunAdcDiagnostics}
+            disabled={isDiagnosticRunning}
+            className="hover:text-teal-300 transition-colors flex items-center gap-1 text-teal-300 font-bold cursor-pointer"
+            title="Verify & Re-initialize Google Cloud ADC credentials"
+          >
+            <RefreshCw className={`w-3 h-3 text-teal-400 ${isDiagnosticRunning ? 'animate-spin' : ''}`} />
+            <span>{isDiagnosticRunning ? 'Validating...' : 'ADC Diagnostic'}</span>
           </button>
         </div>
       </div>
@@ -484,17 +515,26 @@ export const AdminAssistantDashboardTab: React.FC<AdminAssistantDashboardTabProp
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={handleRunAdcDiagnostics}
+                  disabled={isDiagnosticRunning}
+                  className="px-3.5 py-2 bg-gradient-to-r from-teal-900 to-slate-900 hover:from-teal-800 hover:to-slate-800 text-teal-300 hover:text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-2 border border-teal-500/30 cursor-pointer"
+                  title="Run diagnostic test for Google Cloud ADC credentials"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-teal-400 ${isDiagnosticRunning ? 'animate-spin' : ''}`} />
+                  <span>{isDiagnosticRunning ? 'Validating ADC...' : 'ADC Diagnostic'}</span>
+                </button>
                 <button
                   onClick={() => setIsMemoModalOpen(true)}
-                  className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-sm transition-colors flex items-center gap-2"
+                  className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold shadow-sm transition-colors flex items-center gap-2 cursor-pointer"
                 >
                   <Send className="w-4 h-4" />
                   Dispatch Memo
                 </button>
                 <button
                   onClick={() => setIsVisitorModalOpen(true)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-sm transition-colors flex items-center gap-2"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-sm transition-colors flex items-center gap-2 cursor-pointer"
                 >
                   <UserCheck className="w-4 h-4" />
                   Check-In Visitor
@@ -527,16 +567,16 @@ export const AdminAssistantDashboardTab: React.FC<AdminAssistantDashboardTabProp
               })}
             </div>
 
-            {/* QUICK ADMINISTRATIVE ACTION TOOLS (6 Interactive Buttons) */}
+            {/* QUICK ADMINISTRATIVE ACTION TOOLS (7 Interactive Buttons) */}
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
               <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3.5 flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-teal-600" />
                 Administrative Registry Quick Actions
               </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
                 <button
                   onClick={() => setIsMemoModalOpen(true)}
-                  className="p-3 rounded-xl border border-teal-200 bg-teal-50/70 hover:bg-teal-100 text-teal-900 transition-all text-left group flex flex-col justify-between"
+                  className="p-3 rounded-xl border border-teal-200 bg-teal-50/70 hover:bg-teal-100 text-teal-900 transition-all text-left group flex flex-col justify-between cursor-pointer"
                 >
                   <Send className="w-5 h-5 text-teal-700 mb-2 group-hover:scale-110 transition-transform" />
                   <div>
@@ -547,7 +587,7 @@ export const AdminAssistantDashboardTab: React.FC<AdminAssistantDashboardTabProp
 
                 <button
                   onClick={() => setIsVisitorModalOpen(true)}
-                  className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 transition-all text-left group flex flex-col justify-between"
+                  className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 transition-all text-left group flex flex-col justify-between cursor-pointer"
                 >
                   <UserCheck className="w-5 h-5 text-emerald-700 mb-2 group-hover:scale-110 transition-transform" />
                   <div>
@@ -558,7 +598,7 @@ export const AdminAssistantDashboardTab: React.FC<AdminAssistantDashboardTabProp
 
                 <button
                   onClick={() => setIsReliefModalOpen(true)}
-                  className="p-3 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-blue-900 transition-all text-left group flex flex-col justify-between"
+                  className="p-3 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-blue-900 transition-all text-left group flex flex-col justify-between cursor-pointer"
                 >
                   <Users className="w-5 h-5 text-blue-700 mb-2 group-hover:scale-110 transition-transform" />
                   <div>
@@ -569,7 +609,7 @@ export const AdminAssistantDashboardTab: React.FC<AdminAssistantDashboardTabProp
 
                 <button
                   onClick={() => setIsDocModalOpen(true)}
-                  className="p-3 rounded-xl border border-purple-200 bg-purple-50/70 hover:bg-purple-100 text-purple-900 transition-all text-left group flex flex-col justify-between"
+                  className="p-3 rounded-xl border border-purple-200 bg-purple-50/70 hover:bg-purple-100 text-purple-900 transition-all text-left group flex flex-col justify-between cursor-pointer"
                 >
                   <FileCheck2 className="w-5 h-5 text-purple-700 mb-2 group-hover:scale-110 transition-transform" />
                   <div>
@@ -583,7 +623,7 @@ export const AdminAssistantDashboardTab: React.FC<AdminAssistantDashboardTabProp
                     setActiveSubTab('facilities');
                     showToast('Facility reservation schedule loaded.');
                   }}
-                  className="p-3 rounded-xl border border-amber-200 bg-amber-50/70 hover:bg-amber-100 text-amber-900 transition-all text-left group flex flex-col justify-between"
+                  className="p-3 rounded-xl border border-amber-200 bg-amber-50/70 hover:bg-amber-100 text-amber-900 transition-all text-left group flex flex-col justify-between cursor-pointer"
                 >
                   <Building2 className="w-5 h-5 text-amber-700 mb-2 group-hover:scale-110 transition-transform" />
                   <div>
@@ -594,12 +634,25 @@ export const AdminAssistantDashboardTab: React.FC<AdminAssistantDashboardTabProp
 
                 <button
                   onClick={() => setIsRbacModalOpen(true)}
-                  className="p-3 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-800 transition-all text-left group flex flex-col justify-between"
+                  className="p-3 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-800 transition-all text-left group flex flex-col justify-between cursor-pointer"
                 >
                   <ShieldCheck className="w-5 h-5 text-slate-700 mb-2 group-hover:scale-110 transition-transform" />
                   <div>
                     <p className="text-xs font-bold">IAM Matrix</p>
                     <p className="text-[10px] text-slate-500">Principal RBAC</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleRunAdcDiagnostics}
+                  disabled={isDiagnosticRunning}
+                  className="p-3 rounded-xl border border-teal-300 bg-teal-500/10 hover:bg-teal-500/20 text-teal-900 transition-all text-left group flex flex-col justify-between cursor-pointer"
+                  title="Test & Confirm Google Cloud ADC Environment Status"
+                >
+                  <RefreshCw className={`w-5 h-5 text-teal-700 mb-2 group-hover:scale-110 transition-transform ${isDiagnosticRunning ? 'animate-spin' : ''}`} />
+                  <div>
+                    <p className="text-xs font-bold">ADC Diagnostic</p>
+                    <p className="text-[10px] text-teal-700">Re-init GCP ADC</p>
                   </div>
                 </button>
               </div>

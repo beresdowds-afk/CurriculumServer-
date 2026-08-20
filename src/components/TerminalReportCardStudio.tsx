@@ -22,7 +22,11 @@ import {
   Calendar,
   Layers,
   ChevronRight,
-  TrendingUp
+  TrendingUp,
+  Eye,
+  ZoomIn,
+  ZoomOut,
+  Maximize2
 } from 'lucide-react';
 
 interface TerminalReportCardStudioProps {
@@ -46,6 +50,9 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isAiRemarkGenerating, setIsAiRemarkGenerating] = useState<boolean>(false);
   const [stampVerified, setStampVerified] = useState<boolean>(true);
+  const [isPrintPreviewActive, setIsPrintPreviewActive] = useState<boolean>(false);
+  const [printPaperSize, setPrintPaperSize] = useState<'A4' | 'Letter'>('A4');
+  const [previewZoom, setPreviewZoom] = useState<number>(100);
 
   const printAreaRef = useRef<HTMLDivElement>(null);
 
@@ -276,14 +283,54 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
 
           {/* Right Column: High Fidelity Printable Report Card Sheet */}
           <div className="lg:col-span-3 space-y-4">
-            {/* Quick Actions Panel */}
+            {/* Print Preview & Action Bar */}
             <div className="flex flex-wrap items-center justify-between bg-slate-900 border border-slate-800 rounded-2xl p-3.5 gap-3 text-xs">
-              <div className="flex items-center gap-2 text-slate-300">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>Security Stamp:</span>
-                <span className="font-mono text-emerald-400 font-bold">
-                  {currentReport.qrSecurityVerificationCode}
-                </span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsPrintPreviewActive(!isPrintPreviewActive)}
+                  className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    isPrintPreviewActive
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>{isPrintPreviewActive ? 'Exit Print Preview' : 'A4 Print Preview'}</span>
+                </button>
+
+                {isPrintPreviewActive && (
+                  <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800">
+                    <button
+                      onClick={() => setPreviewZoom(z => Math.max(60, z - 10))}
+                      className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                      title="Zoom Out"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="font-mono text-[11px] text-indigo-400 font-bold px-1">{previewZoom}%</span>
+                    <button
+                      onClick={() => setPreviewZoom(z => Math.min(130, z + 10))}
+                      className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                      title="Zoom In"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                    </button>
+                    <div className="h-3 w-px bg-slate-800 mx-1" />
+                    <select
+                      value={printPaperSize}
+                      onChange={e => setPrintPaperSize(e.target.value as 'A4' | 'Letter')}
+                      className="bg-transparent text-[11px] text-slate-300 font-bold focus:outline-none cursor-pointer"
+                    >
+                      <option value="A4">A4 (210 × 297mm)</option>
+                      <option value="Letter">Letter (8.5 × 11")</option>
+                    </select>
+                  </div>
+                )}
+
+                <div className="hidden sm:flex items-center gap-1.5 text-slate-400">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Seal: <strong className="font-mono text-emerald-400">{currentReport.qrSecurityVerificationCode}</strong></span>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -293,7 +340,7 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
                   className="px-3 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 font-bold flex items-center gap-1.5 transition-all cursor-pointer"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>{isAiRemarkGenerating ? 'Formulating Remark...' : 'AI Principal Remark'}</span>
+                  <span>{isAiRemarkGenerating ? 'Drafting...' : 'AI Principal Remark'}</span>
                 </button>
 
                 <button
@@ -304,17 +351,40 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
                       : 'bg-slate-800 text-slate-400 border-slate-700'
                   }`}
                 >
-                  {stampVerified ? '✓ Stamp Verified' : 'Stamp Unverified'}
+                  {stampVerified ? '✓ Verified Stamp' : 'Stamp Unverified'}
+                </button>
+
+                <button
+                  onClick={handlePrint}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 shadow transition-all cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Sheet</span>
                 </button>
               </div>
             </div>
 
-            {/* Official Report Sheet Canvas (Print-Friendly Structure) */}
-            <div 
-              ref={printAreaRef}
-              className="bg-white text-slate-900 rounded-3xl p-6 sm:p-10 border border-slate-300 shadow-2xl space-y-6 printable-report-card relative overflow-hidden"
-              style={{ minHeight: '960px' }}
-            >
+            {/* Print Preview Container with Paper Dimensions */}
+            <div className={`transition-all duration-300 ${isPrintPreviewActive ? 'bg-slate-950/80 p-6 sm:p-10 rounded-3xl border border-indigo-500/30 flex flex-col items-center overflow-x-auto' : ''}`}>
+              {isPrintPreviewActive && (
+                <div className="mb-4 text-xs text-indigo-400 font-mono flex items-center gap-2">
+                  <span>📄 {printPaperSize} Print-Ready Canvas (Portrait 1-Page Layout Bounds)</span>
+                  <span className="text-slate-500">• Target Margin: 12mm</span>
+                </div>
+              )}
+
+              {/* Official Report Sheet Canvas (Print-Friendly Structure) */}
+              <div 
+                ref={printAreaRef}
+                className="bg-white text-slate-900 rounded-3xl p-6 sm:p-10 border border-slate-300 shadow-2xl space-y-6 printable-report-card relative overflow-hidden transition-transform duration-200"
+                style={{ 
+                  minHeight: '960px',
+                  width: isPrintPreviewActive ? (printPaperSize === 'A4' ? '210mm' : '8.5in') : '100%',
+                  maxWidth: isPrintPreviewActive ? (printPaperSize === 'A4' ? '210mm' : '8.5in') : '100%',
+                  transform: isPrintPreviewActive ? `scale(${previewZoom / 100})` : 'none',
+                  transformOrigin: 'top center'
+                }}
+              >
               {/* Watermark Crest */}
               <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
                 <GraduationCap className="w-96 h-96 text-slate-950" />
@@ -588,7 +658,8 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
             </div>
           </div>
         </div>
-      )}
+      </div>
+    )}
 
       {/* VIEW MODE: Multi-Year Transcript Record */}
       {activeViewMode === 'multi_year_transcript' && (

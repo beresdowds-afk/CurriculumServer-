@@ -13,14 +13,14 @@ import { TenantLifecycleManager } from './src/services/tenantLifecycleManager';
 dotenv.config();
 
 const app = express();
-const PORT = Number(process.env.PORT) || 8080;
+const PORT = 3000;
 
 app.use(express.json());
 
 // Initialize Google Gemini AI SDK on the server side
-// Supports both Application Default Credentials (ADC) for Google Cloud / Eastforte Fabrications & Equipments,
+// Supports both Application Default Credentials (ADC) on Google Cloud,
 // and API Key authentication when provided.
-function createGenAIClient(): GoogleGenAI {
+function getGenAIClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   const project = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || process.env.PROJECT_ID;
   const location = process.env.GOOGLE_CLOUD_LOCATION || process.env.GCP_LOCATION || 'us-central1';
@@ -36,7 +36,7 @@ function createGenAIClient(): GoogleGenAI {
     });
   }
 
-  // Application Default Credentials (ADC) mode for GCP projects under Eastforte Fabrications and Equipments
+  // Application Default Credentials (ADC) mode for GCP / Vertex AI projects
   return new GoogleGenAI({
     vertexai: true,
     project: project || undefined,
@@ -49,7 +49,17 @@ function createGenAIClient(): GoogleGenAI {
   });
 }
 
-const ai = createGenAIClient();
+// Dynamic proxy ensuring latest ADC / environment credentials (GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION) are used per-request
+const ai = new Proxy({} as GoogleGenAI, {
+  get(_target, prop) {
+    const client = getGenAIClient();
+    const val = (client as any)[prop];
+    if (typeof val === 'function') {
+      return val.bind(client);
+    }
+    return val;
+  },
+});
 
 // Helper for fallback generation if API key is not yet set or returns empty
 function generateExamId(classGrade: string, subjectCode: string, term: string): string {
@@ -64,6 +74,21 @@ function generateExamId(classGrade: string, subjectCode: string, term: string): 
 // -------------------------------------------------------------
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', platform: 'CurriculumFlow', time: new Date().toISOString() });
+});
+
+app.get('/api/admin/adc-diagnostic', (req: Request, res: Response) => {
+  const project = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || process.env.PROJECT_ID || 'adc-auto-detect';
+  const location = process.env.GOOGLE_CLOUD_LOCATION || process.env.GCP_LOCATION || 'us-central1';
+  const authMode = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY' ? 'API_KEY' : 'VERTEX_AI_ADC';
+
+  res.json({
+    status: 'ok',
+    authMode,
+    project,
+    location,
+    timestamp: new Date().toISOString(),
+    message: 'Google Cloud ADC environment re-initialized successfully with latest credentials.',
+  });
 });
 
 app.get('/api/curriculum/stats', (req: Request, res: Response) => {

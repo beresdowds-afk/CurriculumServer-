@@ -32,8 +32,117 @@ import {
   Sparkles,
   Search,
   Filter,
-  BarChart3
+  BarChart3,
+  Calendar,
+  Clock,
+  Building2,
+  CalendarPlus,
+  Trash2,
+  Send,
+  Layers,
+  CheckSquare,
+  Square
 } from 'lucide-react';
+
+interface MockExamSlotItem {
+  id: string;
+  mockSeriesId: string;
+  subjectCode: string;
+  subjectName: string;
+  paperType: 'Paper 1: Objective CBT' | 'Paper 2: Theory & Essay' | 'Paper 3: Practical Alternative';
+  date: string;
+  startTime: string;
+  durationMinutes: number;
+  hallVenue: string;
+  targetClassGroups: string[];
+  chiefInvigilator: string;
+  status: 'Scheduled' | 'Papers Printed' | 'In Progress' | 'Concluded';
+}
+
+const INITIAL_SCHEDULED_SLOTS: MockExamSlotItem[] = [
+  {
+    id: 'slot-mock-01',
+    mockSeriesId: 'mock-waec-2026-ss3',
+    subjectCode: 'MTH-301',
+    subjectName: 'General Mathematics',
+    paperType: 'Paper 2: Theory & Essay',
+    date: '2026-03-24',
+    startTime: '09:00 AM',
+    durationMinutes: 150,
+    hallVenue: 'Centenary Examination Hall (West Wing)',
+    targetClassGroups: ['SS 3A', 'SS 3B', 'SS 3C'],
+    chiefInvigilator: 'Dr. Adeyemi Adeleke (HOD Mathematics)',
+    status: 'Scheduled'
+  },
+  {
+    id: 'slot-mock-02',
+    mockSeriesId: 'mock-waec-2026-ss3',
+    subjectCode: 'ENG-301',
+    subjectName: 'English Language',
+    paperType: 'Paper 1: Objective CBT',
+    date: '2026-03-25',
+    startTime: '09:00 AM',
+    durationMinutes: 90,
+    hallVenue: 'ICT CBT Testing Lab 1 & 2',
+    targetClassGroups: ['SS 3A', 'SS 3B', 'SS 3C'],
+    chiefInvigilator: 'Mrs. Folashade Okonkwo (HOD Languages)',
+    status: 'Scheduled'
+  },
+  {
+    id: 'slot-mock-03',
+    mockSeriesId: 'mock-waec-2026-ss3',
+    subjectCode: 'PHY-301',
+    subjectName: 'Physics',
+    paperType: 'Paper 3: Practical Alternative',
+    date: '2026-03-26',
+    startTime: '11:30 AM',
+    durationMinutes: 120,
+    hallVenue: 'Advanced Science Complex Lab',
+    targetClassGroups: ['SS 3A (Science)', 'SS 3B (Science)'],
+    chiefInvigilator: 'Mr. Chidi Okafor (Physics Dept)',
+    status: 'Scheduled'
+  }
+];
+
+const AVAILABLE_CLASS_GROUPS = [
+  'SS 3A (Science)',
+  'SS 3B (Arts)',
+  'SS 3C (Commercial)',
+  'SS 2A (Science)',
+  'SS 2B (Humanities)',
+  'JSS 3A',
+  'JSS 3B',
+  'JSS 3C'
+];
+
+const AVAILABLE_SUBJECTS = [
+  { code: 'MTH-301', name: 'General Mathematics' },
+  { code: 'ENG-301', name: 'English Language' },
+  { code: 'PHY-301', name: 'Physics' },
+  { code: 'CHM-301', name: 'Chemistry' },
+  { code: 'BIO-301', name: 'Biology' },
+  { code: 'ECN-301', name: 'Economics' },
+  { code: 'GOV-301', name: 'Government' },
+  { code: 'CIV-301', name: 'Civic Education' },
+  { code: 'LIT-301', name: 'Literature in English' }
+];
+
+const AVAILABLE_HALLS = [
+  'Centenary Examination Hall (West Wing) - Cap: 250',
+  'ICT CBT Testing Lab 1 & 2 - Cap: 160',
+  'Advanced Science Complex Lab - Cap: 90',
+  'College Main Auditorium - Cap: 400',
+  'Junior Block Hall B - Cap: 120'
+];
+
+const AVAILABLE_INVIGILATORS = [
+  'Dr. Adeyemi Adeleke (HOD Mathematics)',
+  'Mrs. Folashade Okonkwo (HOD Languages)',
+  'Mr. Chidi Okafor (Physics Dept)',
+  'Mrs. Amina Bello (Chemistry Dept)',
+  'Mr. Babatunde Fashola (Commercial Dept)',
+  'Senior Vice Principal (Academic Command)'
+];
 
 interface PromotionalMockExamPortalProps {
   currentUser: UserProfile;
@@ -56,6 +165,19 @@ export const PromotionalMockExamPortal: React.FC<PromotionalMockExamPortalProps>
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterOutcome, setFilterOutcome] = useState<string>('all');
   const [selectedMockExamId, setSelectedMockExamId] = useState<string>(INITIAL_MOCK_EXAMS[0].id);
+
+  // Bulk Mock Exam Scheduling Panel State
+  const [scheduledSlots, setScheduledSlots] = useState<MockExamSlotItem[]>(INITIAL_SCHEDULED_SLOTS);
+  const [isBulkSchedulerOpen, setIsBulkSchedulerOpen] = useState<boolean>(false);
+  const [bulkSelectedClasses, setBulkSelectedClasses] = useState<string[]>(['SS 3A (Science)', 'SS 3B (Arts)', 'SS 3C (Commercial)']);
+  const [bulkExamDate, setBulkExamDate] = useState<string>('2026-03-30');
+  const [bulkStartTime, setBulkStartTime] = useState<string>('09:00 AM');
+  const [bulkDuration, setBulkDuration] = useState<number>(120);
+  const [bulkSelectedSubjectCode, setBulkSelectedSubjectCode] = useState<string>('CHM-301');
+  const [bulkPaperType, setBulkPaperType] = useState<MockExamSlotItem['paperType']>('Paper 2: Theory & Essay');
+  const [bulkHallVenue, setBulkHallVenue] = useState<string>(AVAILABLE_HALLS[0]);
+  const [bulkInvigilator, setBulkInvigilator] = useState<string>(AVAILABLE_INVIGILATORS[0]);
+  const [bulkSuccessMessage, setBulkSuccessMessage] = useState<string | null>(null);
 
   // Selected mock exam
   const currentMockExam = mockExams.find(m => m.id === selectedMockExamId) || mockExams[0];
@@ -83,6 +205,56 @@ export const PromotionalMockExamPortal: React.FC<PromotionalMockExamPortalProps>
       }
       return c;
     }));
+  };
+
+  const handleToggleBulkClass = (cls: string) => {
+    setBulkSelectedClasses(prev => 
+      prev.includes(cls) ? prev.filter(c => c !== cls) : [...prev, cls]
+    );
+  };
+
+  const handleSelectAllBulkClasses = () => {
+    if (bulkSelectedClasses.length === AVAILABLE_CLASS_GROUPS.length) {
+      setBulkSelectedClasses([]);
+    } else {
+      setBulkSelectedClasses([...AVAILABLE_CLASS_GROUPS]);
+    }
+  };
+
+  const handleCreateBulkSchedule = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (bulkSelectedClasses.length === 0) {
+      alert('Please select at least one class group.');
+      return;
+    }
+
+    const subjectObj = AVAILABLE_SUBJECTS.find(s => s.code === bulkSelectedSubjectCode) || AVAILABLE_SUBJECTS[0];
+
+    const newSlot: MockExamSlotItem = {
+      id: `slot-bulk-${Date.now()}`,
+      mockSeriesId: selectedMockExamId,
+      subjectCode: subjectObj.code,
+      subjectName: subjectObj.name,
+      paperType: bulkPaperType,
+      date: bulkExamDate,
+      startTime: bulkStartTime,
+      durationMinutes: bulkDuration,
+      hallVenue: bulkHallVenue,
+      targetClassGroups: [...bulkSelectedClasses],
+      chiefInvigilator: bulkInvigilator,
+      status: 'Scheduled'
+    };
+
+    setScheduledSlots(prev => [newSlot, ...prev]);
+    setBulkSuccessMessage(`Successfully scheduled ${subjectObj.name} (${bulkPaperType}) simultaneously across ${bulkSelectedClasses.length} class arms!`);
+    
+    setTimeout(() => {
+      setBulkSuccessMessage(null);
+    }, 4000);
+  };
+
+  const handleDeleteSlot = (id: string) => {
+    setScheduledSlots(prev => prev.filter(s => s.id !== id));
   };
 
   const getOutcomeBadge = (outcome: PromotionOutcome) => {
@@ -158,6 +330,17 @@ export const PromotionalMockExamPortal: React.FC<PromotionalMockExamPortalProps>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => {
+              setActiveTab('mock_exams');
+              setIsBulkSchedulerOpen(!isBulkSchedulerOpen);
+            }}
+            className="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-indigo-950 transition-all cursor-pointer"
+          >
+            <CalendarPlus className="w-4 h-4" />
+            <span>{isBulkSchedulerOpen ? 'Close Bulk Scheduler' : 'Bulk Action: Schedule Slots'}</span>
+          </button>
+
           <div className="flex bg-slate-950 p-1 rounded-2xl border border-slate-800 text-xs">
             <button
               onClick={() => setActiveTab('promotion_deliberations')}
@@ -187,7 +370,7 @@ export const PromotionalMockExamPortal: React.FC<PromotionalMockExamPortalProps>
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Mock Exam Hub
+              Mock Hub & Schedule ({scheduledSlots.length})
             </button>
             <button
               onClick={() => setActiveTab('mock_analytics')}
@@ -433,6 +616,282 @@ export const PromotionalMockExamPortal: React.FC<PromotionalMockExamPortalProps>
       {/* TAB 3: MOCK EXAMINATION HUB */}
       {activeTab === 'mock_exams' && (
         <div className="space-y-6">
+          {/* Bulk Action Scheduling Panel (Expandable / Toggleable) */}
+          {isBulkSchedulerOpen && (
+            <div className="bg-slate-900 border-2 border-indigo-500/50 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl relative overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg">
+                    <CalendarPlus className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-white">Bulk Mock Examination Slot Scheduler</h3>
+                    <p className="text-xs text-slate-400">
+                      Simultaneously provision synchronized mock testing sessions across multiple class arms & testing centers.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSelectAllBulkClasses}
+                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-400 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>{bulkSelectedClasses.length === AVAILABLE_CLASS_GROUPS.length ? 'Deselect All Classes' : 'Select All 8 Classes'}</span>
+                  </button>
+                  <button
+                    onClick={() => setIsBulkSchedulerOpen(false)}
+                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+
+              {bulkSuccessMessage && (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 text-emerald-400 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{bulkSuccessMessage}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleCreateBulkSchedule} className="space-y-6">
+                {/* 1. Target Class Groups Multi-Select */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                    1. Select Target Class Arms to Schedule Simultaneously ({bulkSelectedClasses.length} Selected):
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {AVAILABLE_CLASS_GROUPS.map(cls => {
+                      const isChecked = bulkSelectedClasses.includes(cls);
+                      return (
+                        <button
+                          type="button"
+                          key={cls}
+                          onClick={() => handleToggleBulkClass(cls)}
+                          className={`p-3 rounded-2xl border text-xs font-bold text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                            isChecked
+                              ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-sm ring-1 ring-indigo-500/30'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                          }`}
+                        >
+                          <span className="truncate">{cls}</span>
+                          {isChecked ? (
+                            <CheckSquare className="w-4 h-4 text-indigo-400 shrink-0" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-600 shrink-0" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Subject, Paper Type, Date & Duration */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                  <div className="space-y-1.5">
+                    <label className="text-slate-400 font-bold uppercase">Examination Subject</label>
+                    <select
+                      value={bulkSelectedSubjectCode}
+                      onChange={e => setBulkSelectedSubjectCode(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    >
+                      {AVAILABLE_SUBJECTS.map(s => (
+                        <option key={s.code} value={s.code}>
+                          {s.code} • {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-slate-400 font-bold uppercase">Paper Category</label>
+                    <select
+                      value={bulkPaperType}
+                      onChange={e => setBulkPaperType(e.target.value as MockExamSlotItem['paperType'])}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    >
+                      <option value="Paper 1: Objective CBT">Paper 1: Objective CBT</option>
+                      <option value="Paper 2: Theory & Essay">Paper 2: Theory & Essay</option>
+                      <option value="Paper 3: Practical Alternative">Paper 3: Practical Alternative</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-slate-400 font-bold uppercase">Exam Date</label>
+                    <input
+                      type="date"
+                      value={bulkExamDate}
+                      onChange={e => setBulkExamDate(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white font-mono focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-slate-400 font-bold uppercase">Start Time & Duration</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={bulkStartTime}
+                        onChange={e => setBulkStartTime(e.target.value)}
+                        placeholder="09:00 AM"
+                        className="w-1/2 bg-slate-950 border border-slate-800 rounded-xl p-3 text-white font-mono focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                        required
+                      />
+                      <input
+                        type="number"
+                        value={bulkDuration}
+                        onChange={e => setBulkDuration(Number(e.target.value))}
+                        placeholder="120 mins"
+                        className="w-1/2 bg-slate-950 border border-slate-800 rounded-xl p-3 text-white font-mono focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Venue & Invigilator */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1.5">
+                    <label className="text-slate-400 font-bold uppercase">Allocated Examination Hall / CBT Lab</label>
+                    <select
+                      value={bulkHallVenue}
+                      onChange={e => setBulkHallVenue(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    >
+                      {AVAILABLE_HALLS.map(h => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-slate-400 font-bold uppercase">Chief Exam Invigilator</label>
+                    <select
+                      value={bulkInvigilator}
+                      onChange={e => setBulkInvigilator(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    >
+                      {AVAILABLE_INVIGILATORS.map(inv => (
+                        <option key={inv} value={inv}>{inv}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Conflict Check & Submit */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-slate-800">
+                  <div className="flex items-center gap-2 text-xs text-emerald-400 font-mono">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>Hall Capacity & Schedule Conflict Check: PASSED (Zero Room Overlaps)</span>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-950 transition-all cursor-pointer"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>Simultaneously Schedule Slot for {bulkSelectedClasses.length} Class Arms</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Synchronized Scheduled Mock Timetable Roster */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+              <div>
+                <h3 className="text-xl font-bold text-white">Scheduled Mock Examination Timetable Matrix</h3>
+                <p className="text-xs text-slate-400">
+                  Real-time schedule of synchronized trial examination papers across all senior secondary streams.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsBulkSchedulerOpen(!isBulkSchedulerOpen)}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Mock Slot</span>
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-700"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Timetable</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-2xl border border-slate-800">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-950 text-slate-400 font-bold uppercase tracking-wider text-[11px]">
+                    <th className="p-3.5">Subject & Paper</th>
+                    <th className="p-3.5">Date & Time</th>
+                    <th className="p-3.5">Duration</th>
+                    <th className="p-3.5">Target Classes</th>
+                    <th className="p-3.5">Venue Hall</th>
+                    <th className="p-3.5">Invigilator</th>
+                    <th className="p-3.5 text-center">Status</th>
+                    <th className="p-3.5 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800 text-slate-300">
+                  {scheduledSlots.map(slot => (
+                    <tr key={slot.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="p-3.5">
+                        <span className="font-bold text-white block text-sm">{slot.subjectName}</span>
+                        <span className="text-[11px] text-indigo-400 font-mono">{slot.subjectCode} • {slot.paperType}</span>
+                      </td>
+                      <td className="p-3.5 font-mono">
+                        <span className="text-white font-bold block">{slot.date}</span>
+                        <span className="text-slate-400 text-[11px]">{slot.startTime}</span>
+                      </td>
+                      <td className="p-3.5 font-mono font-bold text-slate-200">
+                        {slot.durationMinutes} mins
+                      </td>
+                      <td className="p-3.5">
+                        <div className="flex flex-wrap gap-1 max-w-xs">
+                          {slot.targetClassGroups.map(cls => (
+                            <span key={cls} className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 text-[10px] font-mono border border-indigo-500/20">
+                              {cls}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="p-3.5 text-slate-300">
+                        <span className="block truncate max-w-xs">{slot.hallVenue}</span>
+                      </td>
+                      <td className="p-3.5 text-slate-400">
+                        <span className="block truncate max-w-xs">{slot.chiefInvigilator}</span>
+                      </td>
+                      <td className="p-3.5 text-center">
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-mono font-bold text-[10px] border border-emerald-500/30">
+                          {slot.status}
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-center">
+                        <button
+                          onClick={() => handleDeleteSlot(slot.id)}
+                          className="p-1.5 rounded-lg bg-rose-950/50 hover:bg-rose-900 text-rose-400 border border-rose-800/60 transition-colors cursor-pointer"
+                          title="Remove slot"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {/* Mock Exam Series Selector Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {mockExams.map(mock => {

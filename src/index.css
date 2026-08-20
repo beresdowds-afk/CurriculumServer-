@@ -1,1 +1,62 @@
 @import "tailwindcss";
+
+@layer utilities {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 8mm 8mm 8mm;
+  }
+}
+
+@media print {
+  /* Hide all application navigation, headers, footers, sidebars and background layers */
+  nav,
+  header,
+  footer,
+  aside,
+  .no-print,
+  button,
+  .print-hidden {
+    display: none !important;
+  }
+
+  /* Optimize root background and text for high-fidelity physical paper printing */
+  html, body, #root {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 11pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Printable Report Sheet Container Formatting for A4 / Letter */
+  .printable-report-card {
+    box-shadow: none !important;
+    border: 1px solid #94a3b8 !important;
+    border-radius: 0 !important;
+    margin: 0 auto !important;
+    padding: 16px 20px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: auto !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    background-color: #ffffff !important;
+  }
+
+  /* Avoid page-breaks inside crucial evaluation elements */
+  .printable-report-card table,
+  .printable-report-card tr,
+  .printable-report-card .grid,
+  .printable-report-card .border {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Enhance table border crispness on physical print */
+  .printable-report-card table th,
+  .printable-report-card table td {
+    border-color: #cbd5e1 !important;
+  }
+}

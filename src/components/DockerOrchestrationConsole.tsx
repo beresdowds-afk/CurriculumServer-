@@ -214,6 +214,105 @@ export const DockerOrchestrationConsole: React.FC<DockerOrchestrationConsoleProp
         </div>
       </div>
 
+      {/* Real-Time Per-Tenant Resource Utilization & Isolation Card */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center">
+              <Activity className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white">Live Tenant Container Resource Utilization & Isolation Monitor</h3>
+              <p className="text-xs text-slate-400">
+                Real-time cgroup v2 process metrics: CPU core throttling, allocated resident memory, and sandboxed namespace health.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 text-xs">
+            <div className="flex items-center gap-1.5 text-emerald-400 font-mono">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Telemetry Polling (1.5s)</span>
+            </div>
+            <button
+              onClick={refreshState}
+              className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold transition-colors cursor-pointer border border-slate-700"
+            >
+              Sync Metrics
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {containers.map(c => {
+            const memoryPercent = Math.round((c.memoryUsageMb / c.cgroupLimits.memoryLimitMb) * 100);
+            const isSelected = c.tenantId === selectedTenantId;
+            const isRunning = c.lifecycleState === 'running';
+
+            return (
+              <div
+                key={c.containerId}
+                onClick={() => setSelectedTenantId(c.tenantId)}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-3 ${
+                  isSelected
+                    ? 'bg-slate-950 border-sky-500 ring-1 ring-sky-500/30'
+                    : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <span className="font-bold text-white text-xs block truncate max-w-[150px]">{c.tenantSchoolName}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">{c.containerId}</span>
+                  </div>
+                  {getLifecycleBadge(c.lifecycleState)}
+                </div>
+
+                {/* CPU Utilization Progress */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono">
+                    <span className="text-slate-400">CPU Usage</span>
+                    <span className={`font-bold ${c.cpuUsagePercent > 70 ? 'text-rose-400' : c.cpuUsagePercent > 35 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      {isRunning ? `${c.cpuUsagePercent.toFixed(1)}%` : '0.0%'}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-500 ${
+                        c.cpuUsagePercent > 70 ? 'bg-rose-500' : c.cpuUsagePercent > 35 ? 'bg-amber-500' : 'bg-emerald-500'
+                      }`}
+                      style={{ width: isRunning ? `${Math.min(100, c.cpuUsagePercent)}%` : '0%' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Memory Utilization Progress */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono">
+                    <span className="text-slate-400">Memory (cgroup)</span>
+                    <span className={`font-bold ${memoryPercent > 80 ? 'text-rose-400' : 'text-sky-400'}`}>
+                      {isRunning ? `${c.memoryUsageMb}MB / ${c.cgroupLimits.memoryLimitMb}MB (${memoryPercent}%)` : '0MB (Cold)'}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-500 ${
+                        memoryPercent > 80 ? 'bg-rose-500' : 'bg-sky-500'
+                      }`}
+                      style={{ width: isRunning ? `${Math.min(100, memoryPercent)}%` : '0%' }}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-850 text-[10px] text-slate-400 font-mono">
+                  <span>Shard: {c.databaseShardId}</span>
+                  <span className="text-emerald-400">Cold: {c.coldStartRecoveryTimeMs}ms</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* TAB 1: CONTAINER FLEET LIST */}
       {selectedTab === 'containers' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
