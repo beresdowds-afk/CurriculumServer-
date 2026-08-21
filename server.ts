@@ -13,13 +13,7 @@ import { TenantLifecycleManager } from './src/services/tenantLifecycleManager';
 dotenv.config();
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    `CurriculumFlow Academic Server running on http://0.0.0.0:${PORT}`
-  );
-});
+const PORT = Number(process.env.PORT) || 8080;
 
 app.use(express.json());
 
@@ -1114,6 +1108,12 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+  app.listen(PORT, "0.0.0.0", () => {
+  console.log(
+    `CurriculumFlow Academic Server running on http://0.0.0.0:${PORT}`
+  );
+});
+  
 }
 
 startServer();
