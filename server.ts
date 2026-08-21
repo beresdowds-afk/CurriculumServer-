@@ -1108,10 +1108,14 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(
-    `CurriculumFlow Academic Server running on http://0.0.0.0:${PORT}`
+    `✅ SERVER STARTED SUCCESSFULLY on 0.0.0.0:${PORT}`
   );
+});
+
+server.on("error", (error) => {
+  console.error("❌ SERVER LISTEN ERROR:", error);
 });
   
 }
