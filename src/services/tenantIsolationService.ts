@@ -49,7 +49,7 @@ export class TenantIsolationService {
       databaseHost: 'postgres.cluster.internal',
       databasePort: 5432,
       databaseUser: `usr_${cleanId.substring(0, 16)}`,
-      schemaVersion: tenant.clonedFromTemplateVersion || 'v1.4.2',
+      schemaVersion: tenant.provisionedFromTemplateVersion || tenant.clonedFromTemplateVersion || 'v1.4.2',
       maxPoolConnections: tenant.subscriptionTier === 'Apex Enterprise' ? 50 : 20
     };
   }

@@ -132,7 +132,7 @@ export const FeesLeviesManagementPortal: React.FC<FeesLeviesManagementPortalProp
   const [isSundryOrderModalOpen, setIsSundryOrderModalOpen] = useState(false);
   const [selectedSundryPass, setSelectedSundryPass] = useState<SundryPaymentOrder | null>(null);
   const [isBatchSyncModalOpen, setIsBatchSyncModalOpen] = useState(false);
-  const [isCloneSessionModalOpen, setIsCloneSessionModalOpen] = useState(false);
+  const [isProvisionSessionModalOpen, setIsProvisionSessionModalOpen] = useState(false);
 
   // Fee Simulator State
   const [simulatedTuitionPercent, setSimulatedTuitionPercent] = useState<number>(0);

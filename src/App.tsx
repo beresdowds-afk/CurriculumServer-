@@ -87,6 +87,7 @@ import {
 } from './data/iamAuthData';
 import { INITIAL_SCHOOL_BRAND } from './data/brandManagementData';
 import { 
+  INITIAL_PROVISIONED_TENANTS,
   INITIAL_CLONED_TENANTS, 
   INITIAL_SAAS_METRICS, 
   INITIAL_SAAS_INVOICES,
@@ -95,6 +96,7 @@ import {
 
 // Top Nav & Modular Tab Components
 import { Navbar, MainTabType } from './components/Navbar';
+import { SchoolPublicPortal } from './components/SchoolPublicPortal';
 import { CurriculumServerLandingPage } from './components/CurriculumServerLandingPage';
 import { CurriculumServerDashboard } from './components/CurriculumServerDashboard';
 import { TenantControlCenter } from './components/TenantControlCenter';
@@ -132,6 +134,7 @@ import { ParentDatabaseTab } from './components/ParentDatabaseTab';
 import { UserOnboardingSuiteTab } from './components/UserOnboardingSuiteTab';
 import { TerminalReportCardStudio } from './components/TerminalReportCardStudio';
 import { PromotionalMockExamPortal } from './components/PromotionalMockExamPortal';
+import { LogisticsSupportSuiteTab } from './components/LogisticsSupportSuiteTab';
 import { DockerOrchestrationConsole } from './components/DockerOrchestrationConsole';
 import { NavigationDrawer } from './components/NavigationDrawer';
 import { CurriculumAdvisorModal } from './components/CurriculumAdvisorModal';
@@ -143,6 +146,7 @@ import { ExamBuilderModal } from './components/ExamBuilderModal';
 import { SubjectDetailModal } from './components/SubjectDetailModal';
 import { InstallShareModal } from './components/InstallShareModal';
 import { AuthModal } from './components/AuthModal';
+import { ProvisionSchoolModal } from './components/ProvisionSchoolModal';
 import { CloneSchoolModal } from './components/CloneSchoolModal';
 import { TenantCredentialsModal } from './components/TenantCredentialsModal';
 import { TenantFeaturesModal } from './components/TenantFeaturesModal';
@@ -242,13 +246,13 @@ export default function App() {
 
   // --- CURRICULUM SERVER Multi-Tenant SaaS State ---
   const [platformMode, setPlatformMode] = useState<PlatformViewMode>('tenant_school_instance');
-  const [clonedTenants, setClonedTenants] = useState<TenantSchoolApp[]>(INITIAL_CLONED_TENANTS);
-  const [activeTenant, setActiveTenant] = useState<TenantSchoolApp>(INITIAL_CLONED_TENANTS[0]);
+  const [provisionedTenants, setProvisionedTenants] = useState<TenantSchoolApp[]>(INITIAL_PROVISIONED_TENANTS || INITIAL_CLONED_TENANTS);
+  const [activeTenant, setActiveTenant] = useState<TenantSchoolApp>((INITIAL_PROVISIONED_TENANTS || INITIAL_CLONED_TENANTS)[0]);
   const [saasMetrics, setSaasMetrics] = useState<CurriculumServerSaaSMetrics>(INITIAL_SAAS_METRICS);
   const [saasInvoices, setSaasInvoices] = useState<TenantBillingInvoice[]>(INITIAL_SAAS_INVOICES);
 
   // SaaS Modals State
-  const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
+  const [isProvisionModalOpen, setIsProvisionModalOpen] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isCredentialsModalOpen, setIsCredentialsModalOpen] = useState(false);
   const [selectedTenantForCredentials, setSelectedTenantForCredentials] = useState<TenantSchoolApp | null>(null);
@@ -263,9 +267,9 @@ export default function App() {
   const [isIsolationTestModalOpen, setIsIsolationTestModalOpen] = useState(false);
   const [isVersionRolloutModalOpen, setIsVersionRolloutModalOpen] = useState(false);
 
-  // Provision newly cloned school
-  const handleCloneNewTenant = (newTenant: TenantSchoolApp) => {
-    setClonedTenants(prev => [newTenant, ...prev]);
+  // Provision newly provisioned school
+  const handleProvisionNewTenant = (newTenant: TenantSchoolApp) => {
+    setProvisionedTenants(prev => [newTenant, ...prev]);
     setActiveTenant(newTenant);
     if (newTenant.brandProfile) {
       setSchoolBrand(newTenant.brandProfile);
@@ -307,7 +311,7 @@ export default function App() {
   };
 
   const handleUpdateTenantSecret = (tenantId: string, newSecret: string) => {
-    setClonedTenants(prev => prev.map(t => {
+    setProvisionedTenants(prev => prev.map(t => {
       if (t.id === tenantId) {
         return {
           ...t,
@@ -328,7 +332,7 @@ export default function App() {
     bundles?: Record<CurriculumFlowBundleKey, boolean>,
     overrides?: Record<string, boolean>
   ) => {
-    setClonedTenants(prev => prev.map(t => {
+    setProvisionedTenants(prev => prev.map(t => {
       if (t.id === tenantId) {
         return {
           ...t,
@@ -350,14 +354,14 @@ export default function App() {
   };
 
   const handleUpdateTenantApp = (updatedTenant: TenantSchoolApp) => {
-    setClonedTenants(prev => prev.map(t => t.id === updatedTenant.id ? updatedTenant : t));
+    setProvisionedTenants(prev => prev.map(t => t.id === updatedTenant.id ? updatedTenant : t));
     if (activeTenant?.id === updatedTenant.id) {
       setActiveTenant(updatedTenant);
     }
   };
 
   const handleEarlyBuyout = (tenantId: string, finalAmount: number) => {
-    setClonedTenants(prev => prev.map(t => {
+    setProvisionedTenants(prev => prev.map(t => {
       if (t.id === tenantId && t.leaseToOwnContract) {
         return {
           ...t,
@@ -389,7 +393,7 @@ export default function App() {
   };
 
   const handleToggleTenantStatus = (tenantId: string) => {
-    setClonedTenants(prev => prev.map(t => {
+    setProvisionedTenants(prev => prev.map(t => {
       if (t.id === tenantId) {
         const nextStatus = t.status === 'active' ? 'suspended' : 'active';
         return { ...t, status: nextStatus };
@@ -1241,7 +1245,9 @@ export default function App() {
 
       {/* Main Content Area Frame (Adjusts with Drawer Collapse on Desktop) */}
       <div className={`min-h-screen flex flex-col flex-1 w-full transition-all duration-300 ${
-        isDrawerCollapsed ? 'lg:pl-20' : 'lg:pl-72'
+        activeTab === 'curriculum_server_landing' || activeTab === 'school_public_website'
+          ? 'pl-0'
+          : isDrawerCollapsed ? 'lg:pl-20' : 'lg:pl-72'
       }`}>
         {/* Top Universal Navbar Header */}
         <Navbar
@@ -1264,10 +1270,11 @@ export default function App() {
           onToggleCollapse={() => setIsDrawerCollapsed(prev => !prev)}
           platformMode={platformMode}
           activeTenant={activeTenant}
-          allTenants={clonedTenants}
+          allTenants={provisionedTenants}
           onSelectTenant={(t) => handleSelectTenantToLaunch(t)}
           onSwitchPlatformMode={(mode) => setPlatformMode(mode)}
-          onOpenCloneModal={() => setIsCloneModalOpen(true)}
+          onOpenProvisionModal={() => setIsProvisionModalOpen(true)}
+          onOpenCloneModal={() => setIsProvisionModalOpen(true)}
           onOpenConnectModal={() => setIsConnectModalOpen(true)}
         />
 
@@ -1281,13 +1288,37 @@ export default function App() {
         />
 
         {/* Main Tab Content */}
-        <main className={`flex-1 w-full ${activeTab === 'curriculum_server_landing' || activeTab === 'command_center' || activeTab === 'teacher_dashboard' ? 'p-0 max-w-none' : 'max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8'}`}>
+        <main className={`flex-1 w-full ${activeTab === 'curriculum_server_landing' || activeTab === 'school_public_website' || activeTab === 'command_center' || activeTab === 'teacher_dashboard' ? 'p-0 max-w-none' : 'max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8'}`}>
+        {activeTab === 'school_public_website' && (
+          <SchoolPublicPortal
+            tenant={activeTenant}
+            brandProfile={schoolBrand}
+            academicSessions={academicSessions}
+            termsConfig={termsConfig}
+            schoolEvents={schoolEvents}
+            publicHolidays={publicHolidays}
+            teachers={teachers}
+            onOpenAuthModal={() => {
+              setAuthModalMode('signin');
+              setIsAuthModalOpen(true);
+            }}
+            onNavigateToTab={(tab) => setActiveTab(tab)}
+            onSelectTenant={(t) => handleSelectTenantToLaunch(t)}
+            allTenants={provisionedTenants}
+            onNavigateToPlatformLanding={() => {
+              setPlatformMode('saas_master_console');
+              setActiveTab('curriculum_server_landing');
+            }}
+          />
+        )}
+
         {activeTab === 'curriculum_server_landing' && (
           <CurriculumServerLandingPage
-            tenants={clonedTenants}
+            tenants={provisionedTenants}
             metrics={saasMetrics}
             onLaunchTenant={handleSelectTenantToLaunch}
-            onOpenCloneModal={() => setIsCloneModalOpen(true)}
+            onOpenProvisionModal={() => setIsProvisionModalOpen(true)}
+            onOpenCloneModal={() => setIsProvisionModalOpen(true)}
             onOpenConnectModal={() => setIsConnectModalOpen(true)}
             onNavigateToMasterConsole={() => setActiveTab('tenant_control_center')}
             onNavigateToDomainPortal={() => setActiveTab('domain_management')}
@@ -1307,7 +1338,7 @@ export default function App() {
 
         {activeTab === 'tenant_control_center' && (
           <TenantControlCenter
-            tenants={clonedTenants}
+            tenants={provisionedTenants}
             metrics={saasMetrics}
             invoices={saasInvoices}
             onSelectTenantToLaunch={handleSelectTenantToLaunch}
@@ -1326,11 +1357,11 @@ export default function App() {
 
         {activeTab === 'customer_self_service' && (
           <CustomerSelfServicePortal
-            tenants={clonedTenants}
+            tenants={provisionedTenants}
             invoices={saasInvoices}
             onLaunchTenant={handleSelectTenantToLaunch}
             onUpdateTenant={(updated) => {
-              setClonedTenants(prev => prev.map(t => t.id === updated.id ? updated : t));
+              setProvisionedTenants(prev => prev.map(t => t.id === updated.id ? updated : t));
               if (activeTenant.id === updated.id) {
                 setActiveTenant(updated);
               }
@@ -1341,18 +1372,19 @@ export default function App() {
 
         {activeTab === 'api_webhooks' && (
           <ApiWebhooksPortal
-            tenants={clonedTenants}
+            tenants={provisionedTenants}
             onBack={() => setActiveTab('tenant_control_center')}
           />
         )}
 
         {activeTab === 'curriculum_server' && (
           <CurriculumServerDashboard
-            tenants={clonedTenants}
+            tenants={provisionedTenants}
             metrics={saasMetrics}
             invoices={saasInvoices}
             onSelectTenantToLaunch={handleSelectTenantToLaunch}
-            onOpenCloneModal={() => setIsCloneModalOpen(true)}
+            onOpenProvisionModal={() => setIsProvisionModalOpen(true)}
+            onOpenCloneModal={() => setIsProvisionModalOpen(true)}
             onOpenConnectModal={() => setIsConnectModalOpen(true)}
             onOpenCredentialsModal={(t) => {
               setSelectedTenantForCredentials(t);
@@ -1374,10 +1406,10 @@ export default function App() {
 
         {activeTab === 'domain_management' && (
           <DomainManagementPortal
-            tenants={clonedTenants}
+            tenants={provisionedTenants}
             activeTenant={activeTenant}
             onUpdateTenantDomain={(tenantId, domainName) => {
-              setClonedTenants(prev => prev.map(t => {
+              setProvisionedTenants(prev => prev.map(t => {
                 if (t.id === tenantId) {
                   return {
                     ...t,
@@ -1486,7 +1518,7 @@ export default function App() {
         {activeTab === 'principal_governance' && (
           <PrincipalFeatureGovernanceTab
             currentUser={currentUser}
-            tenant={activeTenant || clonedTenants[0]}
+            tenant={activeTenant || provisionedTenants[0]}
             onUpdateTenant={handleUpdateTenantApp}
             onNavigateTab={setActiveTab}
           />
@@ -1772,9 +1804,20 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'logistics_support' && (
+          <LogisticsSupportSuiteTab
+            currentUser={currentUser}
+            brandProfile={schoolBrand}
+            onOpenSubjectDetails={(subjectId) => {
+              const subj = NERDC_SUBJECTS_DATABASE.find(s => s.id === subjectId);
+              if (subj) setActiveSubjectDetail(subj);
+            }}
+          />
+        )}
+
         {activeTab === 'docker_orchestration' && (
           <DockerOrchestrationConsole
-            tenants={clonedTenants}
+            tenants={provisionedTenants}
             currentUser={currentUser}
             onBackToCockpit={() => setActiveTab('tenant_control_center')}
           />
@@ -1901,10 +1944,10 @@ export default function App() {
       />
 
       {/* SaaS Master Platform Modals */}
-      <CloneSchoolModal
-        isOpen={isCloneModalOpen}
-        onClose={() => setIsCloneModalOpen(false)}
-        onProvisionTenant={handleCloneNewTenant}
+      <ProvisionSchoolModal
+        isOpen={isProvisionModalOpen}
+        onClose={() => setIsProvisionModalOpen(false)}
+        onProvisionTenant={handleProvisionNewTenant}
       />
 
       <TenantCredentialsModal
@@ -1938,7 +1981,7 @@ export default function App() {
       />
 
       <TenantConnectModal
-        allTenants={clonedTenants}
+        allTenants={provisionedTenants}
         isOpen={isConnectModalOpen}
         onClose={() => setIsConnectModalOpen(false)}
         onConnectTenant={handleSelectTenantToLaunch}
@@ -1953,7 +1996,7 @@ export default function App() {
         }}
         tenantDraft={provisioningDraft}
         onProvisionComplete={(completedTenant) => {
-          handleCloneNewTenant(completedTenant);
+          handleProvisionNewTenant(completedTenant);
           setIsProvisioningModalOpen(false);
           setProvisioningDraft(null);
         }}
@@ -1963,19 +2006,20 @@ export default function App() {
       <TenantIsolationTestModal
         isOpen={isIsolationTestModalOpen}
         onClose={() => setIsIsolationTestModalOpen(false)}
-        tenants={clonedTenants}
+        tenants={provisionedTenants}
       />
 
       {/* Canary Version Management & Container Rollout (Section 20) */}
       <VersionRolloutModal
         isOpen={isVersionRolloutModalOpen}
         onClose={() => setIsVersionRolloutModalOpen(false)}
-        tenants={clonedTenants}
+        tenants={provisionedTenants}
         onUpgradeTenants={(version, tenantIds) => {
-          setClonedTenants(prev => prev.map(t => {
+          setProvisionedTenants(prev => prev.map(t => {
             if (tenantIds.includes(t.id)) {
               return {
                 ...t,
+                provisionedFromTemplateVersion: version,
                 clonedFromTemplateVersion: version,
                 auditLogsCount: (t.auditLogsCount || 0) + 1
               };

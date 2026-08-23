@@ -43,7 +43,8 @@ import {
   UserPlus,
   Printer,
   Award,
-  FileText
+  FileText,
+  Bus
 } from 'lucide-react';
 import { MainTabType } from './Navbar';
 
@@ -106,6 +107,15 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       shortLabel: 'Showcase Landing',
       description: 'Public showcase, pricing calculator, and SaaS architecture',
       icon: Globe,
+      category: 'saas_cloud',
+      highlight: true
+    },
+    {
+      id: 'school_public_website',
+      label: 'School Public Website & Admissions',
+      shortLabel: 'Public Website',
+      description: 'Official school homepage, prospectus, admissions & public calendar',
+      icon: School,
       category: 'saas_cloud',
       highlight: true
     },
@@ -335,6 +345,15 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       icon: ScanFace,
       category: 'operations'
     },
+    {
+      id: 'logistics_support',
+      label: 'Logistics Support Management (Bundle 5)',
+      shortLabel: 'Logistics & Hostels',
+      description: 'Gate kiosk, E-Library repo, boarding hostels & bus tracking',
+      icon: Bus,
+      category: 'operations',
+      highlight: true
+    },
 
     // 3. Curriculum & Pedagogy
     {
@@ -415,6 +434,15 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       icon: Printer,
       category: 'assessment',
       highlight: true
+    },
+    {
+      id: 'promotional_mock_exams',
+      label: 'Promotional & WAEC/NECO Mock Exam Council',
+      shortLabel: 'Promotional Mock Exams',
+      description: 'Annual promotion threshold engine, mock exam scoring, committee sign-off & certificates',
+      icon: Award,
+      category: 'assessment',
+      highlight: true
     }
   ], [pendingApprovalsCount, pendingRemedialsCount]);
 
@@ -427,15 +455,20 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
   ];
 
   const filteredTabs = useMemo(() => {
-    if (!searchQuery.trim()) return navTabs;
+    let tabs = navTabs;
+    // Super-admin only tabs
+    if (currentUser.role !== 'super_admin') {
+      tabs = tabs.filter(tab => tab.id !== 'tenant_control_center' && tab.id !== 'docker_orchestration');
+    }
+    if (!searchQuery.trim()) return tabs;
     const q = searchQuery.toLowerCase().trim();
-    return navTabs.filter(tab => 
+    return tabs.filter(tab => 
       tab.label.toLowerCase().includes(q) ||
       tab.shortLabel?.toLowerCase().includes(q) ||
       tab.description.toLowerCase().includes(q) ||
       tab.id.toLowerCase().includes(q)
     );
-  }, [navTabs, searchQuery]);
+  }, [navTabs, searchQuery, currentUser.role]);
 
   const handleTabClick = (tabId: MainTabType) => {
     onSelectTab(tabId);
@@ -443,6 +476,10 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       onCloseMobile();
     }
   };
+
+  if (activeTab === 'curriculum_server_landing' || activeTab === 'school_public_website') {
+    return null;
+  }
 
   return (
     <>

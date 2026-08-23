@@ -56,7 +56,8 @@ export const TenantFeaturesModal: React.FC<TenantFeaturesModalProps> = ({
     administration: true,
     teaching: true,
     assessment: true,
-    accounts_billing: true
+    accounts_billing: true,
+    logistics_support: true
   });
   const [inAppOverrides, setInAppOverrides] = useState<Record<string, boolean>>({});
   const [features, setFeatures] = useState<Record<OptionalFeatureKey, boolean>>({} as Record<OptionalFeatureKey, boolean>);
@@ -68,7 +69,8 @@ export const TenantFeaturesModal: React.FC<TenantFeaturesModalProps> = ({
         administration: true,
         teaching: true,
         assessment: true,
-        accounts_billing: true
+        accounts_billing: true,
+        logistics_support: true
       });
       setInAppOverrides(tenant.inAppFeatureOverrides || {});
       setFeatures(tenant.enabledFeatures || {} as Record<OptionalFeatureKey, boolean>);

@@ -56,7 +56,7 @@ CURRICULUM SERVER is the **B2B SaaS / control-plane brand**.
 Schools may encounter Curriculum Server during tenant provisioning and billing renewals, but it does not dominate their daily academic operations.
 
 ### Color Palette (Technology & Infrastructure)
-- **Primary Family:** Indigo, Purple, Blue, Cyan
+- **Primary Family:** Indigo, Purpleple, Blue, Cyan
 - **HEX Values:**
   - Indigo: `#4F46E5`
   - Purple: `#7C3AED`

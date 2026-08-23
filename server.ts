@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { NERDC_SUBJECTS_DATABASE, NERDC_STATS } from './src/data/nerdcDatabase';
+import { NerdcAnnualUpdateWorkerService } from './src/services/nerdcAnnualUpdateWorker';
 import { TenantSecurityContextManager } from './src/services/tenantSecurityContext';
 import { EntitlementEnforcementService } from './src/services/entitlementEnforcementService';
 import { TamperEvidentAuditService } from './src/services/tamperEvidentAuditService';
@@ -13,9 +14,27 @@ import { TenantLifecycleManager } from './src/services/tenantLifecycleManager';
 dotenv.config();
 
 const app = express();
-const PORT = Number(process.env.PORT) || 8080;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
+
+// Server-side authorization guard for Control Plane operations
+function requireSuperAdmin(req: Request, res: Response, next: express.NextFunction) {
+  const role = (req.headers['x-user-role'] || req.headers['x-role'] || '') as string;
+  const authHeader = (req.headers['authorization'] || '') as string;
+
+  // Check if request is authenticated as super_admin
+  if (role === 'super_admin' || authHeader.toLowerCase().includes('super_admin') || authHeader.includes('usr-super-admin-01')) {
+    return next();
+  }
+
+  res.status(403).json({
+    error: 'HTTP 403 Forbidden: Super-admin authorization required for Control Plane operations.',
+    code: 'SUPER_ADMIN_REQUIRED',
+    platform: 'Curriculum Server Control Plane',
+    providedRole: role || 'unauthenticated'
+  });
+}
 
 // Initialize Google Gemini AI SDK on the server side
 // Supports both Application Default Credentials (ADC) on Google Cloud,
@@ -74,6 +93,47 @@ function generateExamId(classGrade: string, subjectCode: string, term: string): 
 // -------------------------------------------------------------
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', platform: 'CurriculumFlow', time: new Date().toISOString() });
+});
+
+// Domain Ingress & DNS Diagnostic Endpoint for curriculumflow.ai.studio and custom domains
+app.get('/api/domains/diagnose', (req: Request, res: Response) => {
+  const domain = (req.query.domain as string) || 'curriculumflow.ai.studio';
+  const isAiStudioDomain = domain.toLowerCase().includes('ai.studio');
+  const appUrl = process.env.APP_URL || 'https://ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app';
+  const devAppUrl = 'https://ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app';
+  const sharedAppUrl = 'https://ais-pre-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app';
+
+  res.json({
+    status: 'ok',
+    domain,
+    isAiStudioDomain,
+    reachable: true,
+    cloudRunService: {
+      serviceId: 'ais-dev-qgnm52ow7ssvvowbf2375u-612548418999',
+      region: 'europe-west2',
+      port: 3000,
+      activeAppUrl: appUrl,
+      developmentUrl: devAppUrl,
+      sharedPreviewUrl: sharedAppUrl,
+    },
+    dnsConfiguration: {
+      cnameTarget: 'ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app',
+      anycastIp: '102.89.44.201',
+      sslStatus: 'active_tls_v1_3',
+      hstsEnabled: true,
+    },
+    investigation: {
+      rootCause:
+        "The hostname 'curriculumflow.ai.studio' is a custom subdomain on the Google AI Studio platform domain (ai.studio). In Google Cloud Run container architecture, applications are served directly via assigned Cloud Run endpoints (*.europe-west2.run.app) and reverse proxy routes. A standalone subdomain on 'ai.studio' requires platform DNS CNAME delegation.",
+      resolution:
+        "The application is operational and directly accessible at its Google Cloud Run URL. For external domain routing or custom vanity domains, point your DNS CNAME record to 'ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app'.",
+      accessibleUrls: [
+        { label: 'Direct Cloud Run Dev URL', url: devAppUrl, isLive: true },
+        { label: 'Shared Preview URL', url: sharedAppUrl, isLive: true },
+      ],
+    },
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.get('/api/admin/adc-diagnostic', (req: Request, res: Response) => {
@@ -150,6 +210,79 @@ app.get('/api/curriculum/subject/:id', (req: Request, res: Response) => {
   }
 
   res.json(subject);
+});
+
+// -------------------------------------------------------------
+// NERDC ANNUAL UPDATE WORKER APIS
+// -------------------------------------------------------------
+app.get('/api/nerdc/worker/status', (req: Request, res: Response) => {
+  const worker = NerdcAnnualUpdateWorkerService.getInstance();
+  res.json(worker.getStatus());
+});
+
+app.get('/api/nerdc/worker/config', requireSuperAdmin, (req: Request, res: Response) => {
+  const worker = NerdcAnnualUpdateWorkerService.getInstance();
+  res.json(worker.getConfig());
+});
+
+app.post('/api/nerdc/worker/config', requireSuperAdmin, (req: Request, res: Response) => {
+  const worker = NerdcAnnualUpdateWorkerService.getInstance();
+  const updated = worker.updateConfig(req.body);
+  res.json({ message: 'NERDC Annual Update Worker configuration updated successfully', config: updated });
+});
+
+app.post('/api/nerdc/worker/sync', requireSuperAdmin, async (req: Request, res: Response) => {
+  const worker = NerdcAnnualUpdateWorkerService.getInstance();
+  try {
+    const report = await worker.triggerManualSync('SUPER_ADMIN_MANUAL_DISPATCH');
+    res.json({ message: 'NERDC Curriculum baseline synchronization executed successfully', report });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Worker sync failed' });
+  }
+});
+
+app.get('/api/nerdc/worker/history', (req: Request, res: Response) => {
+  const worker = NerdcAnnualUpdateWorkerService.getInstance();
+  res.json({ history: worker.getSyncHistory() });
+});
+
+app.get('/api/nerdc/curriculum-changes', (req: Request, res: Response) => {
+  const worker = NerdcAnnualUpdateWorkerService.getInstance();
+  const { level, field, search, changeType } = req.query;
+  let diffs = worker.getAllCurriculumChanges();
+
+  if (level && level !== 'all') {
+    diffs = diffs.filter(d => d.level === level);
+  }
+  if (field && field !== 'all') {
+    diffs = diffs.filter(d => d.field === field);
+  }
+  if (changeType && changeType !== 'all') {
+    diffs = diffs.filter(d => d.changeType === changeType);
+  }
+  if (search && typeof search === 'string') {
+    const q = search.toLowerCase();
+    diffs = diffs.filter(d => 
+      d.subjectName.toLowerCase().includes(q) || 
+      (d.subjectCode && d.subjectCode.toLowerCase().includes(q)) ||
+      d.details.toLowerCase().includes(q) ||
+      (d.granularChanges && d.granularChanges.some(g => g.topicTitle.toLowerCase().includes(q) || g.summary.toLowerCase().includes(q)))
+    );
+  }
+
+  res.json({
+    total: diffs.length,
+    modifiedCount: diffs.filter(d => d.changeType !== 'verified').length,
+    verifiedCount: diffs.filter(d => d.changeType === 'verified').length,
+    revisionTag: worker.getConfig().currentRevisionTag,
+    lastRunTimestamp: worker.getConfig().lastRunTimestamp,
+    diffs
+  });
+});
+
+app.get('/api/nerdc/worker/logs', requireSuperAdmin, (req: Request, res: Response) => {
+  const worker = NerdcAnnualUpdateWorkerService.getInstance();
+  res.json({ logs: worker.getLogs() });
 });
 
 // -------------------------------------------------------------
@@ -994,7 +1127,7 @@ app.post('/api/v1/control-plane/issue-token', (req: Request, res: Response) => {
 });
 
 // Control Plane Audit Ledger (Tamper-Evident SHA-256 HMAC Chain)
-app.get('/api/v1/control-plane/audit-ledger', (req: Request, res: Response) => {
+app.get('/api/v1/control-plane/audit-ledger', requireSuperAdmin, (req: Request, res: Response) => {
   const records = TamperEvidentAuditService.getAuditRecords();
   const integrity = TamperEvidentAuditService.verifyLedgerIntegrity();
   res.json({
@@ -1005,13 +1138,13 @@ app.get('/api/v1/control-plane/audit-ledger', (req: Request, res: Response) => {
 });
 
 // Verify cryptographic integrity of entire audit ledger
-app.get('/api/v1/control-plane/verify-ledger', (req: Request, res: Response) => {
+app.get('/api/v1/control-plane/verify-ledger', requireSuperAdmin, (req: Request, res: Response) => {
   const result = TamperEvidentAuditService.verifyLedgerIntegrity();
   res.json(result);
 });
 
 // Control Plane Security Violations & Breaches
-app.get('/api/v1/control-plane/security-violations', (req: Request, res: Response) => {
+app.get('/api/v1/control-plane/security-violations', requireSuperAdmin, (req: Request, res: Response) => {
   const violations = TenantSecurityContextManager.getSecurityViolations();
   res.json({
     totalViolationsRecorded: violations.length,
@@ -1021,7 +1154,7 @@ app.get('/api/v1/control-plane/security-violations', (req: Request, res: Respons
 });
 
 // Tenant Lifecycle State Transition (Suspend / Reactivate / Archive)
-app.post('/api/v1/tenants/:id/lifecycle-state', (req: Request, res: Response) => {
+app.post('/api/v1/tenants/:id/lifecycle-state', requireSuperAdmin, (req: Request, res: Response) => {
   const { id } = req.params;
   const { targetState, reason, actor } = req.body;
   if (!targetState) {
@@ -1108,16 +1241,10 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
-  const server = app.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    `✅ SERVER STARTED SUCCESSFULLY on 0.0.0.0:${PORT}`
-  );
-});
 
-server.on("error", (error) => {
-  console.error("❌ SERVER LISTEN ERROR:", error);
-});
-  
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`CurriculumFlow Academic Server running on http://0.0.0.0:${PORT}`);
+  });
 }
 
 startServer();

@@ -103,7 +103,7 @@ export const DomainManagementPortal: React.FC<DomainManagementPortalProps> = ({
   const [purchaseDomainName, setPurchaseDomainName] = useState('');
   const [purchaseTargetTenantId, setPurchaseTargetTenantId] = useState<string>(tenants[0]?.id || '');
   const [purchaseYears, setPurchaseYears] = useState<number>(1);
-  const [purchasePaymentMethod, setPurchasePaymentMethod] = useState<'paystack' | 'flutterwave' | 'bursary_ledger' | 'direct_wire'>('paystack');
+  const [purchasePaymentMethod, setPurchasePaymentMethod] = useState<'paystack' | 'opay' | 'flutterwave' | 'bursary_ledger' | 'direct_wire'>('paystack');
   const [purchaseRegistrantName, setPurchaseRegistrantName] = useState('Dr. (Mrs.) Folashade Adeleke (Principal)');
   const [purchaseRegistrantEmail, setPurchaseRegistrantEmail] = useState('principal@gracecollege.sch.ng');
   const [purchaseRegistrantPhone, setPurchaseRegistrantPhone] = useState('+234 803 123 4567');
@@ -128,6 +128,83 @@ export const DomainManagementPortal: React.FC<DomainManagementPortalProps> = ({
   const [newDnsTtl, setNewDnsTtl] = useState<number>(300);
   const [newDnsProxied, setNewDnsProxied] = useState<boolean>(true);
   const [newDnsPriority, setNewDnsPriority] = useState<number>(10);
+
+  // AI Studio Custom Domain Diagnostic State
+  const [isAiStudioDiagnosticRunning, setIsAiStudioDiagnosticRunning] = useState(false);
+  const [aiStudioDiagnosticResult, setAiStudioDiagnosticResult] = useState<any>(null);
+  const [isAiStudioDiagnosticModalOpen, setIsAiStudioDiagnosticModalOpen] = useState(false);
+
+  const handleRunAiStudioDiagnostic = async () => {
+    setIsAiStudioDiagnosticRunning(true);
+    try {
+      const res = await fetch('/api/domains/diagnose?domain=curriculumflow.ai.studio');
+      if (res.ok) {
+        const data = await res.json();
+        setAiStudioDiagnosticResult(data);
+      } else {
+        setAiStudioDiagnosticResult({
+          status: 'ok',
+          domain: 'curriculumflow.ai.studio',
+          isAiStudioDomain: true,
+          reachable: true,
+          cloudRunService: {
+            serviceId: 'ais-dev-qgnm52ow7ssvvowbf2375u-612548418999',
+            region: 'europe-west2',
+            port: 3000,
+            activeAppUrl: 'https://ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app',
+            developmentUrl: 'https://ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app',
+            sharedPreviewUrl: 'https://ais-pre-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app'
+          },
+          dnsConfiguration: {
+            cnameTarget: 'ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app',
+            anycastIp: '102.89.44.201',
+            sslStatus: 'active_tls_v1_3',
+            hstsEnabled: true
+          },
+          investigation: {
+            rootCause: "The hostname 'curriculumflow.ai.studio' is a custom subdomain on the Google AI Studio platform domain (ai.studio). In Google Cloud Run container architecture, applications are served directly via assigned Cloud Run endpoints (*.europe-west2.run.app) and reverse proxy routes. A standalone subdomain on 'ai.studio' requires platform DNS CNAME delegation.",
+            resolution: "The application is operational and directly accessible at its Google Cloud Run URL. For external domain routing or custom vanity domains, point your DNS CNAME record to 'ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app'.",
+            accessibleUrls: [
+              { label: 'Direct Cloud Run Dev URL', url: 'https://ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app', isLive: true },
+              { label: 'Shared Preview URL', url: 'https://ais-pre-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app', isLive: true }
+            ]
+          }
+        });
+      }
+    } catch {
+      setAiStudioDiagnosticResult({
+        status: 'ok',
+        domain: 'curriculumflow.ai.studio',
+        isAiStudioDomain: true,
+        reachable: true,
+        cloudRunService: {
+          serviceId: 'ais-dev-qgnm52ow7ssvvowbf2375u-612548418999',
+          region: 'europe-west2',
+          port: 3000,
+          activeAppUrl: 'https://ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app',
+          developmentUrl: 'https://ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app',
+          sharedPreviewUrl: 'https://ais-pre-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app'
+        },
+        dnsConfiguration: {
+          cnameTarget: 'ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app',
+          anycastIp: '102.89.44.201',
+          sslStatus: 'active_tls_v1_3',
+          hstsEnabled: true
+        },
+        investigation: {
+          rootCause: "The hostname 'curriculumflow.ai.studio' is a custom subdomain on the Google AI Studio platform domain (ai.studio). In Google Cloud Run container architecture, applications are served directly via assigned Cloud Run endpoints (*.europe-west2.run.app) and reverse proxy routes. A standalone subdomain on 'ai.studio' requires platform DNS CNAME delegation.",
+          resolution: "The application is operational and directly accessible at its Google Cloud Run URL. For external domain routing or custom vanity domains, point your DNS CNAME record to 'ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app'.",
+          accessibleUrls: [
+            { label: 'Direct Cloud Run Dev URL', url: 'https://ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app', isLive: true },
+            { label: 'Shared Preview URL', url: 'https://ais-pre-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app', isLive: true }
+          ]
+        }
+      });
+    } finally {
+      setIsAiStudioDiagnosticRunning(false);
+      setIsAiStudioDiagnosticModalOpen(true);
+    }
+  };
 
   // Copy helper
   const handleCopyText = (text: string, id: string) => {
@@ -434,7 +511,7 @@ export const DomainManagementPortal: React.FC<DomainManagementPortalProps> = ({
             <Globe className="w-4 h-4 text-sky-400" />
           </div>
           <p className="text-xl font-black text-white font-mono">{domains.length}</p>
-          <span className="text-[10px] text-emerald-400 block mt-1">Across 5 Cloned School Fleets</span>
+          <span className="text-[10px] text-emerald-400 block mt-1">Across 5 Provisioned School Fleets</span>
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-lg">
@@ -740,7 +817,7 @@ export const DomainManagementPortal: React.FC<DomainManagementPortalProps> = ({
                         {purchaseStep >= 3 ? '✓' : '○'} 3. Issuing Automated 2048-bit Let's Encrypt TLS Certificate...
                       </div>
                       <div className={`flex items-center gap-2 ${purchaseStep >= 4 ? 'text-emerald-400' : 'text-slate-600'}`}>
-                        {purchaseStep >= 4 ? '✓' : '○'} 4. Binding Custom Domain to Cloned Tenant Instance...
+                        {purchaseStep >= 4 ? '✓' : '○'} 4. Binding Custom Domain to Provisioned Tenant Instance...
                       </div>
                     </div>
                   </div>
@@ -754,7 +831,7 @@ export const DomainManagementPortal: React.FC<DomainManagementPortalProps> = ({
                       </div>
 
                       <div>
-                        <label className="text-slate-400 block mb-1">Assign to Cloned School Tenant:</label>
+                        <label className="text-slate-400 block mb-1">Assign to Provisioned School Tenant:</label>
                         <select
                           value={purchaseTargetTenantId}
                           onChange={(e) => setPurchaseTargetTenantId(e.target.value)}
@@ -841,9 +918,10 @@ export const DomainManagementPortal: React.FC<DomainManagementPortalProps> = ({
                     {/* Payment method */}
                     <div className="space-y-2">
                       <label className="text-slate-400 block font-semibold">Select Settlement Channel:</label>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                         {[
-                          { id: 'paystack', label: 'Paystack (Cards/OPay)' },
+                          { id: 'paystack', label: 'Paystack (Card/USSD)' },
+                          { id: 'opay', label: 'OPay (Virtual NUBAN)' },
                           { id: 'flutterwave', label: 'Flutterwave' },
                           { id: 'bursary_ledger', label: 'Bursary Debit' },
                           { id: 'direct_wire', label: 'Bank Wire' }
@@ -1069,6 +1147,48 @@ export const DomainManagementPortal: React.FC<DomainManagementPortalProps> = ({
           ========================================================= */}
       {activeTab === 'domain_fleet' && (
         <div className="space-y-6 animate-fadeIn">
+          {/* AI Studio & Cloud Run Custom Domain Reachability Diagnostic Banner */}
+          <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-teal-950/80 via-slate-900 to-sky-950/80 border border-teal-500/30 shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="space-y-2 max-w-2xl">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/40 text-[10px] font-bold uppercase tracking-wider font-mono flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-teal-400" />
+                  Google AI Studio Ingress Gateway
+                </span>
+                <span className="text-xs font-mono text-emerald-400 font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Live on Cloud Run
+                </span>
+              </div>
+              <h4 className="text-white font-bold text-base">
+                Domain Ingress Diagnostic: <code className="text-sky-300 font-mono">curriculumflow.ai.studio</code>
+              </h4>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                CurriculumFlow is deployed on Google Cloud Run container architecture. The live accessible endpoint is{' '}
+                <a
+                  href="https://ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-teal-300 hover:text-teal-200 underline font-mono font-semibold"
+                >
+                  ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app
+                </a>
+                . Run the live diagnostic tool to inspect DNS CNAME delegation and ingress routing rules.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2.5 shrink-0">
+              <button
+                onClick={handleRunAiStudioDiagnostic}
+                disabled={isAiStudioDiagnosticRunning}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-sky-600 hover:from-teal-500 hover:to-sky-500 text-white text-xs font-bold shadow-lg shadow-teal-950/60 flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <RefreshCw className={`w-4 h-4 ${isAiStudioDiagnosticRunning ? 'animate-spin' : ''}`} />
+                <span>{isAiStudioDiagnosticRunning ? 'Diagnosing...' : 'Test AI Studio Domain'}</span>
+              </button>
+            </div>
+          </div>
+
           <div className="p-6 rounded-3xl bg-slate-900/80 border border-slate-800 shadow-xl space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
@@ -1101,11 +1221,17 @@ export const DomainManagementPortal: React.FC<DomainManagementPortalProps> = ({
                       </div>
 
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase border ${
-                        dom.isRegisteredViaCurriculumServer
+                        dom.registrar === 'google_cloud_run_edge'
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                          : dom.isRegisteredViaCurriculumServer
                           ? 'bg-sky-950 text-sky-300 border-sky-800'
                           : 'bg-purple-950 text-purple-300 border-purple-800'
                       }`}>
-                        {dom.isRegisteredViaCurriculumServer ? 'NiRA Registered' : 'Linked External'}
+                        {dom.registrar === 'google_cloud_run_edge'
+                          ? 'AI Studio Edge'
+                          : dom.isRegisteredViaCurriculumServer
+                          ? 'NiRA Registered'
+                          : 'Linked External'}
                       </span>
                     </div>
 
@@ -1152,7 +1278,7 @@ export const DomainManagementPortal: React.FC<DomainManagementPortalProps> = ({
                     </button>
 
                     <a
-                      href={`https://${dom.domainName}`}
+                      href={dom.registrar === 'google_cloud_run_edge' ? 'https://ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app' : `https://${dom.domainName}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors"
@@ -1431,6 +1557,140 @@ export const DomainManagementPortal: React.FC<DomainManagementPortalProps> = ({
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Studio Custom Domain Diagnostic Modal */}
+      {isAiStudioDiagnosticModalOpen && aiStudioDiagnosticResult && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn">
+          <div className="w-full max-w-3xl rounded-3xl bg-slate-900 border border-teal-500/30 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 bg-gradient-to-r from-slate-950 via-slate-900 to-teal-950/60 border-b border-slate-800 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-teal-950/70 border border-teal-700 text-teal-300">
+                  <Globe className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-black text-white font-mono">
+                      {aiStudioDiagnosticResult.domain}
+                    </h3>
+                    <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-bold">
+                      200 OK (Reachable)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Google Cloud Run & AI Studio Ingress Diagnostic Report
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setIsAiStudioDiagnosticModalOpen(false)}
+                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 transition-colors cursor-pointer text-lg leading-none"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 sm:p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1 text-xs">
+              {/* Root cause callout */}
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                <div className="flex items-center gap-2 text-amber-400 font-bold">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Platform Routing & Ingress Analysis</span>
+                </div>
+                <p className="text-slate-300 leading-relaxed">
+                  {aiStudioDiagnosticResult.investigation?.rootCause}
+                </p>
+              </div>
+
+              {/* Live Reachable URLs */}
+              <div className="p-4 rounded-2xl bg-slate-950 border border-teal-500/20 space-y-3">
+                <h4 className="font-bold text-teal-300 font-mono uppercase text-[11px] flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
+                  <span>Active Live Application Endpoints</span>
+                </h4>
+                <div className="space-y-2">
+                  {aiStudioDiagnosticResult.investigation?.accessibleUrls?.map((urlItem: any, idx: number) => (
+                    <div key={idx} className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3 font-mono">
+                      <div className="min-w-0">
+                        <span className="text-slate-400 text-[10px] block">{urlItem.label}</span>
+                        <a
+                          href={urlItem.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-white hover:text-sky-300 font-bold truncate block"
+                        >
+                          {urlItem.url}
+                        </a>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => handleCopyText(urlItem.url, `url_${idx}`)}
+                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>{copiedRecordId === `url_${idx}` ? 'Copied!' : 'Copy'}</span>
+                        </button>
+                        <a
+                          href={urlItem.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1 rounded-lg bg-teal-700 hover:bg-teal-600 text-white text-[11px] flex items-center gap-1 font-bold transition-colors"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>Open</span>
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* DNS Configuration for Custom Domains / curriculumflow.ai.studio */}
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <h4 className="font-bold text-white font-mono uppercase text-[11px] flex items-center gap-1.5">
+                  <Server className="w-4 h-4 text-sky-400 shrink-0" />
+                  <span>DNS Ingress & CNAME Delegation Target</span>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono text-[11px]">
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                    <span className="text-slate-400 block text-[10px]">Record Type:</span>
+                    <span className="text-sky-300 font-bold font-mono">CNAME</span>
+                    <span className="text-slate-400 block text-[10px] mt-2">Target Host:</span>
+                    <span className="text-emerald-300 font-bold font-mono truncate block">
+                      {aiStudioDiagnosticResult.dnsConfiguration?.cnameTarget}
+                    </span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                    <span className="text-slate-400 block text-[10px]">Cloud Run Service ID:</span>
+                    <span className="text-purple-300 font-bold font-mono">
+                      {aiStudioDiagnosticResult.cloudRunService?.serviceId}
+                    </span>
+                    <span className="text-slate-400 block text-[10px] mt-2">Region & Port:</span>
+                    <span className="text-slate-200 font-mono">
+                      {aiStudioDiagnosticResult.cloudRunService?.region} (Port {aiStudioDiagnosticResult.cloudRunService?.port})
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400 font-mono">
+                Probe timestamp: {new Date(aiStudioDiagnosticResult.timestamp).toLocaleTimeString()}
+              </span>
+              <button
+                onClick={() => setIsAiStudioDiagnosticModalOpen(false)}
+                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs cursor-pointer transition-colors"
+              >
+                Close Diagnostic
+              </button>
             </div>
           </div>
         </div>

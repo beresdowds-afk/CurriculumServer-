@@ -105,7 +105,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     setTimeout(() => {
       setIsSubmitting(false);
-      const matched = allAccounts.find(a => a.email.toLowerCase() === email.toLowerCase());
+      const inputEmail = email.trim().toLowerCase();
+      const matched = allAccounts.find(a => 
+        a.email.toLowerCase() === inputEmail || 
+        (a.alternativeAccessEmail && a.alternativeAccessEmail.toLowerCase() === inputEmail) ||
+        (a.alternativeEmail && a.alternativeEmail.toLowerCase() === inputEmail)
+      );
       if (matched) {
         // If MFA required for this account
         if (matched.mfaEnabled) {
@@ -130,7 +135,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     setTimeout(() => {
       setGoogleAuthLoading(false);
-      const acc = targetAccount || allAccounts.find(a => a.googleEmail === selectedGoogleEmail) || allAccounts[0];
+      const selectedLower = selectedGoogleEmail.toLowerCase();
+      const acc = targetAccount || allAccounts.find(a => 
+        (a.googleEmail && a.googleEmail.toLowerCase() === selectedLower) ||
+        a.email.toLowerCase() === selectedLower ||
+        (a.alternativeAccessEmail && a.alternativeAccessEmail.toLowerCase() === selectedLower)
+      ) || allAccounts[0];
       
       const updated: UserAuthAccount = {
         ...acc,
@@ -513,7 +523,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-400">{acc.email}</div>
+                        <div className="text-[11px] text-slate-400">
+                          <span>{acc.email}</span>
+                          {acc.alternativeAccessEmail && (
+                            <span className="ml-1 text-[10px] text-amber-300/80 font-mono">
+                              (Alt: {acc.alternativeAccessEmail})
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     {selectedGoogleEmail === acc.email && (

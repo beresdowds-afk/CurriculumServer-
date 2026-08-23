@@ -7,7 +7,7 @@ import {
   PlatformAuditRecord,
   CurriculumServerSaaSMetrics
 } from '../types';
-import { OPTIONAL_FEATURE_DEFINITIONS, INITIAL_SAAS_METRICS } from '../mockCurriculumServerData';
+import { OPTIONAL_FEATURE_DEFINITIONS, INITIAL_SAAS_METRICS, INITIAL_SAAS_INVOICES } from '../mockCurriculumServerData';
 import { globalBackupService } from '../services/backupRestoreService';
 import { globalAuditLogService } from '../services/auditLogService';
 import { TenantSecurityContextManager } from '../services/tenantSecurityContext';
@@ -15,6 +15,8 @@ import { EntitlementEnforcementService, DEFAULT_PLAN_POLICIES } from '../service
 import { TenantLifecycleManager } from '../services/tenantLifecycleManager';
 import { TamperEvidentAuditService } from '../services/tamperEvidentAuditService';
 import { ControlPlaneCockpit } from './ControlPlaneCockpit';
+import { PspConnectivityWidget } from './PspConnectivityWidget';
+import { PspTransactionSuccessRateChart } from './PspTransactionSuccessRateChart';
 import { 
   Building2, 
   Server, 
@@ -48,7 +50,12 @@ import {
   FileText,
   DollarSign,
   ShieldAlert,
-  Gauge
+  Gauge,
+  TrendingUp,
+  Radio,
+  Send,
+  AlertCircle,
+  X
 } from 'lucide-react';
 
 interface TenantControlCenterProps {
@@ -72,6 +79,7 @@ interface TenantControlCenterProps {
 export type TenantInspectorTab = 
   | 'overview'
   | 'subscription'
+  | 'psp_telemetry'
   | 'features'
   | 'application'
   | 'infrastructure'
@@ -131,13 +139,144 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
   const [ledgerIntegrity, setLedgerIntegrity] = useState<{ isValid: boolean; totalRecords: number; reason?: string } | null>(null);
   const [isVerifyingLedger, setIsVerifyingLedger] = useState(false);
 
-  const tenantInvoices = invoices.filter(inv => inv.tenantAppId === tenant.id || inv.tenantSchoolName === tenant.schoolName);
+  const [invoicesList, setInvoicesList] = useState<TenantBillingInvoice[]>(() => {
+    const filtered = invoices.filter(inv => inv.tenantAppId === tenant.id || inv.tenantAppId === tenant.appId || inv.tenantSchoolName === tenant.schoolName);
+    if (filtered.length > 0) return filtered;
+    const fallbackMatching = INITIAL_SAAS_INVOICES.filter(inv => inv.tenantAppId === tenant.id || inv.tenantAppId === tenant.appId || inv.tenantSchoolName === tenant.schoolName);
+    return fallbackMatching.length > 0 ? fallbackMatching : INITIAL_SAAS_INVOICES;
+  });
+  const [verifyingInvoiceId, setVerifyingInvoiceId] = useState<string | null>(null);
+  const [activeSimulatingInvoice, setActiveSimulatingInvoice] = useState<TenantBillingInvoice | null>(null);
+  const [gatewayToast, setGatewayToast] = useState<{ message: string; type: 'success' | 'failed' | 'info' } | null>(null);
+
+  const tenantInvoices = invoicesList;
   const tenantAuditLogs = globalAuditLogService.getLogs({ tenantId: tenant.id });
   const tenantToken = TenantSecurityContextManager.issueTenantToken(tenant);
   const usageTracker = EntitlementEnforcementService.getUsageTracker(tenant.id);
   const planPolicy = DEFAULT_PLAN_POLICIES[tenant.subscriptionTier] || DEFAULT_PLAN_POLICIES.Starter;
   const leaseToOwnInfo = TenantLifecycleManager.calculateLeaseToOwnStatus(tenant);
   const securityViolations = TenantSecurityContextManager.getSecurityViolations().filter(v => v.sourceTenantId === tenant.id || v.targetTenantId === tenant.id);
+
+  const handleSimulateWebhookResponse = (invoiceId: string, targetStatus: 'paid' | 'pending' | 'failed', responseCode: string, psp: 'Paystack' | 'OPay') => {
+    const nowIso = new Date().toISOString();
+    const updatedInvoices = invoicesList.map(inv => {
+      if (inv.id === invoiceId) {
+        return {
+          ...inv,
+          status: targetStatus,
+          gatewayResponseCode: responseCode,
+          gatewayTransactionStatus: (targetStatus === 'paid' ? 'success' : targetStatus === 'pending' ? 'pending' : 'failed') as any,
+          pspChannel: psp,
+          lastWebhookTimestamp: nowIso,
+          gatewayLatencyMs: psp === 'OPay' ? 24 : 42,
+          authHeaderSignature: psp === 'OPay' ? 'hmac_sha512_canonical_verified' : 'bearer_secret_verified'
+        };
+      }
+      return inv;
+    });
+
+    setInvoicesList(updatedInvoices);
+    const updatedInvoice = updatedInvoices.find(i => i.id === invoiceId);
+
+    globalAuditLogService.logEvent({
+      actor: `${psp.toLowerCase()}-webhook@curriculumserver.ng`,
+      actorRole: 'PSP Inbound Webhook',
+      tenantId: tenant.id,
+      tenantSchoolName: tenant.schoolName,
+      action: 'payment_received',
+      target: updatedInvoice?.invoiceNumber || invoiceId,
+      result: targetStatus === 'paid' ? 'SUCCESS' : targetStatus === 'pending' ? 'PENDING' : 'FAILED',
+      ipAddress: psp === 'OPay' ? '102.89.44.12 (OPay Gateway)' : '52.214.18.99 (Paystack Relay)',
+      deviceMetadata: `${psp} Payment Webhook Engine`,
+      details: `Received ${psp} webhook for ${updatedInvoice?.invoiceNumber}. Status transitioned to [${targetStatus.toUpperCase()}] with Gateway Response Code: ${responseCode}`
+    });
+
+    setGatewayToast({
+      message: `Updated ${updatedInvoice?.invoiceNumber} to ${targetStatus.toUpperCase()} via ${psp} response code [${responseCode}]`,
+      type: targetStatus === 'paid' ? 'success' : targetStatus === 'pending' ? 'info' : 'failed'
+    });
+    setTimeout(() => setGatewayToast(null), 4500);
+    setActiveSimulatingInvoice(null);
+  };
+
+  const handleVerifyInvoiceOnGateway = (inv: TenantBillingInvoice) => {
+    setVerifyingInvoiceId(inv.id);
+    setTimeout(() => {
+      setVerifyingInvoiceId(null);
+      setGatewayToast({
+        message: `Verified ${inv.invoiceNumber} with ${inv.pspChannel || 'Paystack'} Gateway API. Response: ${inv.gatewayResponseCode || '200_OK'} (${inv.gatewayLatencyMs || 38}ms roundtrip)`,
+        type: inv.status === 'paid' ? 'success' : 'info'
+      });
+      setTimeout(() => setGatewayToast(null), 4500);
+    }, 700);
+  };
+
+  const handleExportInvoicesCsv = () => {
+    if (!tenantInvoices || tenantInvoices.length === 0) {
+      setGatewayToast({
+        message: 'No invoices available to export.',
+        type: 'info'
+      });
+      setTimeout(() => setGatewayToast(null), 3000);
+      return;
+    }
+
+    const headers = [
+      'Invoice Number',
+      'School Name',
+      'Billing Period',
+      'Business Model',
+      'Subtotal (NGN)',
+      'Tax VAT (NGN)',
+      'Total Amount (NGN)',
+      'Status',
+      'Gateway Response Code',
+      'PSP Channel',
+      'Due Date',
+      'Paid Date',
+      'Transaction Reference',
+      'Lease Installment'
+    ];
+
+    const rows = tenantInvoices.map(inv => [
+      `"${inv.invoiceNumber}"`,
+      `"${tenant.schoolName.replace(/"/g, '""')}"`,
+      `"${inv.billingPeriod}"`,
+      `"${inv.businessModel || 'subscription'}"`,
+      inv.subtotalNgn || inv.totalAmount,
+      inv.taxVatNgn || 0,
+      inv.totalAmount,
+      `"${inv.status.toUpperCase()}"`,
+      `"${inv.gatewayResponseCode || (inv.status === 'paid' ? '200_OK' : '01_PROCESSING')}"`,
+      `"${inv.pspChannel || 'Paystack'}"`,
+      `"${inv.dueDate || ''}"`,
+      `"${inv.paidAt || (inv.status === 'paid' ? inv.dueDate : '')}"`,
+      `"${inv.transactionReference || inv.invoiceNumber}"`,
+      inv.leaseInstallmentNumber ? `"${inv.leaseInstallmentNumber}/${inv.totalLeaseInstallments || 24}"` : '"N/A"'
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.join(','))
+    ].join('\r\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const filename = `invoices_${tenant.schoolName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setGatewayToast({
+      message: `Exported ${tenantInvoices.length} invoices as CSV (${filename})`,
+      type: 'success'
+    });
+    setTimeout(() => setGatewayToast(null), 4000);
+  };
 
   const handleToggleFeature = (key: OptionalFeatureKey) => {
     setFeaturesState(prev => ({
@@ -328,6 +467,7 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
         {[
           { id: 'overview', label: 'Identity & Overview', icon: Building2 },
           { id: 'subscription', label: 'Subscription & Billing', icon: CreditCard },
+          { id: 'psp_telemetry', label: 'PSP Telemetry & Success Rates', icon: TrendingUp },
           { id: 'features', label: 'Feature Entitlements', icon: Sliders },
           { id: 'application', label: 'App Version & Deploy', icon: Layers },
           { id: 'infrastructure', label: 'Container Telemetry', icon: Cpu },
@@ -356,106 +496,110 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
 
       {/* TAB 1: OVERVIEW & IDENTITY */}
       {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5">
-            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-emerald-400" />
-              <span>School Institutional Profile</span>
-            </h3>
+        <div className="space-y-6">
+          <PspConnectivityWidget />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-slate-400">School Name</span>
-                <p className="font-bold text-slate-100 text-sm mt-0.5">{tenant.schoolName}</p>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5">
+              <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-emerald-400" />
+                <span>School Institutional Profile</span>
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
+                  <span className="text-slate-400">School Name</span>
+                  <p className="font-bold text-slate-100 text-sm mt-0.5">{tenant.schoolName}</p>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
+                  <span className="text-slate-400">Location & State</span>
+                  <p className="font-bold text-slate-100 text-sm mt-0.5">{tenant.address}, {tenant.locationState}</p>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
+                  <span className="text-slate-400">School Principal</span>
+                  <p className="font-semibold text-slate-200 mt-0.5">{tenant.principalName}</p>
+                  <p className="text-slate-400 font-mono text-[11px]">{tenant.principalEmail} • {tenant.principalPhone}</p>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
+                  <span className="text-slate-400">ICT Director / Admin</span>
+                  <p className="font-semibold text-slate-200 mt-0.5">{tenant.ictAdminName}</p>
+                  <p className="text-slate-400 font-mono text-[11px]">{tenant.ictAdminEmail}</p>
+                </div>
               </div>
-              <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-slate-400">Location & State</span>
-                <p className="font-bold text-slate-100 text-sm mt-0.5">{tenant.address}, {tenant.locationState}</p>
-              </div>
-              <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-slate-400">School Principal</span>
-                <p className="font-semibold text-slate-200 mt-0.5">{tenant.principalName}</p>
-                <p className="text-slate-400 font-mono text-[11px]">{tenant.principalEmail} • {tenant.principalPhone}</p>
-              </div>
-              <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
-                <span className="text-slate-400">ICT Director / Admin</span>
-                <p className="font-semibold text-slate-200 mt-0.5">{tenant.ictAdminName}</p>
-                <p className="text-slate-400 font-mono text-[11px]">{tenant.ictAdminEmail}</p>
+
+              <div className="pt-3 border-t border-slate-800">
+                <h4 className="text-xs font-semibold text-slate-300 mb-2">School Capacity & Demographics</h4>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span className="text-slate-400 text-xs">Active Students</span>
+                    <p className="text-lg font-bold text-emerald-400 mt-1">{tenant.activeStudentsCount.toLocaleString()}</p>
+                    <span className="text-[10px] text-slate-500">Cap: {tenant.studentCapacity.toLocaleString()}</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span className="text-slate-400 text-xs">Faculty Teachers</span>
+                    <p className="text-lg font-bold text-teal-400 mt-1">{tenant.facultyCount}</p>
+                    <span className="text-[10px] text-slate-500">Staff Accounts</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span className="text-slate-400 text-xs">Storage Usage</span>
+                    <p className="text-lg font-bold text-indigo-400 mt-1">{tenant.storageUsageMb} MB</p>
+                    <span className="text-[10px] text-slate-500">Quota: {tenant.maxStorageMb} MB</span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-800">
-              <h4 className="text-xs font-semibold text-slate-300 mb-2">School Capacity & Demographics</h4>
-              <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+              <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <Key className="w-4 h-4 text-amber-400" />
+                <span>Identity & Security Keys</span>
+              </h3>
+
+              <div className="space-y-3 text-xs">
                 <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-slate-400 text-xs">Active Students</span>
-                  <p className="text-lg font-bold text-emerald-400 mt-1">{tenant.activeStudentsCount.toLocaleString()}</p>
-                  <span className="text-[10px] text-slate-500">Cap: {tenant.studentCapacity.toLocaleString()}</span>
+                  <span className="text-slate-400 font-medium">Publishable Public Key</span>
+                  <p className="font-mono text-emerald-400 text-[11px] mt-1 break-all bg-slate-900 p-2 rounded border border-slate-800">
+                    {tenant.publishableKey}
+                  </p>
                 </div>
+
                 <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-slate-400 text-xs">Faculty Teachers</span>
-                  <p className="text-lg font-bold text-teal-400 mt-1">{tenant.facultyCount}</p>
-                  <span className="text-[10px] text-slate-500">Staff Accounts</span>
+                  <span className="text-slate-400 font-medium">Encrypted App Secret (Server-Only)</span>
+                  <p className="font-mono text-slate-400 text-[11px] mt-1 break-all bg-slate-900 p-2 rounded border border-slate-800">
+                    {tenant.appSecret.substring(0, 16)}••••••••••••••••••••
+                  </p>
+                  <span className="text-[10px] text-slate-500 mt-1 block">Zero exposure to browser clients.</span>
                 </div>
+
                 <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-slate-400 text-xs">Storage Usage</span>
-                  <p className="text-lg font-bold text-indigo-400 mt-1">{tenant.storageUsageMb} MB</p>
-                  <span className="text-[10px] text-slate-500">Quota: {tenant.maxStorageMb} MB</span>
+                  <span className="text-slate-400 font-medium">Cryptographic License Hash</span>
+                  <p className="font-mono text-slate-300 text-[10px] mt-1 truncate">
+                    {tenant.licenseHash}
+                  </p>
                 </div>
-              </div>
-            </div>
-          </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-              <Key className="w-4 h-4 text-amber-400" />
-              <span>Identity & Security Keys</span>
-            </h3>
-
-            <div className="space-y-3 text-xs">
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="text-slate-400 font-medium">Publishable Public Key</span>
-                <p className="font-mono text-emerald-400 text-[11px] mt-1 break-all bg-slate-900 p-2 rounded border border-slate-800">
-                  {tenant.publishableKey}
-                </p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="text-slate-400 font-medium">Encrypted App Secret (Server-Only)</span>
-                <p className="font-mono text-slate-400 text-[11px] mt-1 break-all bg-slate-900 p-2 rounded border border-slate-800">
-                  {tenant.appSecret.substring(0, 16)}••••••••••••••••••••
-                </p>
-                <span className="text-[10px] text-slate-500 mt-1 block">Zero exposure to browser clients.</span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="text-slate-400 font-medium">Cryptographic License Hash</span>
-                <p className="font-mono text-slate-300 text-[10px] mt-1 truncate">
-                  {tenant.licenseHash}
-                </p>
-              </div>
-
-              {/* Signed Tenant Security Token */}
-              <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-800/60 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-emerald-400 font-bold flex items-center gap-1.5 text-xs">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Signed Security Token (HMAC-SHA256)</span>
-                  </span>
-                  <button
-                    onClick={handleCopyToken}
-                    className="px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
-                  >
-                    {copiedToken ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
-                    <span>{copiedToken ? 'Copied' : 'Copy JWT'}</span>
-                  </button>
-                </div>
-                <p className="font-mono text-[10px] text-emerald-300 break-all bg-slate-950/80 p-2 rounded border border-emerald-900/50 max-h-16 overflow-y-auto">
-                  {tenantToken}
-                </p>
-                <div className="flex items-center justify-between text-[10px] text-emerald-400/80">
-                  <span>Zero Data Leakage Boundary: Enforced</span>
-                  <span>Payload: {tenant.id} ({tenant.subscriptionTier})</span>
+                {/* Signed Tenant Security Token */}
+                <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-800/60 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-emerald-400 font-bold flex items-center gap-1.5 text-xs">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Signed Security Token (HMAC-SHA256)</span>
+                    </span>
+                    <button
+                      onClick={handleCopyToken}
+                      className="px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                    >
+                      {copiedToken ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedToken ? 'Copied' : 'Copy JWT'}</span>
+                    </button>
+                  </div>
+                  <p className="font-mono text-[10px] text-emerald-300 break-all bg-slate-950/80 p-2 rounded border border-emerald-900/50 max-h-16 overflow-y-auto">
+                    {tenantToken}
+                  </p>
+                  <div className="flex items-center justify-between text-[10px] text-emerald-400/80">
+                    <span>Zero Data Leakage Boundary: Enforced</span>
+                    <span>Payload: {tenant.id} ({tenant.subscriptionTier})</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -466,6 +610,25 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
       {/* TAB 2: SUBSCRIPTION & BILLING */}
       {activeTab === 'subscription' && (
         <div className="space-y-6">
+          {/* Dynamic Toast for Gateway Updates */}
+          {gatewayToast && (
+            <div className={`p-4 rounded-xl border text-xs flex items-center justify-between gap-3 animate-fadeIn ${
+              gatewayToast.type === 'success' 
+                ? 'bg-emerald-950/80 border-emerald-800 text-emerald-300' 
+                : gatewayToast.type === 'failed'
+                  ? 'bg-rose-950/80 border-rose-800 text-rose-300'
+                  : 'bg-cyan-950/80 border-cyan-800 text-cyan-300'
+            }`}>
+              <div className="flex items-center gap-2">
+                {gatewayToast.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertCircle className="w-4 h-4" />}
+                <span className="font-medium">{gatewayToast.message}</span>
+              </div>
+              <button onClick={() => setGatewayToast(null)} className="text-slate-400 hover:text-slate-200 cursor-pointer">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl">
               <span className="text-xs text-slate-400 font-medium">Current Subscription Plan</span>
@@ -546,14 +709,32 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
             </div>
           </div>
 
+          {/* Invoice Ledger & Dynamic Gateway Status Indicators */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-            <h3 className="text-sm font-bold text-slate-100 flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-                <span>Invoice Ledger & Receipts</span>
-              </span>
-              <span className="text-xs font-normal text-slate-400">{tenantInvoices.length} Invoices Found</span>
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                  <span>Dynamic Invoice Ledger & Gateway Response Status</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Visual indicators update dynamically based on live PSP response codes (e.g. Paid, Pending, Failed) from OPay & Paystack.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={handleExportInvoicesCsv}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                  title="Export all tenant invoices as CSV file"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export CSV</span>
+                </button>
+                <span className="text-xs font-semibold text-slate-400 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+                  {tenantInvoices.length} Invoices Tracked
+                </span>
+              </div>
+            </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left">
@@ -562,39 +743,192 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
                     <th className="p-3">Invoice #</th>
                     <th className="p-3">Period</th>
                     <th className="p-3">Amount (NGN)</th>
-                    <th className="p-3">Status</th>
-                    <th className="p-3">Due Date</th>
-                    <th className="p-3">Channel</th>
-                    <th className="p-3 text-right">Actions</th>
+                    <th className="p-3">Visual Status Indicator</th>
+                    <th className="p-3">Gateway Code</th>
+                    <th className="p-3">Channel / Auth</th>
+                    <th className="p-3 text-right">Actions & Simulation</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 text-slate-300">
-                  {tenantInvoices.map(inv => (
-                    <tr key={inv.id} className="hover:bg-slate-800/40">
-                      <td className="p-3 font-mono font-bold text-slate-100">{inv.invoiceNumber}</td>
-                      <td className="p-3">{inv.billingPeriod}</td>
-                      <td className="p-3 font-mono font-semibold">₦{inv.totalAmount.toLocaleString()}</td>
-                      <td className="p-3">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                          inv.status === 'paid' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-300'
-                        }`}>
-                          {inv.status}
-                        </span>
-                      </td>
-                      <td className="p-3">{inv.dueDate}</td>
-                      <td className="p-3 text-slate-400">{inv.pspChannel || 'Paystack'}</td>
-                      <td className="p-3 text-right">
-                        <button className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[11px] font-semibold flex items-center gap-1 ml-auto cursor-pointer">
-                          <Download className="w-3 h-3" />
-                          <span>PDF</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {tenantInvoices.map(inv => {
+                    const isVerifying = verifyingInvoiceId === inv.id;
+                    const isPaid = inv.status === 'paid';
+                    const isPending = inv.status === 'pending';
+                    const isFailed = inv.status === 'failed' || inv.status === 'overdue';
+
+                    return (
+                      <tr key={inv.id} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3">
+                          <span className="font-mono font-bold text-slate-100 block">{inv.invoiceNumber}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">Due: {inv.dueDate}</span>
+                        </td>
+                        <td className="p-3 font-medium text-slate-200">{inv.billingPeriod}</td>
+                        <td className="p-3 font-mono font-bold text-slate-100 text-sm">
+                          ₦{inv.totalAmount.toLocaleString()}
+                        </td>
+                        
+                        {/* Visual Status Indicator */}
+                        <td className="p-3">
+                          <div className="flex items-center gap-2">
+                            {isPaid && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>Paid</span>
+                              </span>
+                            )}
+                            {isPending && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                <Clock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                                <span>Pending</span>
+                              </span>
+                            )}
+                            {isFailed && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                                <span>Failed</span>
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Gateway Response Code */}
+                        <td className="p-3">
+                          <div className="space-y-0.5">
+                            <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold inline-block ${
+                              isPaid ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' :
+                              isPending ? 'bg-amber-950 text-amber-300 border border-amber-800' :
+                              'bg-rose-950 text-rose-300 border border-rose-800'
+                            }`}>
+                              {inv.gatewayResponseCode || (isPaid ? '200_OK' : isPending ? '01_PROCESSING' : '51_INSUFFICIENT')}
+                            </span>
+                            {inv.gatewayLatencyMs && (
+                              <span className="text-[10px] text-slate-500 block font-mono">
+                                Latency: {inv.gatewayLatencyMs}ms
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* PSP Channel & Auth */}
+                        <td className="p-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              inv.pspChannel === 'OPay' 
+                                ? 'bg-emerald-500/20 text-emerald-400' 
+                                : 'bg-cyan-500/20 text-cyan-400'
+                            }`}>
+                              {inv.pspChannel || 'Paystack'}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {inv.pspChannel === 'OPay' ? 'HMAC' : 'Bearer'}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* Verify Button */}
+                            <button 
+                              onClick={() => handleVerifyInvoiceOnGateway(inv)}
+                              disabled={isVerifying}
+                              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
+                              title="Verify transaction status with Gateway API"
+                            >
+                              <RotateCw className={`w-3 h-3 ${isVerifying ? 'animate-spin text-emerald-400' : ''}`} />
+                              <span className="hidden sm:inline">Verify</span>
+                            </button>
+
+                            {/* Simulate Webhook Button */}
+                            <button
+                              onClick={() => setActiveSimulatingInvoice(inv)}
+                              className="px-2 py-1 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 rounded text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
+                              title="Simulate dynamic gateway response"
+                            >
+                              <Zap className="w-3 h-3 text-emerald-400" />
+                              <span className="hidden sm:inline">Simulate</span>
+                            </button>
+
+                            {/* PDF Button */}
+                            <button className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded transition-colors cursor-pointer" title="Download PDF">
+                              <Download className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
+
+          {/* Webhook Response Simulation Modal */}
+          {activeSimulatingInvoice && (
+            <div className="p-5 bg-slate-950 border border-emerald-600/50 rounded-2xl space-y-4 animate-fadeIn shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-emerald-400" />
+                  <h4 className="text-xs font-bold text-slate-100">
+                    Simulate Gateway Webhook for <span className="font-mono text-emerald-400">{activeSimulatingInvoice.invoiceNumber}</span>
+                  </h4>
+                </div>
+                <button 
+                  onClick={() => setActiveSimulatingInvoice(null)}
+                  className="text-slate-400 hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-400">
+                Trigger a simulated signed inbound HTTP POST webhook from either OPay or Paystack to observe live status indicator transitions and ledger reconciliation:
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <button
+                  onClick={() => handleSimulateWebhookResponse(activeSimulatingInvoice.id, 'paid', '00_APPROVED', 'OPay')}
+                  className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-800/80 hover:bg-emerald-900 text-left space-y-1 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-300">OPay: Success</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-800 text-white">00</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">HMAC-SHA512 valid • Instant settlement</p>
+                </button>
+
+                <button
+                  onClick={() => handleSimulateWebhookResponse(activeSimulatingInvoice.id, 'paid', '200_OK', 'Paystack')}
+                  className="p-3 rounded-xl bg-cyan-950/60 border border-cyan-800/80 hover:bg-cyan-900 text-left space-y-1 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-cyan-300">Paystack: Paid</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-800 text-white">200</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">Bearer verified • Charge success event</p>
+                </button>
+
+                <button
+                  onClick={() => handleSimulateWebhookResponse(activeSimulatingInvoice.id, 'failed', '51_INSUFFICIENT_FUNDS', 'Paystack')}
+                  className="p-3 rounded-xl bg-rose-950/60 border border-rose-800/80 hover:bg-rose-900 text-left space-y-1 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-rose-300">Failure: Code 51</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-rose-800 text-white">51</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">Declined • Triggers fallback to OPay</p>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 3: PSP TELEMETRY & SUCCESS RATES (NEW SUB-TAB) */}
+      {activeTab === 'psp_telemetry' && (
+        <div className="space-y-6 animate-fadeIn">
+          <PspConnectivityWidget />
+          <PspTransactionSuccessRateChart />
         </div>
       )}
 
@@ -676,7 +1010,7 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
               <div>
                 <span className="text-xs text-slate-400 font-medium">Currently Deployed Image Tag</span>
                 <p className="text-base font-mono font-bold text-emerald-400 mt-0.5">
-                  curriculumflow-app:{tenant.clonedFromTemplateVersion || '1.4.2'}
+                  curriculumflow-app:{tenant.provisionedFromTemplateVersion || tenant.clonedFromTemplateVersion || '1.4.2'}
                 </p>
                 <p className="text-xs text-slate-400 mt-1">Database Schema: <code className="text-slate-300">db_schema_v14</code></p>
               </div>

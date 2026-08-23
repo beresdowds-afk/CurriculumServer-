@@ -163,7 +163,7 @@ export const VersionRolloutModal: React.FC<VersionRolloutModalProps> = ({
                   >
                     <div>
                       <p className="font-semibold text-slate-200">{t.schoolName}</p>
-                      <p className="text-slate-500 font-mono text-[10px]">Current: v{t.clonedFromTemplateVersion || '1.4.2'}</p>
+                      <p className="text-slate-500 font-mono text-[10px]">Current: v{t.provisionedFromTemplateVersion || t.clonedFromTemplateVersion || '1.4.2'}</p>
                     </div>
                     <input
                       type="checkbox"

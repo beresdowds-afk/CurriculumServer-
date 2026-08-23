@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="cfWhiteBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F8FAFC"/>
+    </linearGradient>
+
+    <!-- Warm Orange-Amber Left Ribbon Gradient -->
+    <linearGradient id="cfOrangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EA580C"/>
+      <stop offset="30%" stop-color="#F97316"/>
+      <stop offset="70%" stop-color="#FB923C"/>
+      <stop offset="100%" stop-color="#FDBA74"/>
+    </linearGradient>
+
+    <!-- Center Twist Crossing -->
+    <linearGradient id="cfCenterTwist" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0369A1"/>
+      <stop offset="40%" stop-color="#0284C7"/>
+      <stop offset="80%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#0D9488"/>
+    </linearGradient>
+
+    <!-- Cyan to Emerald Right Ribbon Gradient -->
+    <linearGradient id="cfCyanEmerald" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7"/>
+      <stop offset="35%" stop-color="#06B6D4"/>
+      <stop offset="70%" stop-color="#0D9488"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+
+    <!-- Drop Shadow Filter -->
+    <filter id="cfLogoShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#0F172A" flood-opacity="0.12"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0284C7" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <!-- Clean Background -->
+  <rect width="1200" height="630" fill="url(#cfWhiteBg)"/>
+
+  <!-- Centered Composition Container -->
+  <g transform="translate(150, 45)" filter="url(#cfLogoShadow)">
+    <!-- 3D Ribbon Infinity Loop (900x380 area) -->
+    <g transform="translate(180, 20) scale(0.9)">
+      <!-- Left Back Loop -->
+      <path d="M 300 200 C 230 110 170 80 110 80 C 49 80 0 134 0 200 C 0 266 49 320 110 320 C 170 320 230 290 300 200 Z" 
+            fill="url(#cfOrangeGrad)" />
+
+      <!-- Right Loop -->
+      <path d="M 300 200 C 370 110 430 80 490 80 C 551 80 600 134 600 200 C 600 266 551 320 490 320 C 430 320 370 290 300 200 Z" 
+            fill="url(#cfCyanEmerald)" />
+
+      <!-- Overlapping Center Arch -->
+      <path d="M 110 80 C 170 80 230 110 300 200 C 370 290 430 320 490 320 C 525 320 555 304 574 278 C 530 294 480 270 430 220 C 370 160 310 110 240 85 C 195 68 150 72 110 80 Z" 
+            fill="url(#cfCenterTwist)" />
+
+      <!-- Left Inner Cutout -->
+      <path d="M 110 135 C 145 135 185 155 235 200 C 185 245 145 265 110 265 C 74 265 45 236 45 200 C 45 164 74 135 110 135 Z" 
+            fill="#FFFFFF" />
+
+      <!-- Right Inner Cutout -->
+      <path d="M 490 135 C 526 135 555 164 555 200 C 555 236 526 265 490 265 C 455 265 415 245 365 200 C 415 155 455 135 490 135 Z" 
+            fill="#FFFFFF" />
+
+      <!-- Top Highlights -->
+      <path d="M 110 80 C 49 80 0 134 0 200 C 0 206 1 212 2 218 C 8 160 54 115 110 115 C 165 115 215 145 275 210 L 290 195 C 230 115 170 80 110 80 Z" 
+            fill="#FFFFFF" opacity="0.35" />
+      <path d="M 490 80 C 551 80 600 134 600 200 C 600 206 599 212 598 218 C 592 160 546 115 490 115 C 435 115 385 145 325 210 L 310 195 C 370 115 430 80 490 80 Z" 
+            fill="#FFFFFF" opacity="0.3" />
+    </g>
+
+    <!-- Typography: "CurriculumFlow" matching the uploaded logo -->
+    <g transform="translate(450, 430)">
+      <text x="0" y="0" 
+            text-anchor="middle"
+            font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif" 
+            font-size="108" 
+            font-weight="800" 
+            letter-spacing="-2px">
+        <tspan fill="#1E293B">Curriculum</tspan><tspan fill="#06B6D4">Flow</tspan>
+      </text>
+    </g>
+  </g>
+</svg>

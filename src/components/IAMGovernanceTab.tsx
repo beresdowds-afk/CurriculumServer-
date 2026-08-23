@@ -135,6 +135,8 @@ export const IAMGovernanceTab: React.FC<IAMGovernanceTabProps> = ({
     const matchesSearch = 
       acc.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       acc.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (acc.alternativeAccessEmail && acc.alternativeAccessEmail.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (acc.alternativeEmail && acc.alternativeEmail.toLowerCase().includes(searchQuery.toLowerCase())) ||
       acc.staffOrStudentId.toLowerCase().includes(searchQuery.toLowerCase()) ||
       acc.phone.includes(searchQuery);
 
@@ -484,6 +486,12 @@ export const IAMGovernanceTab: React.FC<IAMGovernanceTabProps> = ({
                         <div className="truncate font-mono text-[10px] text-slate-200" title={acc.email}>
                           {acc.email}
                         </div>
+                        {acc.alternativeAccessEmail && (
+                          <div className="truncate font-mono text-[9px] text-amber-300 flex items-center gap-1" title={`Alternative Access: ${acc.alternativeAccessEmail}`}>
+                            <span className="px-1 py-0.2 rounded bg-amber-950/80 text-amber-300 border border-amber-800/60 font-semibold text-[8px]">ALT</span>
+                            <span>{acc.alternativeAccessEmail}</span>
+                          </div>
+                        )}
                         <div>
                           {acc.isEmailVerified ? (
                             <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">

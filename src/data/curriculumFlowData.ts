@@ -14,6 +14,25 @@ import {
 
 export const USER_PROFILES: UserProfile[] = [
   {
+    id: 'usr-super-admin-01',
+    name: 'Engr. Olusola Adebayo',
+    title: 'Curriculum Server Platform Architect & Super Administrator',
+    role: 'super_admin',
+    avatar: 'OA',
+    department: 'Curriculum Server Platform Core',
+    officeTitle: 'Directorate of Cloud Infrastructure & Platform Security',
+    email: 'superadmin@curriculumserver.com.ng',
+    alternativeAccessEmail: 'founder@eastforte.or.ng',
+    alternativeEmail: 'founder@eastforte.or.ng',
+    isEmailVerified: true,
+    phone: '+234 802 999 8877',
+    isPhoneVerified: true,
+    isGoogleLinked: true,
+    mfaEnabled: true,
+    assignedAdminRoles: ['super_admin', 'platform_root'],
+    isSystemRoot: true
+  },
+  {
     id: 'usr-principal-01',
     name: 'Dr. (Mrs.) Funke Adeyemi',
     title: 'Principal & Chief Executive Officer',

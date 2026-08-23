@@ -46,6 +46,7 @@ import { CurriculumServerIcon, CurriculumFlowIcon } from './brand/BrandAssets';
 
 export type MainTabType = 
   | 'curriculum_server_landing'
+  | 'school_public_website'
   | 'curriculum_server'
   | 'tenant_control_center'
   | 'customer_self_service'
@@ -80,6 +81,7 @@ export type MainTabType =
   | 'academic_analytics'
   | 'report_card_studio'
   | 'promotional_mock_exams'
+  | 'logistics_support'
   | 'docker_orchestration';
 
 interface NavbarProps {
@@ -104,6 +106,7 @@ interface NavbarProps {
   allTenants?: TenantSchoolApp[];
   onSelectTenant?: (tenant: TenantSchoolApp) => void;
   onSwitchPlatformMode?: (mode: PlatformViewMode) => void;
+  onOpenProvisionModal?: () => void;
   onOpenCloneModal?: () => void;
   onOpenConnectModal?: () => void;
 }
@@ -128,6 +131,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   allTenants = [],
   onSelectTenant,
   onSwitchPlatformMode,
+  onOpenProvisionModal,
   onOpenCloneModal,
   onOpenConnectModal
 }) => {
@@ -162,6 +166,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const getRoleBadge = (role: UserRole) => {
     switch (role) {
+      case 'super_admin':
+        return { label: 'Platform Super Admin', color: 'bg-indigo-900/80 text-indigo-200 border-indigo-500/60 font-bold' };
       case 'principal_admin':
       case 'principal':
         return { label: 'Principal (Executive Root)', color: 'bg-purple-900/60 text-purple-200 border-purple-700/50' };
@@ -201,6 +207,8 @@ export const Navbar: React.FC<NavbarProps> = ({
     switch (tab) {
       case 'curriculum_server_landing':
         return { label: 'Curriculum Server (Public Showcase)', category: 'SaaS Cloud', icon: Globe };
+      case 'school_public_website':
+        return { label: 'School Public Website & Admissions', category: 'Public School Portal', icon: School };
       case 'curriculum_server':
         return { label: 'Curriculum Server (SaaS Hub)', category: 'SaaS Cloud', icon: Server };
       case 'tenant_control_center':
@@ -274,6 +282,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   const activeTabInfo = getActiveTabDetails(activeTab);
   const TabIcon = activeTabInfo.icon;
 
+  // Visitors on CurriculumFlow landing page OR Provisioned School Public Website do not see the internal app Navbar
+  if (activeTab === 'curriculum_server_landing' || activeTab === 'school_public_website') {
+    return null;
+  }
+
   return (
     <header className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-md border-b border-slate-800 shadow-xl transition-colors duration-300">
       {/* Dynamic Top Brand Indicator Ribbon Line */}
@@ -287,182 +300,201 @@ export const Navbar: React.FC<NavbarProps> = ({
       />
 
       {/* Top Universal SaaS Multi-Tenant Switcher Ribbon */}
-      <div className={`w-full border-b px-3 sm:px-4 lg:px-6 py-1.5 flex items-center justify-between gap-3 text-xs transition-colors duration-300 ${
-        isTenantSchoolInstance 
-          ? 'bg-slate-900/90 border-slate-800/80' 
-          : 'bg-slate-950 border-indigo-950/80'
-      }`}>
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          {/* SaaS Master vs Tenant View Pill */}
-          <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800">
-            <button
-              onClick={() => {
-                if (onSwitchPlatformMode) onSwitchPlatformMode('saas_master_console');
-                onSelectTab('curriculum_server_landing');
-              }}
-              className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                activeTab === 'curriculum_server_landing' && !isTenantSchoolInstance
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Globe className="w-3 h-3" />
-              <span>Showcase Landing</span>
-            </button>
-
-            <button
-              onClick={() => {
-                if (onSwitchPlatformMode) onSwitchPlatformMode('saas_master_console');
-                onSelectTab('tenant_control_center');
-              }}
-              className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                activeTab === 'tenant_control_center' && !isTenantSchoolInstance
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Boxes className="w-3 h-3 text-indigo-300" />
-              <span>Control Plane Cockpit</span>
-            </button>
-
-            <button
-              onClick={() => {
-                if (onSwitchPlatformMode) onSwitchPlatformMode('saas_master_console');
-                onSelectTab('curriculum_server');
-              }}
-              className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                activeTab === 'curriculum_server' && !isTenantSchoolInstance
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Server className="w-3 h-3 text-emerald-300" />
-              <span>SaaS Hub</span>
-            </button>
-
-            <button
-              onClick={() => {
-                if (onSwitchPlatformMode) onSwitchPlatformMode('saas_master_console');
-                onSelectTab('domain_management');
-              }}
-              className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                activeTab === 'domain_management' && !isTenantSchoolInstance
-                  ? 'bg-amber-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Globe className="w-3 h-3 text-amber-300" />
-              <span>Domain Portal</span>
-            </button>
-
-            <button
-              onClick={() => {
-                if (onSwitchPlatformMode) onSwitchPlatformMode('tenant_school_instance');
-                if (activeTab === 'curriculum_server' || activeTab === 'curriculum_server_landing' || activeTab === 'domain_management' || activeTab === 'tenant_control_center' || activeTab === 'customer_self_service' || activeTab === 'api_webhooks') {
-                  onSelectTab('command_center');
-                }
-              }}
-              style={
-                isTenantSchoolInstance 
-                  ? { backgroundColor: primaryColor, color: '#ffffff' }
-                  : undefined
-              }
-              className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                isTenantSchoolInstance
-                  ? 'shadow-sm text-white'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <School className="w-3 h-3" />
-              <span>School Instance View</span>
-            </button>
-          </div>
-
-          {/* Active Tenant App ID & White-Label Indicator Chip */}
-          {activeTenant && isTenantSchoolInstance ? (
-            <div className="hidden md:flex items-center gap-2 px-2.5 py-0.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono">
-              <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: primaryColor }} />
-              <span className="text-slate-400 font-sans font-medium">School:</span>
-              <span className="font-bold text-slate-100">{schoolName}</span>
-              <span className="font-mono text-[10px]" style={{ color: accentColor }}>({tenantAppId})</span>
-              <span 
-                className="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded border ml-0.5"
-                style={{
-                  backgroundColor: `${primaryColor}20`,
-                  borderColor: `${primaryColor}50`,
-                  color: primaryColor
+      {/* ONLY visible in SaaS Master Console mode for super_admin - NEVER displayed on provisioned schools or to regular users/visitors */}
+      {platformMode === 'saas_master_console' && currentUser.role === 'super_admin' && (
+        <div className="w-full border-b px-3 sm:px-4 lg:px-6 py-1.5 flex items-center justify-between gap-3 text-xs transition-colors duration-300 bg-slate-950 border-indigo-950/80">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            {/* SaaS Master vs Tenant View Pill */}
+            <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+              <button
+                onClick={() => {
+                  if (onSwitchPlatformMode) onSwitchPlatformMode('saas_master_console');
+                  onSelectTab('curriculum_server_landing');
                 }}
+                className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                  activeTab === 'curriculum_server_landing' && !isTenantSchoolInstance
+                    ? 'bg-sky-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
               >
-                {activeTenant.businessModel.replace(/_/g, ' ')}
-              </span>
-            </div>
-          ) : (
-            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-950/40 border border-indigo-800/60 text-[11px] text-indigo-300 font-mono">
-              <Server className="w-3 h-3 text-indigo-400" />
-              <span>SaaS Control Plane:</span>
-              <span className="font-bold text-white">Curriculum Server Core</span>
-              <span className="text-[9px] px-1.5 py-0.2 rounded bg-indigo-900/60 text-indigo-200 font-bold ml-1">MASTER ROOT</span>
-            </div>
-          )}
-        </div>
+                <Globe className="w-3 h-3" />
+                <span>Showcase Landing</span>
+              </button>
 
-        {/* Right SaaS Controls: Quick Switch Tenant + Connect + Clone */}
-        <div className="flex items-center gap-2">
-          {/* Quick Cloned Tenant Dropdown */}
-          {allTenants.length > 0 && onSelectTenant && (
-            <div className="flex items-center gap-1">
-              <span className="text-[11px] text-slate-400 hidden xl:inline">Switch School:</span>
-              <select
-                value={activeTenant?.id || ''}
-                onChange={(e) => {
-                  const target = allTenants.find(t => t.id === e.target.value);
-                  if (target) {
-                    onSelectTenant(target);
-                    if (onSwitchPlatformMode) onSwitchPlatformMode('tenant_school_instance');
-                    if (activeTab === 'curriculum_server' || activeTab === 'curriculum_server_landing' || activeTab === 'domain_management') {
-                      onSelectTab('command_center');
-                    }
+              <button
+                onClick={() => {
+                  if (onSwitchPlatformMode) onSwitchPlatformMode('saas_master_console');
+                  onSelectTab('curriculum_server');
+                }}
+                className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                  activeTab === 'curriculum_server' && !isTenantSchoolInstance
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Server className="w-3 h-3 text-emerald-300" />
+                <span>SaaS Hub</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (onSwitchPlatformMode) onSwitchPlatformMode('saas_master_console');
+                  onSelectTab('domain_management');
+                }}
+                className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                  activeTab === 'domain_management' && !isTenantSchoolInstance
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Globe className="w-3 h-3 text-amber-300" />
+                <span>Domain Portal</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (onSwitchPlatformMode) onSwitchPlatformMode('saas_master_console');
+                  onSelectTab('customer_self_service');
+                }}
+                className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                  activeTab === 'customer_self_service' && !isTenantSchoolInstance
+                    ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-400'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <ShieldCheck className="w-3 h-3 text-emerald-300" />
+                <span>Proprietor Portal</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (onSwitchPlatformMode) onSwitchPlatformMode('tenant_school_instance');
+                  if (activeTab === 'curriculum_server' || activeTab === 'curriculum_server_landing' || activeTab === 'domain_management' || activeTab === 'tenant_control_center' || activeTab === 'customer_self_service' || activeTab === 'api_webhooks') {
+                    onSelectTab('command_center');
                   }
                 }}
-                className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-0.5 text-[11px] font-semibold focus:outline-none cursor-pointer max-w-[150px] sm:max-w-[200px] transition-colors"
-                style={{ color: isTenantSchoolInstance ? accentColor : '#818CF8' }}
-                aria-label="Switch Active Cloned School Instance"
+                style={
+                  isTenantSchoolInstance 
+                    ? { backgroundColor: primaryColor, color: '#ffffff' }
+                    : undefined
+                }
+                className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                  isTenantSchoolInstance
+                    ? 'shadow-sm text-white'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
               >
-                {allTenants.map(t => (
-                  <option key={t.id} value={t.id}>
-                    {t.schoolName} ({t.appId})
-                  </option>
-                ))}
-              </select>
+                <School className="w-3 h-3" />
+                <span>School Instance View</span>
+              </button>
+
+              {currentUser.role === 'super_admin' && (
+                <button
+                  onClick={() => {
+                    if (onSwitchPlatformMode) onSwitchPlatformMode('saas_master_console');
+                    onSelectTab('tenant_control_center');
+                  }}
+                  className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                    activeTab === 'tenant_control_center' && !isTenantSchoolInstance
+                      ? 'bg-rose-700 text-white shadow-sm ring-1 ring-rose-400'
+                      : 'text-rose-300/80 hover:text-rose-200 hover:bg-rose-950/40'
+                  }`}
+                >
+                  <Boxes className="w-3 h-3 text-rose-300" />
+                  <span>Control Plane Cockpit</span>
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-800 font-mono">
+                    ROOT
+                  </span>
+                </button>
+              )}
             </div>
-          )}
 
-          {onOpenConnectModal && (
-            <button
-              onClick={onOpenConnectModal}
-              className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-sky-300 text-[11px] font-semibold flex items-center gap-1 border border-slate-700 transition-colors"
-              title="Authenticate via App ID & App Secret"
-            >
-              <KeyRound className="w-3 h-3 text-sky-400" />
-              <span className="hidden sm:inline">Connect App</span>
-            </button>
-          )}
+            {/* Active Tenant App ID & White-Label Indicator Chip */}
+            {activeTenant && isTenantSchoolInstance ? (
+              <div className="hidden md:flex items-center gap-2 px-2.5 py-0.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono">
+                <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: primaryColor }} />
+                <span className="text-slate-400 font-sans font-medium">School:</span>
+                <span className="font-bold text-slate-100">{schoolName}</span>
+                <span className="font-mono text-[10px]" style={{ color: accentColor }}>({tenantAppId})</span>
+                <span 
+                  className="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded border ml-0.5"
+                  style={{
+                    backgroundColor: `${primaryColor}20`,
+                    borderColor: `${primaryColor}50`,
+                    color: primaryColor
+                  }}
+                >
+                  {activeTenant.businessModel.replace(/_/g, ' ')}
+                </span>
+              </div>
+            ) : (
+              <div className="hidden md:flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-950/40 border border-indigo-800/60 text-[11px] text-indigo-300 font-mono">
+                <Server className="w-3 h-3 text-indigo-400" />
+                <span>SaaS Control Plane:</span>
+                <span className="font-bold text-white">Curriculum Server Core</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-indigo-900/60 text-indigo-200 font-bold ml-1">MASTER ROOT</span>
+              </div>
+            )}
+          </div>
 
-          {onOpenCloneModal && (
-            <button
-              onClick={onOpenCloneModal}
-              className="px-2.5 py-0.5 rounded-md text-white text-[11px] font-bold flex items-center gap-1 shadow-sm transition-all"
-              style={{
-                backgroundColor: isTenantSchoolInstance ? primaryColor : '#4F46E5',
-              }}
-              title="Clone and deploy a new CurriculumFlow school"
-            >
-              <Plus className="w-3 h-3" />
-              <span className="hidden sm:inline">Clone School</span>
-            </button>
-          )}
+          {/* Right SaaS Controls: Quick Switch Tenant + Connect + Provision */}
+          <div className="flex items-center gap-2">
+            {/* Quick Provisioned Tenant Dropdown */}
+            {allTenants.length > 0 && onSelectTenant && (
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] text-slate-400 hidden xl:inline">Switch School:</span>
+                <select
+                  value={activeTenant?.id || ''}
+                  onChange={(e) => {
+                    const target = allTenants.find(t => t.id === e.target.value);
+                    if (target) {
+                      onSelectTenant(target);
+                      if (onSwitchPlatformMode) onSwitchPlatformMode('tenant_school_instance');
+                      if (activeTab === 'curriculum_server' || activeTab === 'curriculum_server_landing' || activeTab === 'domain_management') {
+                        onSelectTab('command_center');
+                      }
+                    }
+                  }}
+                  className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-0.5 text-[11px] font-semibold focus:outline-none cursor-pointer max-w-[150px] sm:max-w-[200px] transition-colors"
+                  style={{ color: isTenantSchoolInstance ? accentColor : '#818CF8' }}
+                  aria-label="Switch Active Provisioned School Instance"
+                >
+                  {allTenants.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.schoolName} ({t.appId})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {onOpenConnectModal && (
+              <button
+                onClick={onOpenConnectModal}
+                className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-sky-300 text-[11px] font-semibold flex items-center gap-1 border border-slate-700 transition-colors"
+                title="Authenticate via App ID & App Secret"
+              >
+                <KeyRound className="w-3 h-3 text-sky-400" />
+                <span className="hidden sm:inline">Connect App</span>
+              </button>
+            )}
+
+            {(onOpenProvisionModal || onOpenCloneModal) && (
+              <button
+                onClick={onOpenProvisionModal || onOpenCloneModal}
+                className="px-2.5 py-0.5 rounded-md text-white text-[11px] font-bold flex items-center gap-1 shadow-sm transition-all"
+                style={{
+                  backgroundColor: isTenantSchoolInstance ? primaryColor : '#4F46E5',
+                }}
+                title="Provision and deploy a new CurriculumFlow school"
+              >
+                <Plus className="w-3 h-3" />
+                <span className="hidden sm:inline">Provision School</span>
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main Header Row: Drawer Toggle + Brand + Breadcrumbs + Right Controls */}
       <div className="w-full px-3 sm:px-4 lg:px-6">
@@ -556,11 +588,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                       CURRICULUM<span className="text-indigo-400 ml-1">SERVER</span>
                     </span>
                     <span className="text-[8px] font-black uppercase px-1 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
-                      SaaS Control
+                      CONTROL PLANE
                     </span>
                   </div>
-                  <span className="text-[10px] text-indigo-300/80 font-mono tracking-wide">
-                    Multi-Tenant Cloud Orchestrator
+                  <span className="text-[10px] text-indigo-300/80 font-medium tracking-wide truncate max-w-[240px]">
+                    Guardrails for Quality Educational Delivery
                   </span>
                 </div>
               </div>

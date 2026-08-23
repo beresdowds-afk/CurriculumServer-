@@ -52,7 +52,7 @@ export const TenantConnectModal: React.FC<TenantConnectModalProps> = ({
       );
 
       if (!match) {
-        setErrorMsg('Invalid credentials. No registered cloned school found matching this Application ID or School Name.');
+        setErrorMsg('Invalid credentials. No registered provisioned school found matching this Application ID or School Name.');
         setIsVerifying(false);
         return;
       }
@@ -87,7 +87,7 @@ export const TenantConnectModal: React.FC<TenantConnectModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <span>Connect Cloned School App</span>
+                <span>Connect Provisioned School App</span>
               </h3>
               <p className="text-xs text-slate-400">
                 Authenticate into a school instance via Application ID, School Name, and Secret
@@ -167,7 +167,7 @@ export const TenantConnectModal: React.FC<TenantConnectModalProps> = ({
               {/* Quick Fill presets for demonstration */}
               <div className="pt-2">
                 <span className="text-[11px] font-semibold text-slate-400 block mb-2">
-                  Quick Select Active Cloned Tenants (Demo):
+                  Quick Select Active Provisioned Tenants (Demo):
                 </span>
                 <div className="flex flex-wrap gap-2">
                   {allTenants.map(tenant => (

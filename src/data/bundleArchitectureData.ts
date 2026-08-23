@@ -358,6 +358,90 @@ export const CURRICULUM_FLOW_BUNDLES: CurriculumFlowBundle[] = [
         iconName: 'TrendingUp'
       }
     ]
+  },
+  {
+    key: 'logistics_support',
+    name: 'Logistics Support Management Suite',
+    shortName: 'Logistics & Support',
+    tagline: 'Gate Security, E-Library, Boarding Hostels & School Bus Management',
+    description: 'Comprehensive campus logistics platform featuring Gate Security Kiosk & QR pickup scanner, Digital E-Library repository with staff upload, Boarding House management suite with D3 occupancy visualizer & mobile exeat workflows, and School Bus transport management with geofence parent alerts.',
+    monthlyPriceNGN: 85000,
+    yearlyPriceNGN: 850000,
+    color: 'from-purple-600 to-pink-700',
+    bgColor: 'bg-purple-950/40',
+    borderColor: 'border-purple-500/30',
+    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+    iconName: 'Boxes',
+    features: [
+      {
+        id: 'feat_logistics_gate_security',
+        key: 'gate_security_kiosk',
+        bundleKey: 'logistics_support',
+        name: 'Gate Security Kiosk & Pickup Scanner',
+        description: 'Dedicated tablet-optimized gate scanner interface for security officers to verify guardian QR codes, authenticate PINs, and authorize student exit with instant parent alerts.',
+        subItems: [
+          'Tablet-Optimized Gate Security Kiosk UI',
+          'Guardian QR Code & PIN Authenticator',
+          'Live Guardian Photo & Identity Verification',
+          'Boarding House Exeat Verification at Perimeter Gate',
+          'Instant Parent SMS & WhatsApp Exit Dispatch'
+        ],
+        defaultEnabled: true,
+        isCore: true,
+        iconName: 'ShieldCheck'
+      },
+      {
+        id: 'feat_logistics_elibrary',
+        key: 'digital_elibrary',
+        bundleKey: 'logistics_support',
+        name: 'Digital E-Library & Curriculum Resource Repository',
+        description: 'NERDC-approved textbook repository, past WAEC/NECO/JAMB past papers, downloadable audio/video courseware, and authorized staff upload portal for curriculum-aligned materials.',
+        subItems: [
+          'NERDC Approved Digital Textbooks & Readers',
+          'WAEC / NECO / JAMB Past Question Vault with Solutions',
+          'Downloadable MP3 Audio & MP4 Video Courseware',
+          'Staff Upload Engine for PDF, Image & Audio Resources',
+          'Subject & Grade-Level Aligned Search & Filter'
+        ],
+        defaultEnabled: true,
+        isCore: true,
+        iconName: 'BookOpen'
+      },
+      {
+        id: 'feat_logistics_boarding_house',
+        key: 'boarding_house_suite',
+        bundleKey: 'logistics_support',
+        name: 'Boarding House & Hostel Management Suite',
+        description: 'Dormitory/room bed space allocations, D3.js occupancy visualizer, digital student exeat requests with mobile house master approval workflow, evening roll-calls, and dining hall registers.',
+        subItems: [
+          'D3.js Dormitory Occupancy & Bed Space Visualizer',
+          'Digital Student Exeat Request & Mobile House Master Approval',
+          'QR Verification Exeat Pass Generator',
+          'Daily Evening Roll-Call & Night Curfew Register',
+          'Dining Hall Meal Roster & Special Diet Tracking'
+        ],
+        defaultEnabled: true,
+        isCore: true,
+        iconName: 'Building2'
+      },
+      {
+        id: 'feat_logistics_transportation',
+        key: 'bus_transportation',
+        bundleKey: 'logistics_support',
+        name: 'School Bus Transportation & Route Management',
+        description: 'Bus routes, passenger check-in/drop-off logs, driver license tracking, maintenance schedules, and geofence proximity alerts notifying parents in real-time.',
+        subItems: [
+          'Bus Route & Pickup Stop Management',
+          'Real-time Passenger Check-In & Drop-Off Manifest',
+          'Driver Profile & License Expiry Tracking',
+          'Vehicle Preventative Maintenance Schedules',
+          'Geofenced Parent Portal Proximity Notifications'
+        ],
+        defaultEnabled: true,
+        isCore: true,
+        iconName: 'Truck'
+      }
+    ]
   }
 ];
 
@@ -389,11 +473,13 @@ export function calculateBundlePricing(
   // 1 bundle = 0% discount
   // 2 bundles = 10% discount
   // 3 bundles = 18% discount
-  // 4 bundles (All-in-One Master Suite) = 25% discount
+  // 4 bundles = 25% discount
+  // 5 bundles (All-in-One Master Logistics Suite) = 30% discount
   let discountPercent = 0;
   if (selectedBundles.length === 2) discountPercent = 10;
   else if (selectedBundles.length === 3) discountPercent = 18;
   else if (selectedBundles.length === 4) discountPercent = 25;
+  else if (selectedBundles.length >= 5) discountPercent = 30;
 
   const discountAmountNGN = Math.round((subtotalNGN * discountPercent) / 100);
   const finalPriceNGN = subtotalNGN - discountAmountNGN;

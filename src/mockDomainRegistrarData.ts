@@ -82,6 +82,61 @@ export const TLD_PRICING_CATALOG: TldPricingPlan[] = [
 
 export const INITIAL_SCHOOL_DOMAINS: SchoolCustomDomain[] = [
   {
+    id: 'dom_curriculumflow_aistudio',
+    tenantId: 'tenant_platform_root',
+    tenantSchoolName: 'CurriculumFlow Platform Core (Google AI Studio Edge)',
+    domainName: 'curriculumflow.ai.studio',
+    domainType: 'primary',
+    isRegisteredViaCurriculumServer: true,
+    registrar: 'google_cloud_run_edge',
+    registeredDate: '2026-01-01',
+    expiryDate: '2030-01-01',
+    autoRenew: true,
+    pricePerYearNGN: 0,
+    status: 'active',
+    sslStatus: 'ssl_active',
+    sslExpiresAt: '2027-01-01',
+    cnameTarget: 'ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app',
+    anycastIp: '102.89.44.201',
+    verificationToken: 'cf-verify=sha256:aistudio-cloudrun-europewest2',
+    isPrimary: true,
+    hstsEnabled: true,
+    forceHttps: true,
+    dnssecEnabled: true,
+    lastCheckedTimestamp: '2026-08-20 12:50:00',
+    dnsRecords: [
+      {
+        id: 'rec_aistudio_cname',
+        type: 'CNAME',
+        name: 'curriculumflow',
+        value: 'ais-dev-qgnm52ow7ssvvowbf2375u-612548418999.europe-west2.run.app',
+        ttl: 300,
+        proxied: true,
+        status: 'active',
+        description: 'Google Cloud Run Managed Service Ingress'
+      },
+      {
+        id: 'rec_aistudio_txt',
+        type: 'TXT',
+        name: '_cf-aistudio-challenge',
+        value: 'google-site-verification=ai-studio-curriculumflow-73729e4d',
+        ttl: 600,
+        status: 'active',
+        description: 'Google AI Studio Applet Origin Verification Token'
+      },
+      {
+        id: 'rec_aistudio_a',
+        type: 'A',
+        name: '@',
+        value: '102.89.44.201',
+        ttl: 300,
+        proxied: true,
+        status: 'active',
+        description: 'CurriculumFlow Global Anycast Gateway'
+      }
+    ]
+  },
+  {
     id: 'dom_kings_01',
     tenantId: 'tenant_kings_college',
     tenantSchoolName: "King's College Lagos",

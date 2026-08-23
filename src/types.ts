@@ -51,6 +51,8 @@ export interface UserProfile {
   department?: string;
   officeTitle?: string;
   email?: string;
+  alternativeAccessEmail?: string;
+  alternativeEmail?: string;
   phone?: string;
   isEmailVerified?: boolean;
   isPhoneVerified?: boolean;
@@ -117,6 +119,102 @@ export interface SubjectCurriculum {
   themes: CurriculumTheme[];
   recommendedTextbooks?: string[];
   equipmentAndLabRequirements?: string[];
+}
+
+// -----------------------------------------------------------------
+// NERDC CURRICULUM DATABASE & ANNUAL UPDATE WORKER
+// -----------------------------------------------------------------
+export type NerdcWorkerStatus = 'idle' | 'running' | 'completed' | 'failed' | 'scheduled';
+
+export type NerdcSyncStage = 
+  | 'idle' 
+  | 'portal_handshake' 
+  | 'gazette_ingestion' 
+  | 'exam_matrix_validation' 
+  | 'checksum_verification' 
+  | 'db_persistence' 
+  | 'tenant_notification_dispatch';
+
+export interface NerdcWorkerLog {
+  id: string;
+  timestamp: string;
+  level: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR' | 'DIFF';
+  message: string;
+  stage?: NerdcSyncStage;
+  details?: any;
+}
+
+export type CurriculumChangeCategory = 
+  | 'ADDED_TOPIC'
+  | 'MODIFIED_OBJECTIVES'
+  | 'EXAM_REALIGNMENT'
+  | 'NEW_INSTRUCTIONAL_AIDS'
+  | 'PRACTICAL_GUIDELINES'
+  | 'EVALUATION_CRITERIA_UPDATE'
+  | 'SYLLABUS_EXPANSION'
+  | 'VERIFIED_BASELINE';
+
+export interface CurriculumGranularChange {
+  id: string;
+  topicTitle: string;
+  grade: ClassGrade;
+  term: Term;
+  category: CurriculumChangeCategory;
+  summary: string;
+  previousContent?: string;
+  updatedContent?: string;
+  pedagogicalRationale?: string;
+  waecExamImpact?: string;
+}
+
+export interface NerdcCurriculumDiff {
+  subjectId: string;
+  subjectName: string;
+  subjectCode?: string;
+  level: 'jss' | 'sss';
+  field: SubjectField;
+  changeType: 'added' | 'updated' | 'verified' | 'realigned';
+  details: string;
+  changedFields: string[];
+  previousVersionTag?: string;
+  updatedVersionTag?: string;
+  timestamp?: string;
+  affectedGrades?: ClassGrade[];
+  affectedThemesCount?: number;
+  addedTopicsCount?: number;
+  modifiedTopicsCount?: number;
+  granularChanges?: CurriculumGranularChange[];
+  gazetteNoticeReference?: string;
+  checksum?: string;
+}
+
+export interface NerdcAnnualWorkerConfig {
+  isEnabled: boolean;
+  cronSchedule: string; // e.g. "0 2 1 8 *" (August 1st, 02:00 AM UTC)
+  annualRunMonth: number; // 8 = August
+  annualRunDay: number; // 1 = 1st of month
+  autoApplyToTenants: boolean;
+  notifyEmails: string[];
+  notifyPrincipals: boolean;
+  notifyAcademicCoordinators: boolean;
+  lastRunTimestamp: string;
+  nextRunTimestamp: string;
+  currentRevisionTag: string; // e.g. "NERDC-GAZETTE-2026.1-AUGUST"
+  portalSourceUrl: string;
+  backupBeforeUpdate: boolean;
+}
+
+export interface NerdcAnnualSyncReport {
+  executionId: string;
+  timestamp: string;
+  durationMs: number;
+  status: 'success' | 'failed';
+  subjectsProcessed: number;
+  themesProcessed: number;
+  topicsProcessed: number;
+  checksum: string;
+  diffs: NerdcCurriculumDiff[];
+  logs: NerdcWorkerLog[];
 }
 
 // -----------------------------------------------------------------
@@ -1166,6 +1264,8 @@ export interface RLSPermissionEvaluation {
 export type AuthProviderType = 'email_password' | 'google_sso' | 'phone_otp';
 
 export type SystemAdminRoleType = 
+  | 'super_admin'                  // Platform Super Admin (Curriculum Server Control Plane)
+  | 'platform_root'                // Platform Root Master Engineer
   | 'principal_admin'             // Office of the Principal (Supreme Super Admin)
   | 'administrative_assistant'     // Executive Assistant & Registry Administrator under Principal
   | 'vice_principal_academic'      // Vice Principal Academics
@@ -1242,6 +1342,8 @@ export interface UserAuthAccount {
   staffOrStudentId: string;
   fullName: string;
   email: string;
+  alternativeAccessEmail?: string;
+  alternativeEmail?: string;
   isEmailVerified: boolean;
   phone: string;
   isPhoneVerified: boolean;
@@ -2084,7 +2186,8 @@ export type CurriculumFlowBundleKey =
   | 'administration' 
   | 'teaching' 
   | 'assessment' 
-  | 'accounts_billing';
+  | 'accounts_billing'
+  | 'logistics_support';
 
 export interface CurriculumFlowBundleFeature {
   id: string;
@@ -2185,13 +2288,65 @@ export interface TenantBillingInvoice {
   amount: number;
   taxVat: number;
   totalAmount: number;
-  status: 'paid' | 'pending' | 'overdue' | 'waived';
+  status: 'paid' | 'pending' | 'overdue' | 'waived' | 'failed';
   dueDate: string;
   paidDate?: string;
   paymentGatewayRef?: string;
   pspChannel?: 'Paystack' | 'Flutterwave' | 'OPay' | 'Direct Bank Wire' | 'Virtual NUBAN';
   downloadReceiptUrl?: string;
   notes?: string;
+  gatewayResponseCode?: string; // e.g. '00_APPROVED', '200_OK', '51_INSUFFICIENT_FUNDS', '504_TIMEOUT'
+  gatewayResponseMessage?: string;
+  gatewayTransactionStatus?: 'success' | 'pending' | 'failed' | 'processing';
+  gatewayLatencyMs?: number;
+  gatewayAuthMethod?: 'HMAC-SHA512' | 'Bearer-Secret' | 'Direct-NUBAN';
+  lastWebhookTimestamp?: string;
+}
+
+export interface PspPaymentWebhookEvent {
+  id: string;
+  provider: 'paystack' | 'opay';
+  event: string;
+  transactionReference: string;
+  invoiceNumber: string;
+  tenantSchoolName: string;
+  amountNaira: number;
+  currency: string;
+  httpStatusCode: number;
+  status: '200_OK' | '400_BAD_REQUEST' | '500_SERVER_ERROR' | 'PENDING_RETRY';
+  signatureVerified: boolean;
+  signatureType: 'HMAC-SHA512' | 'x-paystack-signature';
+  signatureHash: string;
+  originIp: string;
+  latencyMs: number;
+  timestamp: string;
+  payload: Record<string, any>;
+  rawExecutionLog: string[];
+}
+
+export type SuperAdminAccessApprovalStatus = 'approved' | 'pending_approval' | 'revoked' | 'not_requested';
+
+export interface SuperAdminAccessLog {
+  id: string;
+  timestamp: string;
+  actorName: string;
+  actorEmail: string;
+  action: 'access_requested' | 'access_approved' | 'access_revoked' | 'instance_entered' | 'scope_elevated';
+  details: string;
+}
+
+export interface SuperAdminAccessGrant {
+  status: SuperAdminAccessApprovalStatus;
+  approvedByPrincipalName?: string;
+  approvedByPrincipalEmail?: string;
+  approvedAt?: string;
+  expiresAt?: string; // ISO string or 'indefinite'
+  accessScope?: 'full_diagnostic_support' | 'read_only_audit' | 'emergency_hotfix';
+  requestReason?: string;
+  requestedAt?: string;
+  requestedByEmail?: string;
+  requestedByName?: string;
+  accessLogs?: SuperAdminAccessLog[];
 }
 
 export interface TenantSchoolApp {
@@ -2236,9 +2391,10 @@ export interface TenantSchoolApp {
   lastActiveTimestamp: string;
   databaseShardId: string;
   databaseIsolationType: 'isolated_tenant_schema' | 'dedicated_shard' | 'hybrid_on_prem_sync';
-  clonedFromTemplateVersion: string;
+  provisionedFromTemplateVersion?: string;
+  clonedFromTemplateVersion?: string;
   
-  // Branding Profile attached to this cloned instance
+  // Branding Profile attached to this provisioned instance
   brandProfile: SchoolBrandProfile;
   
   // 4-Bundle Licensing Model (Administration, Teaching, Assessment, Accounts & Billing)
@@ -2261,9 +2417,13 @@ export interface TenantSchoolApp {
   
   // Metadata & Audit
   createdAt: string;
-  clonedByAdmin: string;
+  provisionedByAdmin?: string;
+  clonedByAdmin?: string;
   licenseHash: string;
   auditLogsCount: number;
+
+  // Platform Super Admin Delegated Access Governance (Requires Principal Admin Approval)
+  superAdminAccessGrant?: SuperAdminAccessGrant;
 }
 
 export interface CurriculumServerSaaSMetrics {
@@ -2300,6 +2460,7 @@ export type DomainRegistrarType =
   | 'nira_accredited_whogohost' 
   | 'cloudflare_registrar' 
   | 'namecheap_api' 
+  | 'google_cloud_run_edge'
   | 'external_self_hosted';
 
 export type DnsRecordType = 'A' | 'AAAA' | 'CNAME' | 'TXT' | 'MX' | 'NS' | 'SRV';
@@ -2574,6 +2735,8 @@ export interface PlatformAuditRecord {
     | 'tenant_archived'
     | 'backup_created'
     | 'backup_restored'
+    | 'payment_received'
+    | 'psp_webhook_processed'
     | 'admin_login'
     | 'admin_action';
   target: string;
@@ -2626,7 +2789,14 @@ export type WebhookEventType =
   | 'application.updated'
   | 'application.failed'
   | 'exam.generated'
-  | 'exam.released';
+  | 'exam.released'
+  | 'payment.charge.success'
+  | 'payment.charge.failed'
+  | 'payment.opay.virtual_nuban_credited'
+  | 'payment.opay.push_checkout_completed'
+  | 'payment.paystack.subscription_renewed'
+  | 'payment.paystack.split_settled'
+  | 'payment.refund.processed';
 
 export interface PlatformWebhookSubscription {
   id: string;
@@ -3219,6 +3389,289 @@ export interface ShardMigrationJob {
   bytesTransferredMb: number;
   totalBytesMb: number;
 }
+
+// -----------------------------------------------------------------
+// 5. LOGISTICS SUPPORT MANAGEMENT (BUNDLE 5) TYPES
+// -----------------------------------------------------------------
+
+// A. Gate Security Kiosk & Guardian Pickup Scanner
+export type ExitAuthorizationStatus = 'authorized_exit' | 'flagged_invalid_pin' | 'unauthorized_guardian' | 'pending_verification' | 'revoked_pass';
+
+export interface GatePickupPass {
+  id: string;
+  passCode: string; // e.g. "GT-PASS-2026-892"
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  classGrade: ClassGrade;
+  studentPhotoUrl: string;
+  primaryParentName: string;
+  authorizedGuardianName: string;
+  relationship: string;
+  guardianPhone: string;
+  guardianPhotoUrl: string;
+  guardianNinOrId: string;
+  qrPayload: string;
+  pinCode: string;
+  validDate: string; // YYYY-MM-DD
+  expiryTime: string; // e.g. "18:00"
+  vehicleRegNumber?: string;
+  isBoardingStudent: boolean;
+  activeExeatApproved?: boolean;
+  status: 'active' | 'scanned_out' | 'expired' | 'revoked';
+}
+
+export interface GateSecurityScanLog {
+  id: string;
+  timestamp: string;
+  passId: string;
+  studentId: string;
+  studentName: string;
+  guardianName: string;
+  securityOfficerName: string;
+  gateLocation: 'Main Front Gate Kiosk' | 'Boarding House South Gate' | 'Sports Complex Gate' | 'Staff Car Park Gate';
+  authorizationStatus: ExitAuthorizationStatus;
+  notes?: string;
+  smsAlertSentToParent: boolean;
+}
+
+// B. Digital E-Library & Curriculum Resource Repository
+export type LibraryResourceType = 
+  | 'nerdc_textbook' 
+  | 'waec_past_paper' 
+  | 'neco_past_paper' 
+  | 'jamb_utme_series' 
+  | 'audio_courseware' 
+  | 'video_lecture' 
+  | 'interactive_pdf' 
+  | 'staff_uploaded_worksheet';
+
+export interface LibraryResourceItem {
+  id: string;
+  title: string;
+  subjectId: string;
+  subjectName: string;
+  classGrade: ClassGrade | 'All Grades';
+  level: 'jss' | 'sss' | 'all';
+  type: LibraryResourceType;
+  format: 'PDF' | 'MP3' | 'MP4' | 'EPUB' | 'ZIP';
+  fileSizeMb: number;
+  authorOrPublisher: string; // e.g. "NERDC / Learn Africa", "WAEC Council Secretariat"
+  editionOrYear: string; // e.g. "2025 Revised Edition", "WAEC 2024 Past Questions with Solution Key"
+  downloadCount: number;
+  viewCount: number;
+  coverImageUrl: string;
+  fileDownloadUrl: string;
+  description: string;
+  curriculumAlignedThemes: string[];
+  isStaffUploaded?: boolean;
+  uploadedByStaffName?: string;
+  uploadedAt?: string;
+  isVerifiedByHOD: boolean;
+}
+
+export interface LibraryResourceUploadPayload {
+  title: string;
+  subjectName: string;
+  classGrade: ClassGrade | 'All Grades';
+  type: LibraryResourceType;
+  format: 'PDF' | 'MP3' | 'MP4' | 'EPUB';
+  description: string;
+  authorOrStaffName: string;
+  editionOrYear: string;
+  tags: string[];
+  fileSizeMb: number;
+  fileDataUrl?: string;
+  fileName?: string;
+}
+
+// C. Boarding House & Hostel Management Suite
+export interface HostelRoom {
+  id: string;
+  roomNumber: string; // e.g. "Room 101"
+  floor: 'Ground Floor' | 'First Floor' | 'Second Floor';
+  totalBeds: number;
+  occupiedBeds: number;
+  bedNumbers: string[];
+  wing: 'North Wing' | 'South Wing' | 'East Wing' | 'West Wing';
+  isIsolationRoom?: boolean;
+  prefectInCharge?: string;
+}
+
+export interface HostelDormitory {
+  id: string;
+  name: string; // e.g. "Queen Amina Hall", "King Jaja of Opobo Hall", "Sir Ahmadu Bello House", "Moremi Hall"
+  gender: 'Boys' | 'Girls';
+  category: 'Junior Secondary' | 'Senior Secondary' | 'Mixed';
+  houseMasterName: string;
+  houseMasterPhone: string;
+  assistantHouseMasterName: string;
+  totalCapacity: number;
+  occupiedCount: number;
+  availableBeds: number;
+  occupancyRatePercent: number;
+  colorHex: string;
+  rooms: HostelRoom[];
+  prefectsCount: number;
+  status: 'optimal' | 'near_capacity' | 'full' | 'maintenance';
+}
+
+export type ExeatType = 'weekend_home' | 'medical_hospital' | 'family_emergency' | 'academic_competition' | 'official_school_errand';
+export type ExeatApprovalStatus = 'pending_housemaster' | 'approved_by_housemaster' | 'approved_by_principal' | 'rejected_by_housemaster' | 'departed_campus' | 'returned_and_signed_in' | 'overdue_return';
+
+export interface StudentExeatRequest {
+  id: string;
+  exeatNumber: string; // e.g. "EXT-2026-084"
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  classGrade: ClassGrade;
+  dormitoryId: string;
+  dormitoryName: string;
+  roomNumber: string;
+  exeatType: ExeatType;
+  reason: string;
+  destinationAddress: string;
+  destinationState: string;
+  parentOrGuardianName: string;
+  parentPhone: string;
+  departureDate: string;
+  departureTime: string;
+  expectedReturnDate: string;
+  expectedReturnTime: string;
+  actualReturnTimestamp?: string;
+  status: ExeatApprovalStatus;
+  houseMasterNotes?: string;
+  houseMasterApprovedAt?: string;
+  houseMasterName?: string;
+  gateExitScannedAt?: string;
+  gateReturnScannedAt?: string;
+  parentConsentConfirmed: boolean;
+  qrVerificationHash: string;
+}
+
+export interface EveningRollCallEntry {
+  id: string;
+  date: string;
+  dormitoryId: string;
+  dormitoryName: string;
+  totalBoarders: number;
+  presentCount: number;
+  absentOnApprovedExeat: number;
+  absentInSickBay: number;
+  unaccountedAbsenceCount: number;
+  conductedBy: string; // House Master or Prefect
+  timestamp: string;
+  remarks: string;
+}
+
+export interface DiningMealRegister {
+  id: string;
+  date: string;
+  mealType: 'Breakfast' | 'Lunch' | 'Dinner';
+  menuItems: string[];
+  specialDietMealsCount: number;
+  totalBoardersServed: number;
+  inspectionPassedByNurse: boolean;
+  foodCommitteeRepresentative: string;
+  notes?: string;
+}
+
+// D. School Bus Transportation & Route Management
+export interface BusStopLocation {
+  id: string;
+  stopName: string; // e.g. "Lekki Phase 1 Gate", "Admiralty Way Junction", "Ajah Roundabout", "Ikeja GRA Mall"
+  latitude: number;
+  longitude: number;
+  geofenceRadiusMeters: number; // e.g. 500 meters
+  estimatedArrivalMorning: string; // "06:45 AM"
+  estimatedArrivalAfternoon: string; // "04:15 PM"
+  assignedStudentIds: string[];
+  assignedStudentCount: number;
+}
+
+export interface BusRoute {
+  id: string;
+  routeCode: string; // e.g. "BUS-RT-01 (Island Express)", "BUS-RT-02 (Mainland Shuttle)"
+  routeName: string;
+  assignedBusVehicleId: string;
+  busPlateNumber: string;
+  driverName: string;
+  driverPhone: string;
+  busAttendantName: string;
+  busAttendantPhone: string;
+  capacity: number;
+  totalAssignedStudents: number;
+  routeStops: BusStopLocation[];
+  currentTripStatus: 'idle_at_school' | 'morning_pickup_in_progress' | 'morning_trip_completed' | 'afternoon_dropoff_in_progress' | 'afternoon_trip_completed' | 'maintenance_grounded';
+  currentActiveStopIndex: number;
+  gpsCoordinates: {
+    lat: number;
+    lng: number;
+    speedKmh: number;
+    headingDeg: number;
+    lastUpdated: string;
+  };
+}
+
+export interface BusTripPassengerLog {
+  id: string;
+  tripDate: string;
+  routeId: string;
+  routeCode: string;
+  studentId: string;
+  studentName: string;
+  classGrade: ClassGrade;
+  busStopName: string;
+  parentName: string;
+  parentPhone: string;
+  checkInStatus: 'boarded' | 'absent_not_at_stop' | 'dropped_off_safely' | 'parent_picked_manually';
+  checkInTime?: string;
+  dropOffTime?: string;
+  scannedByAttendant: boolean;
+}
+
+export interface BusDriverProfile {
+  id: string;
+  fullName: string;
+  phone: string;
+  licenseNumber: string;
+  licenseExpiryDate: string;
+  yearsOfExperience: number;
+  assignedBusNumber: string;
+  medicalClearanceStatus: 'passed' | 'review_required';
+  safetyRating: number; // 4.9 / 5.0
+  lastDrugTestDate: string;
+}
+
+export interface BusMaintenanceRecord {
+  id: string;
+  busVehicleId: string;
+  plateNumber: string;
+  serviceType: 'Routine 5000km Engine Oil & Filter' | 'Brake Pad & Hydraulic Overhaul' | 'Tire Replacement & Wheel Alignment' | 'Air Conditioning Servicing' | 'Comprehensive Safety MOT';
+  serviceDate: string;
+  mileageKm: number;
+  costNgn: number;
+  servicedByWorkshop: string;
+  nextServiceDueDate: string;
+  approvedByTransportOfficer: string;
+  status: 'completed' | 'scheduled_pending' | 'urgent_attention';
+}
+
+export interface ParentGeofenceAlertNotification {
+  id: string;
+  timestamp: string;
+  busRouteCode: string;
+  busPlateNumber: string;
+  stopName: string;
+  studentName: string;
+  parentPhone: string;
+  parentName: string;
+  alertType: 'approaching_geofence' | 'arrived_at_stop' | 'student_boarded' | 'student_dropped_off';
+  messageText: string;
+  isRead: boolean;
+}
+
 
 
 

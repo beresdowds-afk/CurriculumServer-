@@ -188,18 +188,18 @@ export const PrincipalFeatureGovernanceTab: React.FC<PrincipalFeatureGovernanceT
               </span>
               <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                {licensedBundlesCount} of 4 Bundles Licensed
+                {licensedBundlesCount} of {CURRICULUM_FLOW_BUNDLES.length} Suites Licensed
               </span>
               <span className="px-2.5 py-0.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-mono border border-slate-700">
                 Instance: {activeTenant.appId}
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              Curriculum Flow 4-Bundle Architecture & Control
+              Curriculum Flow Modular Architecture & Feature Governance
             </h1>
             <p className="text-sm text-slate-300 leading-relaxed">
-              Curriculum Flow is structured into four core bundles: <strong className="text-indigo-300">Administration</strong>, <strong className="text-emerald-300">Teaching</strong>, <strong className="text-amber-300">Assessment</strong>, and <strong className="text-sky-300">Accounts & Billing</strong>. 
-              As Principal Admin, you can enable or disable specific detailed features for <strong className="text-white">{activeTenant.schoolName}</strong> within your licensed suites.
+              Curriculum Flow is structured into modular suites: <strong className="text-indigo-300">Administration</strong>, <strong className="text-emerald-300">Teaching</strong>, <strong className="text-amber-300">Assessment</strong>, <strong className="text-sky-300">Accounts & Billing</strong>, and <strong className="text-purple-300">Logistics & Hostels</strong>. 
+              As Principal Admin, you can enable or disable specific detailed sub-features for <strong className="text-white">{activeTenant.schoolName}</strong> within your licensed suites.
             </p>
           </div>
 
@@ -365,8 +365,8 @@ export const PrincipalFeatureGovernanceTab: React.FC<PrincipalFeatureGovernanceT
                 </div>
               </div>
 
-              {/* 4 BUNDLE PILLARS */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+              {/* BUNDLE PILLARS */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 w-full">
                 {CURRICULUM_FLOW_BUNDLES.map(bundle => {
                   const isLicensed = activeTenant.licensedBundles?.[bundle.key];
                   return (

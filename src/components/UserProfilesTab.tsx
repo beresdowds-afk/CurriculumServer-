@@ -898,6 +898,11 @@ export const UserProfilesTab: React.FC<UserProfilesTabProps> = ({
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
                 <div className="text-slate-400 font-medium">Official Contact Email</div>
                 <div className="text-slate-200 font-semibold">{selectedProfileForDetails.data.officialEmail || selectedProfileForDetails.data.email || 'N/A'}</div>
+                {(selectedProfileForDetails.data.alternativeAccessEmail || selectedProfileForDetails.data.alternativeEmail) && (
+                  <div className="text-[11px] text-amber-300 font-mono">
+                    Alt: {selectedProfileForDetails.data.alternativeAccessEmail || selectedProfileForDetails.data.alternativeEmail}
+                  </div>
+                )}
               </div>
 
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">

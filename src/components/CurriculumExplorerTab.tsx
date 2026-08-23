@@ -14,14 +14,21 @@ import {
   Layers, 
   CheckCircle2, 
   Sparkles, 
-  ExternalLink,
-  ChevronDown,
-  ChevronRight,
-  Filter,
-  Award,
-  HelpCircle,
-  Tag
+  ExternalLink, 
+  ChevronDown, 
+  ChevronRight, 
+  Filter, 
+  Award, 
+  HelpCircle, 
+  Tag,
+  Calendar,
+  RefreshCw,
+  Clock,
+  ShieldCheck,
+  History
 } from 'lucide-react';
+import { NerdcAnnualWorkerModal } from './NerdcAnnualWorkerModal';
+import { CurriculumChangesAuditView } from './CurriculumChangesAuditView';
 
 interface CurriculumExplorerTabProps {
   subjects: SubjectCurriculum[];
@@ -38,12 +45,14 @@ export const CurriculumExplorerTab: React.FC<CurriculumExplorerTabProps> = ({
   onOpenVariableQuestions,
   onOpenTaughtAssessment,
 }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'explorer' | 'changes_audit'>('explorer');
   const [selectedLevel, setSelectedLevel] = useState<EducationLevel>('all');
   const [selectedField, setSelectedField] = useState<SubjectField | 'all'>('all');
   const [selectedGrade, setSelectedGrade] = useState<ClassGrade | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>(subjects[0]?.id || '');
   const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null);
+  const [isWorkerModalOpen, setIsWorkerModalOpen] = useState(false);
 
   // Filter subjects
   const filteredSubjects = useMemo(() => {
@@ -74,30 +83,72 @@ export const CurriculumExplorerTab: React.FC<CurriculumExplorerTabProps> = ({
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      {/* Header Banner */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-bold text-emerald-400 uppercase tracking-wider mb-1">
-              <BookOpen className="w-4 h-4" />
-              <span>National Academic Curriculum Repository (Source of Truth)</span>
+      {/* Top Sub-Tab Navigation Switcher */}
+      <div className="flex items-center gap-3 p-1.5 bg-slate-900 border border-slate-800 rounded-2xl w-fit">
+        <button
+          onClick={() => setActiveSubTab('explorer')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeSubTab === 'explorer'
+              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>Curriculum Structure & Objectives</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('changes_audit')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeSubTab === 'changes_audit'
+              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+          }`}
+        >
+          <History className="w-4 h-4 text-amber-400" />
+          <span>Curriculum Changes Audit Log</span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            2025/2026 Gazette
+          </span>
+        </button>
+      </div>
+
+      {activeSubTab === 'changes_audit' ? (
+        <CurriculumChangesAuditView />
+      ) : (
+        <>
+          {/* Header Banner */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-bold text-emerald-400 uppercase tracking-wider mb-1">
+                  <BookOpen className="w-4 h-4" />
+                  <span>National Academic Curriculum Repository (Source of Truth)</span>
+                </div>
+                <h1 className="text-xl sm:text-2xl font-extrabold text-white">
+                  Official NERDC Curricular Structure & Learning Objectives
+                </h1>
+                <p className="text-xs text-slate-400 mt-1 max-w-3xl">
+                  Strictly authoritative: The AI generates lesson notes, questions, and tests solely within these verified objectives, subtopics, and teaching guidelines.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsWorkerModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all shadow-sm"
+                  title="View Annual Update Worker status and sync scheduler"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Annual Sync Daemon</span>
+                </button>
+                <span className="text-xs px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 font-mono font-medium">
+                  {filteredSubjects.length} of {subjects.length} Subjects Loaded
+                </span>
+              </div>
             </div>
-            <h1 className="text-xl sm:text-2xl font-extrabold text-white">
-              Official NERDC Curricular Structure & Learning Objectives
-            </h1>
-            <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-              Strictly authoritative: The AI generates lesson notes, questions, and tests solely within these verified objectives, subtopics, and teaching guidelines.
-            </p>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 font-mono font-medium">
-              {filteredSubjects.length} of {subjects.length} Subjects Loaded
-            </span>
-          </div>
-        </div>
-
-        {/* Filter Controls */}
+            {/* Filter Controls */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-6 pt-6 border-t border-slate-800/80 text-xs">
           {/* Level */}
           <div>
@@ -424,6 +475,13 @@ export const CurriculumExplorerTab: React.FC<CurriculumExplorerTabProps> = ({
           </div>
         )}
       </div>
+    </>
+    )}
+
+      <NerdcAnnualWorkerModal
+        isOpen={isWorkerModalOpen}
+        onClose={() => setIsWorkerModalOpen(false)}
+      />
     </div>
   );
 };

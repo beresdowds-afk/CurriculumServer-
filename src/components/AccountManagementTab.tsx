@@ -42,6 +42,7 @@ import { InstallmentPolicyManager } from './InstallmentPolicyManager';
 import { RevenueBudgetDashboard } from './RevenueBudgetDashboard';
 import { FeesLeviesManagementPortal } from './FeesLeviesManagementPortal';
 import { StudentPaymentHistoryView } from './StudentPaymentHistoryView';
+import { PSPManagementHub } from './PSPManagementHub';
 import { 
   Building2, 
   CreditCard, 
@@ -74,14 +75,15 @@ import {
   Mail,
   MessageSquare,
   AlertCircle,
-  History
+  History,
+  Zap
 } from 'lucide-react';
 
 interface AccountManagementTabProps {
   currentUser: UserProfile;
 }
 
-type BursarySubTab = 'revenue_budget' | 'ledgers' | 'student_payment_history' | 'invoices' | 'receipts' | 'installment_policy' | 'reconciliation' | 'notifications' | 'fee_schedules';
+type BursarySubTab = 'revenue_budget' | 'ledgers' | 'student_payment_history' | 'invoices' | 'receipts' | 'installment_policy' | 'reconciliation' | 'notifications' | 'fee_schedules' | 'psp_gateways';
 
 export const AccountManagementTab: React.FC<AccountManagementTabProps> = ({ currentUser }) => {
   const [activeSubTab, setActiveSubTab] = useState<BursarySubTab>('revenue_budget');
@@ -707,6 +709,25 @@ export const AccountManagementTab: React.FC<AccountManagementTabProps> = ({ curr
               : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
           }`}>
             {feeItems.length} Fees • {sundryPayments.length} Sundry
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('psp_gateways')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeSubTab === 'psp_gateways'
+              ? 'bg-gradient-to-r from-cyan-600 to-emerald-600 text-white shadow-lg shadow-emerald-950/50 ring-2 ring-cyan-400'
+              : 'bg-slate-900 text-cyan-400 hover:text-white hover:bg-slate-800 border border-cyan-500/30'
+          }`}
+        >
+          <Zap className="w-3.5 h-3.5" />
+          <span>PSP Gateways (Paystack & OPay)</span>
+          <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+            activeSubTab === 'psp_gateways'
+              ? 'bg-slate-950 text-emerald-300'
+              : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+          }`}>
+            Dual Gateways
           </span>
         </button>
       </div>
@@ -1508,6 +1529,101 @@ export const AccountManagementTab: React.FC<AccountManagementTabProps> = ({ curr
             showToast('Student installment hardship agreements updated!');
           }}
           invoices={invoices}
+        />
+      )}
+
+      {/* --------------------------------------------------------------- */}
+      {/* SUBTAB: PAYMENT SERVICE PROVIDERS (PAYSTACK & OPAY INTEGRATION) */}
+      {/* --------------------------------------------------------------- */}
+      {activeSubTab === 'psp_gateways' && (
+        <PSPManagementHub
+          currentUser={currentUser}
+          transactions={transactions}
+          invoices={invoices}
+          onTriggerSimulatedPayment={(channel, amount, studentAdmNo) => {
+            // Find target student invoice
+            const inv = invoices.find(i => i.admissionNumber === studentAdmNo) || invoices[0];
+            if (inv) {
+              const txRef = channel === 'paystack'
+                ? `PSTK_CF_${Date.now()}`
+                : `OPAY_TX_${Date.now()}`;
+              
+              const fee = channel === 'paystack' ? Math.min(2000, amount * 0.015) : 50;
+              const receiptNo = `REC-2026-T3-${Math.floor(1000 + Math.random() * 9000)}`;
+
+              const newTx: PaymentTransaction = {
+                id: `tx-${Date.now()}`,
+                receiptNumber: receiptNo,
+                transactionReference: txRef,
+                invoiceId: inv.id,
+                invoiceNumber: inv.invoiceNumber,
+                studentId: inv.studentId,
+                studentName: inv.studentName,
+                admissionNumber: inv.admissionNumber,
+                classGrade: inv.classGrade,
+                amountPaid: amount,
+                gatewayFee: fee,
+                netAmount: amount - fee,
+                paymentChannel: channel,
+                channelDetails: {
+                  bankName: channel === 'paystack' ? 'Access Bank (Paystack Split)' : 'OPay Digital Bank (Paycom)',
+                  pspReference: txRef,
+                  senderAccountName: inv.parentName,
+                  virtualAccountNumber: channel === 'opay' ? '9920192834' : undefined
+                },
+                paymentDate: new Date().toISOString(),
+                status: 'successful',
+                verifiedBy: `${currentUser.title || ''} ${currentUser.firstName} ${currentUser.lastName}`.trim(),
+                verifiedAt: new Date().toISOString(),
+                notes: `Simulated ${channel.toUpperCase()} automated webhook settlement`
+              };
+
+              const newRec: OfficialReceipt = {
+                id: `rec-${Date.now()}`,
+                receiptNumber: receiptNo,
+                transactionId: newTx.id,
+                transactionReference: txRef,
+                invoiceId: inv.id,
+                invoiceNumber: inv.invoiceNumber,
+                studentId: inv.studentId,
+                studentName: inv.studentName,
+                admissionNumber: inv.admissionNumber,
+                classGrade: inv.classGrade,
+                parentName: inv.parentName,
+                parentPhone: inv.parentPhone,
+                parentEmail: inv.parentEmail,
+                amountInFigures: amount,
+                amountInWords: numberToWordsNaira(amount),
+                paymentChannel: channel,
+                paymentDate: new Date().toISOString(),
+                totalInvoiceAmount: inv.totalAmount,
+                amountPaidThisTransaction: amount,
+                totalCumulativePaid: inv.amountPaid + amount,
+                balanceRemaining: Math.max(0, inv.balance - amount),
+                authorizedBursarName: `${currentUser.title || ''} ${currentUser.firstName} ${currentUser.lastName}`.trim(),
+                qrVerificationCode: `https://verify.curriculumflow.com.ng/receipt/${receiptNo}`,
+                generatedAt: new Date().toISOString()
+              };
+
+              setTransactions(prev => [newTx, ...prev]);
+              setReceipts(prev => [newRec, ...prev]);
+              setInvoices(prev => prev.map(i => {
+                if (i.id === inv.id) {
+                  const newPaid = i.amountPaid + amount;
+                  const newBal = Math.max(0, i.totalAmount - newPaid);
+                  return {
+                    ...i,
+                    amountPaid: newPaid,
+                    balance: newBal,
+                    status: newBal === 0 ? 'paid' : 'partially_paid'
+                  };
+                }
+                return i;
+              }));
+
+              showToast(`Simulated ${channel.toUpperCase()} payment of ₦${amount.toLocaleString()} posted to student ledger & receipt #${receiptNo} generated!`);
+            }
+          }}
         />
       )}
 

@@ -208,7 +208,7 @@ function buildBrandProfile(
   };
 }
 
-export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
+export const INITIAL_PROVISIONED_TENANTS: TenantSchoolApp[] = [
   {
     id: 'tenant-greenfield-01',
     appId: 'CF-2026-GREEN-LAG',
@@ -245,7 +245,7 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     lastActiveTimestamp: 'Just now',
     databaseShardId: 'shard-ng-west-01-greenfield',
     databaseIsolationType: 'dedicated_shard',
-    clonedFromTemplateVersion: 'v3.0.0-Enterprise',
+    provisionedFromTemplateVersion: 'v3.0.0-Enterprise',
     brandProfile: buildBrandProfile(
       'brand-greenfield',
       'Greenfield Academy',
@@ -264,7 +264,8 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
       administration: true,
       teaching: true,
       assessment: true,
-      accounts_billing: true
+      accounts_billing: true,
+      logistics_support: true
     },
     inAppFeatureOverrides: {
       student_record: true,
@@ -300,9 +301,47 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     },
     rateLimitReqPerMin: 1500,
     createdAt: '2025-05-10T08:00:00Z',
-    clonedByAdmin: 'SaaS Platform Superadmin',
+    provisionedByAdmin: 'SaaS Platform Superadmin',
     licenseHash: 'sha256:8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b',
-    auditLogsCount: 2150
+    auditLogsCount: 2150,
+    superAdminAccessGrant: {
+      status: 'approved',
+      approvedByPrincipalName: 'Dr. (Mrs.) Folashade Adeyemi',
+      approvedByPrincipalEmail: 'principal@greenfieldacademy.sch.ng',
+      approvedAt: '2026-08-15T09:00:00Z',
+      expiresAt: '2026-12-31T23:59:59Z',
+      accessScope: 'full_diagnostic_support',
+      requestReason: 'Database index optimization, NERDC curriculum synchronization & custom SSL verification',
+      requestedAt: '2026-08-14T16:30:00Z',
+      requestedByName: 'Engr. Olusola Adebayo',
+      requestedByEmail: 'superadmin@curriculumserver.com.ng',
+      accessLogs: [
+        {
+          id: 'log-sa-001',
+          timestamp: '2026-08-14T16:30:00Z',
+          actorName: 'Engr. Olusola Adebayo (Super Admin)',
+          actorEmail: 'superadmin@curriculumserver.com.ng',
+          action: 'access_requested',
+          details: 'Submitted ticket #CS-9901 for database indexing and NERDC 2026 curriculum sync verification.'
+        },
+        {
+          id: 'log-sa-002',
+          timestamp: '2026-08-15T09:00:00Z',
+          actorName: 'Dr. (Mrs.) Folashade Adeyemi (Principal)',
+          actorEmail: 'principal@greenfieldacademy.sch.ng',
+          action: 'access_approved',
+          details: 'Approved delegated Super Admin access through Dec 31, 2026 with scope: Full Diagnostic Support.'
+        },
+        {
+          id: 'log-sa-003',
+          timestamp: '2026-08-18T11:15:00Z',
+          actorName: 'Engr. Olusola Adebayo (Super Admin)',
+          actorEmail: 'superadmin@curriculumserver.com.ng',
+          action: 'instance_entered',
+          details: 'Logged into tenant container instance for shard health telemetry.'
+        }
+      ]
+    }
   },
   {
     id: 'tenant-royal-02',
@@ -340,7 +379,7 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     lastActiveTimestamp: '4 mins ago',
     databaseShardId: 'shard-ng-west-02-royal',
     databaseIsolationType: 'dedicated_shard',
-    clonedFromTemplateVersion: 'v3.0.0-Enterprise',
+    provisionedFromTemplateVersion: 'v3.0.0-Enterprise',
     brandProfile: buildBrandProfile(
       'brand-royal',
       'Royal Heritage School',
@@ -359,7 +398,8 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
       administration: true,
       teaching: true,
       assessment: true,
-      accounts_billing: true
+      accounts_billing: true,
+      logistics_support: true
     },
     inAppFeatureOverrides: {
       student_record: true,
@@ -395,9 +435,27 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     },
     rateLimitReqPerMin: 1000,
     createdAt: '2025-06-15T09:00:00Z',
-    clonedByAdmin: 'SaaS Platform Superadmin',
+    provisionedByAdmin: 'SaaS Platform Superadmin',
     licenseHash: 'sha256:1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c',
-    auditLogsCount: 1420
+    auditLogsCount: 1420,
+    superAdminAccessGrant: {
+      status: 'pending_approval',
+      requestReason: 'Annual SSL certificate rotation and custom DNS propagation assistance',
+      requestedAt: '2026-08-20T10:00:00Z',
+      requestedByName: 'Engr. Olusola Adebayo',
+      requestedByEmail: 'superadmin@curriculumserver.com.ng',
+      accessScope: 'emergency_hotfix',
+      accessLogs: [
+        {
+          id: 'log-sa-004',
+          timestamp: '2026-08-20T10:00:00Z',
+          actorName: 'Engr. Olusola Adebayo (Super Admin)',
+          actorEmail: 'superadmin@curriculumserver.com.ng',
+          action: 'access_requested',
+          details: 'Dispatched delegated access request to Principal Mr. David O. Adeleke for custom SSL rotation.'
+        }
+      ]
+    }
   },
   {
     id: 'tenant-excellence-03',
@@ -435,7 +493,7 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     lastActiveTimestamp: '7 mins ago',
     databaseShardId: 'shard-ng-north-01-excellence',
     databaseIsolationType: 'dedicated_shard',
-    clonedFromTemplateVersion: 'v3.0.0-Enterprise',
+    provisionedFromTemplateVersion: 'v3.0.0-Enterprise',
     brandProfile: buildBrandProfile(
       'brand-excellence',
       'Excellence College',
@@ -454,7 +512,8 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
       administration: true,
       teaching: true,
       assessment: true,
-      accounts_billing: true
+      accounts_billing: true,
+      logistics_support: true
     },
     inAppFeatureOverrides: {
       student_record: true,
@@ -490,9 +549,45 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     },
     rateLimitReqPerMin: 1200,
     createdAt: '2025-04-20T10:00:00Z',
-    clonedByAdmin: 'SaaS Platform Superadmin',
+    provisionedByAdmin: 'SaaS Platform Superadmin',
     licenseHash: 'sha256:5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b',
-    auditLogsCount: 1680
+    auditLogsCount: 1680,
+    superAdminAccessGrant: {
+      status: 'revoked',
+      approvedByPrincipalName: 'Hajiya Maryam S. Bello',
+      approvedByPrincipalEmail: 'principal@excellencecollege.sch.ng',
+      requestReason: 'Support ticket #CS-8821 resolved; access revoked by Principal Admin per school data policy',
+      requestedAt: '2026-08-01T12:00:00Z',
+      requestedByName: 'Engr. Olusola Adebayo',
+      requestedByEmail: 'superadmin@curriculumserver.com.ng',
+      accessScope: 'read_only_audit',
+      accessLogs: [
+        {
+          id: 'log-sa-005',
+          timestamp: '2026-08-01T12:00:00Z',
+          actorName: 'Engr. Olusola Adebayo (Super Admin)',
+          actorEmail: 'superadmin@curriculumserver.com.ng',
+          action: 'access_requested',
+          details: 'Diagnostic investigation request submitted for student gradebook archive.'
+        },
+        {
+          id: 'log-sa-006',
+          timestamp: '2026-08-02T08:30:00Z',
+          actorName: 'Hajiya Maryam S. Bello (Principal)',
+          actorEmail: 'principal@excellencecollege.sch.ng',
+          action: 'access_approved',
+          details: 'Approved 48-hour temporary diagnostic window.'
+        },
+        {
+          id: 'log-sa-007',
+          timestamp: '2026-08-04T09:00:00Z',
+          actorName: 'Hajiya Maryam S. Bello (Principal)',
+          actorEmail: 'principal@excellencecollege.sch.ng',
+          action: 'access_revoked',
+          details: 'Maintenance window elapsed. Principal revoked Super Admin access to preserve student privacy.'
+        }
+      ]
+    }
   },
   {
     id: 'tenant-brightfuture-04',
@@ -530,7 +625,7 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     lastActiveTimestamp: '12 mins ago',
     databaseShardId: 'shard-ng-west-03-brightfuture',
     databaseIsolationType: 'dedicated_shard',
-    clonedFromTemplateVersion: 'v3.0.0-Enterprise',
+    provisionedFromTemplateVersion: 'v3.0.0-Enterprise',
     brandProfile: buildBrandProfile(
       'brand-brightfuture',
       'Bright Future School',
@@ -549,7 +644,8 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
       administration: true,
       teaching: true,
       assessment: true,
-      accounts_billing: true
+      accounts_billing: true,
+      logistics_support: true
     },
     inAppFeatureOverrides: {
       student_record: true,
@@ -585,9 +681,14 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     },
     rateLimitReqPerMin: 900,
     createdAt: '2025-08-01T09:00:00Z',
-    clonedByAdmin: 'SaaS Platform Superadmin',
+    provisionedByAdmin: 'SaaS Platform Superadmin',
     licenseHash: 'sha256:3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e',
-    auditLogsCount: 890
+    auditLogsCount: 890,
+    superAdminAccessGrant: {
+      status: 'not_requested',
+      requestReason: undefined,
+      accessLogs: []
+    }
   },
   {
     id: 'tenant-godsgrace-05',
@@ -637,7 +738,7 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     lastActiveTimestamp: '18 mins ago',
     databaseShardId: 'shard-ng-south-01-godsgrace',
     databaseIsolationType: 'dedicated_shard',
-    clonedFromTemplateVersion: 'v3.0.0-Enterprise',
+    provisionedFromTemplateVersion: 'v3.0.0-Enterprise',
     brandProfile: buildBrandProfile(
       'brand-godsgrace',
       "God's Grace Academy",
@@ -656,7 +757,8 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
       administration: true,
       teaching: true,
       assessment: true,
-      accounts_billing: true
+      accounts_billing: true,
+      logistics_support: true
     },
     inAppFeatureOverrides: {
       student_record: true,
@@ -692,9 +794,31 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     },
     rateLimitReqPerMin: 1100,
     createdAt: '2025-04-01T09:00:00Z',
-    clonedByAdmin: 'SaaS Platform Superadmin',
+    provisionedByAdmin: 'SaaS Platform Superadmin',
     licenseHash: 'sha256:7f6e5d4c3b2a10f9e8d7c6b5a43210fe98dcba0987654321fedcba0987654321',
-    auditLogsCount: 1150
+    auditLogsCount: 1150,
+    superAdminAccessGrant: {
+      status: 'approved',
+      approvedByPrincipalName: 'Pastor (Mrs.) Grace Amadi',
+      approvedByPrincipalEmail: 'principal@godsgraceacademy.sch.ng',
+      approvedAt: '2026-08-10T14:00:00Z',
+      expiresAt: '2026-11-30T23:59:59Z',
+      accessScope: 'full_diagnostic_support',
+      requestReason: 'Lease-to-own contract equity escrow audit & database shard migration',
+      requestedAt: '2026-08-09T18:00:00Z',
+      requestedByName: 'Engr. Olusola Adebayo',
+      requestedByEmail: 'superadmin@curriculumserver.com.ng',
+      accessLogs: [
+        {
+          id: 'log-sa-008',
+          timestamp: '2026-08-10T14:00:00Z',
+          actorName: 'Pastor (Mrs.) Grace Amadi (Principal)',
+          actorEmail: 'principal@godsgraceacademy.sch.ng',
+          action: 'access_approved',
+          details: 'Authorized Super Admin for escrow equity audit until Nov 30, 2026.'
+        }
+      ]
+    }
   },
   {
     id: 'tenant-kings-01',
@@ -732,7 +856,7 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     lastActiveTimestamp: '2 mins ago',
     databaseShardId: 'shard-ng-west-01-kings',
     databaseIsolationType: 'dedicated_shard',
-    clonedFromTemplateVersion: 'v2.6.4-Enterprise',
+    provisionedFromTemplateVersion: 'v2.6.4-Enterprise',
     brandProfile: buildBrandProfile(
       'brand-kings',
       "King's College Lagos",
@@ -751,7 +875,8 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
       administration: true,
       teaching: true,
       assessment: true,
-      accounts_billing: true
+      accounts_billing: true,
+      logistics_support: true
     },
     inAppFeatureOverrides: {
       student_record: true,
@@ -787,9 +912,31 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     },
     rateLimitReqPerMin: 1200,
     createdAt: '2025-04-15T08:30:00Z',
-    clonedByAdmin: 'SaaS Platform Superadmin',
+    provisionedByAdmin: 'SaaS Platform Superadmin',
     licenseHash: 'sha256:4a8b7c9e1f2d3e4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8',
-    auditLogsCount: 1840
+    auditLogsCount: 1840,
+    superAdminAccessGrant: {
+      status: 'approved',
+      approvedByPrincipalName: 'Ali Andrew Agada, Ph.D.',
+      approvedByPrincipalEmail: 'principal@kingscollege.edu.ng',
+      approvedAt: '2026-07-20T08:00:00Z',
+      expiresAt: '2026-10-31T23:59:59Z',
+      accessScope: 'full_diagnostic_support',
+      requestReason: 'Federal Ministry CBT examination bridge integration & shard replication latency audit',
+      requestedAt: '2026-07-19T14:00:00Z',
+      requestedByName: 'Engr. Olusola Adebayo',
+      requestedByEmail: 'superadmin@curriculumserver.com.ng',
+      accessLogs: [
+        {
+          id: 'log-sa-009',
+          timestamp: '2026-07-20T08:00:00Z',
+          actorName: 'Ali Andrew Agada, Ph.D. (Principal)',
+          actorEmail: 'principal@kingscollege.edu.ng',
+          action: 'access_approved',
+          details: 'Granted Super Admin access for CBT bridge integration & shard replication audit.'
+        }
+      ]
+    }
   },
   {
     id: 'tenant-corona-02',
@@ -839,7 +986,7 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     lastActiveTimestamp: '8 mins ago',
     databaseShardId: 'shard-ng-west-02-corona',
     databaseIsolationType: 'dedicated_shard',
-    clonedFromTemplateVersion: 'v2.6.4-Enterprise',
+    provisionedFromTemplateVersion: 'v2.6.4-Enterprise',
     brandProfile: buildBrandProfile(
       'brand-corona',
       'Corona Secondary School Agbara',
@@ -858,7 +1005,8 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
       administration: true,
       teaching: true,
       assessment: true,
-      accounts_billing: true
+      accounts_billing: true,
+      logistics_support: true
     },
     inAppFeatureOverrides: {
       student_record: true,
@@ -894,9 +1042,21 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     },
     rateLimitReqPerMin: 1000,
     createdAt: '2025-06-01T10:00:00Z',
-    clonedByAdmin: 'SaaS Platform Superadmin',
+    provisionedByAdmin: 'SaaS Platform Superadmin',
     licenseHash: 'sha256:7b9c1d3e5f7a9b1c3d5e7f9a1b3c5d7e9f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9',
-    auditLogsCount: 960
+    auditLogsCount: 960,
+    superAdminAccessGrant: {
+      status: 'approved',
+      approvedByPrincipalName: 'Mrs. Chinyere O. Okereke',
+      approvedByPrincipalEmail: 'principal.secondary@coronaschools.org',
+      approvedAt: '2026-08-01T09:00:00Z',
+      expiresAt: '2026-11-01T23:59:59Z',
+      accessScope: 'full_diagnostic_support',
+      requestReason: 'Hybrid offline edge-server synchronization and RFID gateway driver patch',
+      requestedAt: '2026-07-31T15:00:00Z',
+      requestedByName: 'Engr. Olusola Adebayo',
+      requestedByEmail: 'superadmin@curriculumserver.com.ng'
+    }
   },
   {
     id: 'tenant-loyola-03',
@@ -934,7 +1094,7 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     lastActiveTimestamp: '15 mins ago',
     databaseShardId: 'shard-ng-north-01-loyola',
     databaseIsolationType: 'isolated_tenant_schema',
-    clonedFromTemplateVersion: 'v2.6.4-Enterprise',
+    provisionedFromTemplateVersion: 'v2.6.4-Enterprise',
     brandProfile: buildBrandProfile(
       'brand-loyola',
       'Loyola Jesuit College Abuja',
@@ -953,7 +1113,8 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
       administration: true,
       teaching: true,
       assessment: true,
-      accounts_billing: true
+      accounts_billing: true,
+      logistics_support: true
     },
     inAppFeatureOverrides: {
       student_record: true,
@@ -989,9 +1150,17 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     },
     rateLimitReqPerMin: 800,
     createdAt: '2026-01-10T09:15:00Z',
-    clonedByAdmin: 'SaaS Platform Superadmin',
+    provisionedByAdmin: 'SaaS Platform Superadmin',
     licenseHash: 'sha256:3c5d7e9f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b3c5',
-    auditLogsCount: 620
+    auditLogsCount: 620,
+    superAdminAccessGrant: {
+      status: 'pending_approval',
+      requestReason: 'Database index query profiling and Spanner audit trail consolidation',
+      requestedAt: '2026-08-21T11:00:00Z',
+      requestedByName: 'Engr. Olusola Adebayo',
+      requestedByEmail: 'superadmin@curriculumserver.com.ng',
+      accessScope: 'read_only_audit'
+    }
   },
   {
     id: 'tenant-fgc-kano-04',
@@ -1027,7 +1196,7 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     lastActiveTimestamp: '1 hour ago',
     databaseShardId: 'shard-ng-north-02-fgckan',
     databaseIsolationType: 'isolated_tenant_schema',
-    clonedFromTemplateVersion: 'v2.6.4-Enterprise',
+    provisionedFromTemplateVersion: 'v2.6.4-Enterprise',
     brandProfile: buildBrandProfile(
       'brand-fgckano',
       'Federal Government College Kano',
@@ -1046,7 +1215,8 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
       administration: true,
       teaching: true,
       assessment: true,
-      accounts_billing: false
+      accounts_billing: false,
+      logistics_support: true
     },
     inAppFeatureOverrides: {
       student_record: true,
@@ -1095,9 +1265,13 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     },
     rateLimitReqPerMin: 600,
     createdAt: '2026-03-01T11:00:00Z',
-    clonedByAdmin: 'SaaS Platform Superadmin',
+    provisionedByAdmin: 'SaaS Platform Superadmin',
     licenseHash: 'sha256:1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b3c5d7e9f1a3',
-    auditLogsCount: 310
+    auditLogsCount: 310,
+    superAdminAccessGrant: {
+      status: 'not_requested',
+      accessLogs: []
+    }
   },
   {
     id: 'tenant-atlantic-05',
@@ -1147,7 +1321,7 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     lastActiveTimestamp: '35 mins ago',
     databaseShardId: 'shard-ng-west-03-athall',
     databaseIsolationType: 'dedicated_shard',
-    clonedFromTemplateVersion: 'v2.6.4-Enterprise',
+    provisionedFromTemplateVersion: 'v2.6.4-Enterprise',
     brandProfile: buildBrandProfile(
       'brand-athall',
       'Atlantic Hall School Poka',
@@ -1166,7 +1340,8 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
       administration: true,
       teaching: true,
       assessment: true,
-      accounts_billing: true
+      accounts_billing: true,
+      logistics_support: true
     },
     inAppFeatureOverrides: {
       student_record: true,
@@ -1202,9 +1377,21 @@ export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = [
     },
     rateLimitReqPerMin: 1000,
     createdAt: '2025-09-01T08:00:00Z',
-    clonedByAdmin: 'SaaS Platform Superadmin',
+    provisionedByAdmin: 'SaaS Platform Superadmin',
     licenseHash: 'sha256:5f7a9b1c3d5e7f9a1b3c5d7e9f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7',
-    auditLogsCount: 780
+    auditLogsCount: 780,
+    superAdminAccessGrant: {
+      status: 'approved',
+      approvedByPrincipalName: 'Dr. Terry Howard',
+      approvedByPrincipalEmail: 'principal@atlantic-hall.net',
+      approvedAt: '2026-08-05T10:00:00Z',
+      expiresAt: '2026-09-30T23:59:59Z',
+      accessScope: 'full_diagnostic_support',
+      requestReason: 'Final month lease buyout equity reconciliation & escrow audit',
+      requestedAt: '2026-08-04T16:00:00Z',
+      requestedByName: 'Engr. Olusola Adebayo',
+      requestedByEmail: 'superadmin@curriculumserver.com.ng'
+    }
   }
 ];
 
@@ -1222,8 +1409,14 @@ export const INITIAL_SAAS_INVOICES: TenantBillingInvoice[] = [
     status: 'paid',
     dueDate: '2026-04-15',
     paidDate: '2026-04-12',
-    paymentGatewayRef: 'PAY-KINGS-ANNUAL-928174',
-    pspChannel: 'Direct Bank Wire',
+    paymentGatewayRef: 'PSTK_TX_KINGS_ANNUAL_928174',
+    pspChannel: 'Paystack',
+    gatewayResponseCode: '200_OK',
+    gatewayResponseMessage: 'Charge authorized & split settled via Paystack Split code SPLIT_CF_2026',
+    gatewayTransactionStatus: 'success',
+    gatewayLatencyMs: 48,
+    gatewayAuthMethod: 'Bearer-Secret',
+    lastWebhookTimestamp: '2026-04-12T10:14:22Z',
     notes: 'Prepaid Annual Enterprise tier with 20% institutional discount applied.'
   },
   {
@@ -1239,8 +1432,14 @@ export const INITIAL_SAAS_INVOICES: TenantBillingInvoice[] = [
     status: 'paid',
     dueDate: '2026-08-05',
     paidDate: '2026-08-04',
-    paymentGatewayRef: 'PAY-CORONA-LEASE-14-9981',
-    pspChannel: 'Paystack',
+    paymentGatewayRef: 'OPAY_NUBAN_CORONA_LEASE_14',
+    pspChannel: 'OPay',
+    gatewayResponseCode: '00_APPROVED',
+    gatewayResponseMessage: 'Dynamic NUBAN 9920192834 settled in 2.8s via OPay Paycom Node',
+    gatewayTransactionStatus: 'success',
+    gatewayLatencyMs: 28,
+    gatewayAuthMethod: 'HMAC-SHA512',
+    lastWebhookTimestamp: '2026-08-04T14:32:01Z',
     notes: 'Monthly equity allocation credited to perpetual buyout pool.'
   },
   {
@@ -1256,8 +1455,14 @@ export const INITIAL_SAAS_INVOICES: TenantBillingInvoice[] = [
     status: 'paid',
     dueDate: '2026-01-10',
     paidDate: '2026-01-08',
-    paymentGatewayRef: 'PAY-LOYOLA-YR-338210',
-    pspChannel: 'Flutterwave',
+    paymentGatewayRef: 'PSTK_LOYOLA_YR_338210',
+    pspChannel: 'Paystack',
+    gatewayResponseCode: '200_OK',
+    gatewayResponseMessage: 'Mastercard 3DS OTP verified successfully',
+    gatewayTransactionStatus: 'success',
+    gatewayLatencyMs: 52,
+    gatewayAuthMethod: 'Bearer-Secret',
+    lastWebhookTimestamp: '2026-01-08T09:20:11Z',
     notes: 'Pro College Tier prepaid with dedicated cloud schema.'
   },
   {
@@ -1273,8 +1478,14 @@ export const INITIAL_SAAS_INVOICES: TenantBillingInvoice[] = [
     status: 'paid',
     dueDate: '2026-08-01',
     paidDate: '2026-08-01',
-    paymentGatewayRef: 'OPAY-FGCK-MTH-08',
+    paymentGatewayRef: 'OPAY_FGCK_MTH_08',
     pspChannel: 'OPay',
+    gatewayResponseCode: '00_APPROVED',
+    gatewayResponseMessage: 'Push checkout authorized on parent mobile wallet (Biometric Authenticated)',
+    gatewayTransactionStatus: 'success',
+    gatewayLatencyMs: 24,
+    gatewayAuthMethod: 'HMAC-SHA512',
+    lastWebhookTimestamp: '2026-08-01T08:05:44Z',
     notes: 'Monthly recurring card auto-charge.'
   },
   {
@@ -1290,9 +1501,82 @@ export const INITIAL_SAAS_INVOICES: TenantBillingInvoice[] = [
     status: 'paid',
     dueDate: '2026-08-05',
     paidDate: '2026-08-03',
-    paymentGatewayRef: 'PAY-ATHALL-LEASE-11',
-    pspChannel: 'Direct Bank Wire',
+    paymentGatewayRef: 'PSTK_ATHALL_LEASE_11',
+    pspChannel: 'Paystack',
+    gatewayResponseCode: '200_OK',
+    gatewayResponseMessage: 'Bank Transfer via Paystack dedicated titan NUBAN received',
+    gatewayTransactionStatus: 'success',
+    gatewayLatencyMs: 39,
+    gatewayAuthMethod: 'Bearer-Secret',
+    lastWebhookTimestamp: '2026-08-03T16:11:09Z',
     notes: 'Final pre-handover amortization cycle. 1 installment remaining.'
+  },
+  {
+    id: 'inv-cs-06',
+    invoiceNumber: 'INV-CS-2026-0806',
+    tenantAppId: 'CF-2026-KINGS-LAG',
+    tenantSchoolName: "King's College Lagos",
+    businessModel: 'monthly',
+    billingPeriod: 'September 2026 Student Seat Quota Burst (+250 Seats)',
+    amount: 75000,
+    taxVat: 5625,
+    totalAmount: 80625,
+    status: 'pending',
+    dueDate: '2026-09-01',
+    paymentGatewayRef: 'OPAY_PUSH_PENDING_9941',
+    pspChannel: 'OPay',
+    gatewayResponseCode: '01_PROCESSING',
+    gatewayResponseMessage: 'Push notification dispatched to Bursar phone app; awaiting pin authorization',
+    gatewayTransactionStatus: 'pending',
+    gatewayLatencyMs: 31,
+    gatewayAuthMethod: 'HMAC-SHA512',
+    lastWebhookTimestamp: '2026-08-23T04:10:00Z',
+    notes: 'Additional capacity addon for incoming JSS1 admissions batch.'
+  },
+  {
+    id: 'inv-cs-07',
+    invoiceNumber: 'INV-CS-2026-0807',
+    tenantAppId: 'CF-2026-CORONA-AGB',
+    tenantSchoolName: 'Corona Secondary School Agbara',
+    businessModel: 'monthly',
+    billingPeriod: 'August 2026 WhatsApp Parent Notification Pack (10,000 SMS/WA)',
+    amount: 45000,
+    taxVat: 3375,
+    totalAmount: 48375,
+    status: 'failed',
+    dueDate: '2026-08-20',
+    paymentGatewayRef: 'PSTK_FAILED_DECLINED_51',
+    pspChannel: 'Paystack',
+    gatewayResponseCode: '51_INSUFFICIENT_FUNDS',
+    gatewayResponseMessage: 'Card issuer declined charge: Insufficient Account Balance',
+    gatewayTransactionStatus: 'failed',
+    gatewayLatencyMs: 64,
+    gatewayAuthMethod: 'Bearer-Secret',
+    lastWebhookTimestamp: '2026-08-20T18:42:19Z',
+    notes: 'Automated retry scheduled for 24h interval or alternate OPay fallback.'
+  },
+  {
+    id: 'inv-cs-08',
+    invoiceNumber: 'INV-CS-2026-0808',
+    tenantAppId: 'CF-2026-LOYOLA-ABJ',
+    tenantSchoolName: 'Loyola Jesuit College Abuja',
+    businessModel: 'yearly',
+    billingPeriod: '2026/2027 Custom Domain & Dedicated Anycast IP Addon',
+    amount: 180000,
+    taxVat: 13500,
+    totalAmount: 193500,
+    status: 'paid',
+    dueDate: '2026-07-20',
+    paidDate: '2026-07-19',
+    paymentGatewayRef: 'OPAY_LOYOLA_DNS_2026',
+    pspChannel: 'OPay',
+    gatewayResponseCode: '00_APPROVED',
+    gatewayResponseMessage: 'Instant settlement via OPay Merchant Instant Wallet',
+    gatewayTransactionStatus: 'success',
+    gatewayLatencyMs: 22,
+    gatewayAuthMethod: 'HMAC-SHA512',
+    lastWebhookTimestamp: '2026-07-19T11:05:00Z',
+    notes: 'Enterprise SSL & edge reverse proxy provisioning.'
   }
 ];
 
@@ -1350,3 +1634,5 @@ export function generateLicenseHash(): string {
   }
   return result;
 }
+
+export const INITIAL_CLONED_TENANTS = INITIAL_PROVISIONED_TENANTS;

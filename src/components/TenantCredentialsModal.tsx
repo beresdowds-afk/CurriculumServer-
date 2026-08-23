@@ -129,7 +129,7 @@ export const TenantCredentialsModal: React.FC<TenantCredentialsModalProps> = ({
             <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             <div className="text-xs text-amber-200/90 leading-relaxed">
               <strong className="text-amber-300 font-semibold block mb-0.5">Confidential Tenant Secret Key</strong>
-              The <code className="bg-amber-950 px-1 py-0.5 rounded font-mono text-amber-300">App Secret</code> is used to authenticate this cloned instance against Curriculum Server API endpoints. Never share this secret publicly or commit it to client code.
+              The <code className="bg-amber-950 px-1 py-0.5 rounded font-mono text-amber-300">App Secret</code> is used to authenticate this provisioned instance against Curriculum Server API endpoints. Never share this secret publicly or commit it to client code.
             </div>
           </div>
 

@@ -1,6 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <rect width="64" height="64" rx="14" fill="#0f172a"/>
-  <path d="M 32 10 C 42 10 50 14 50 22 C 50 36 40 48 32 54 C 24 48 14 36 14 22 C 14 14 22 10 32 10 Z" fill="#1e293b" stroke="#34d399" stroke-width="3"/>
-  <polygon points="32,16 42,21 32,26 22,21" fill="#34d399"/>
-  <path d="M 32 28 C 28 26 24 25 20 26 C 20 36 20 38 20 40 C 24 39 28 40 32 42 C 36 40 40 39 44 40 C 44 38 44 36 44 26 C 40 25 36 26 32 28 Z" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>
+  <defs>
+    <linearGradient id="favOrange" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EA580C"/>
+      <stop offset="100%" stop-color="#FB923C"/>
+    </linearGradient>
+    <linearGradient id="favCyanTeal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7"/>
+      <stop offset="50%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="14" fill="#090D16"/>
+
+  <g transform="translate(6, 17) scale(0.086)">
+    <!-- Orange Left Loop -->
+    <path d="M 300 200 C 230 110 170 80 110 80 C 49 80 0 134 0 200 C 0 266 49 320 110 320 C 170 320 230 290 300 200 Z" 
+          fill="url(#favOrange)" />
+    <!-- Cyan/Teal Right Loop -->
+    <path d="M 300 200 C 370 110 430 80 490 80 C 551 80 600 134 600 200 C 600 266 551 320 490 320 C 430 320 370 290 300 200 Z" 
+          fill="url(#favCyanTeal)" />
+    <!-- Overlap & Inner Cutouts -->
+    <path d="M 110 80 C 170 80 230 110 300 200 C 370 290 430 320 490 320 C 525 320 555 304 574 278 C 530 294 480 270 430 220 C 370 160 310 110 240 85 C 195 68 150 72 110 80 Z" 
+          fill="url(#favCyanTeal)" opacity="0.9" />
+    <circle cx="110" cy="200" r="55" fill="#090D16" />
+    <circle cx="490" cy="200" r="55" fill="#090D16" />
+  </g>
 </svg>

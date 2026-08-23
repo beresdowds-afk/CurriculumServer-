@@ -44,7 +44,9 @@ import {
   Users,
   X,
   Radio,
-  Sliders
+  Sliders,
+  Server,
+  School
 } from 'lucide-react';
 import { OPTIONAL_FEATURE_DEFINITIONS } from '../mockCurriculumServerData';
 
@@ -52,10 +54,13 @@ interface CurriculumServerLandingPageProps {
   tenants: TenantSchoolApp[];
   metrics: CurriculumServerSaaSMetrics;
   onLaunchTenant: (tenant: TenantSchoolApp) => void;
-  onOpenCloneModal: () => void;
+  onOpenProvisionModal?: () => void;
+  onOpenCloneModal?: () => void;
   onOpenConnectModal: () => void;
   onNavigateToMasterConsole: () => void;
   onNavigateToDomainPortal?: () => void;
+  onNavigateToSaaSHub?: () => void;
+  onNavigateToSchoolInstance?: () => void;
   onStartProvisioning?: (draft?: Partial<TenantSchoolApp>) => void;
   onOpenAuthModal?: () => void;
   onEnterSelfService?: () => void;
@@ -67,10 +72,13 @@ export const CurriculumServerLandingPage: React.FC<CurriculumServerLandingPagePr
   tenants,
   metrics,
   onLaunchTenant,
+  onOpenProvisionModal,
   onOpenCloneModal,
   onOpenConnectModal,
   onNavigateToMasterConsole,
   onNavigateToDomainPortal,
+  onNavigateToSaaSHub,
+  onNavigateToSchoolInstance,
   onStartProvisioning,
   onOpenAuthModal,
   onEnterSelfService,
@@ -112,7 +120,9 @@ export const CurriculumServerLandingPage: React.FC<CurriculumServerLandingPagePr
         subscriptionTier: (tier as any) || 'Apex Enterprise',
         businessModel: pricingCycle === 'yearly' ? 'yearly' : pricingCycle === 'lease_to_own' ? 'lease_to_own' : 'monthly'
       });
-    } else {
+    } else if (onOpenProvisionModal) {
+      onOpenProvisionModal();
+    } else if (onOpenCloneModal) {
       onOpenCloneModal();
     }
   };
@@ -162,7 +172,37 @@ export const CurriculumServerLandingPage: React.FC<CurriculumServerLandingPagePr
           </div>
 
           {/* Desktop Nav Links */}
-          <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">
+          <nav className="hidden md:flex items-center gap-6 lg:gap-8 text-sm font-medium text-slate-300">
+            {onNavigateToSaaSHub && (
+              <button 
+                onClick={onNavigateToSaaSHub}
+                className="hover:text-emerald-400 text-slate-200 transition-colors cursor-pointer py-1 font-semibold flex items-center gap-1.5"
+              >
+                <Server className="w-3.5 h-3.5 text-emerald-400" />
+                <span>SaaS Hub</span>
+              </button>
+            )}
+
+            {onNavigateToDomainPortal && (
+              <button 
+                onClick={onNavigateToDomainPortal}
+                className="hover:text-amber-400 text-slate-200 transition-colors cursor-pointer py-1 font-semibold flex items-center gap-1.5"
+              >
+                <Globe className="w-3.5 h-3.5 text-amber-400" />
+                <span>Domain Portal</span>
+              </button>
+            )}
+
+            {onNavigateToSchoolInstance && (
+              <button 
+                onClick={onNavigateToSchoolInstance}
+                className="hover:text-sky-400 text-slate-200 transition-colors cursor-pointer py-1 font-semibold flex items-center gap-1.5"
+              >
+                <School className="w-3.5 h-3.5 text-sky-400" />
+                <span>School Instance View</span>
+              </button>
+            )}
+
             <button 
               onClick={() => scrollToSection('features')}
               className="hover:text-white transition-colors cursor-pointer py-1"

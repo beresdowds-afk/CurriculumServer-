@@ -44,7 +44,8 @@ import {
   Sliders, 
   GraduationCap,
   PieChart as PieChartIcon,
-  ChevronDown
+  ChevronDown,
+  History
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -64,6 +65,7 @@ import {
   SS2_SCIENCE_SUBJECTS,
   JSS2_ALPHA_SUBJECTS
 } from '../data/academicRecordsData';
+import { CurriculumChangesAuditView } from './CurriculumChangesAuditView';
 
 interface AcademicRecordsTabProps {
   currentUser: UserProfile;
@@ -98,7 +100,7 @@ export const AcademicRecordsTab: React.FC<AcademicRecordsTabProps> = ({
 }) => {
   // Navigation Sub-Tabs
   const [activeSubTab, setActiveSubTab] = useState<
-    'subject_gradebook' | 'master_broadsheet' | 'grade_histogram' | 'report_cards' | 'rls_inspector'
+    'subject_gradebook' | 'master_broadsheet' | 'grade_histogram' | 'report_cards' | 'rls_inspector' | 'curriculum_changes'
   >('subject_gradebook');
 
   // Selected Class & Subject
@@ -680,6 +682,18 @@ export const AcademicRecordsTab: React.FC<AcademicRecordsTabProps> = ({
           >
             <ShieldCheck className="w-4 h-4" />
             <span>RLS Security & Access Policy Matrix</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('curriculum_changes')}
+            className={`px-4 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeSubTab === 'curriculum_changes'
+                ? 'bg-emerald-600 text-white font-bold shadow'
+                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <History className="w-4 h-4 text-amber-400" />
+            <span>Curriculum Changes Audit Log</span>
           </button>
         </div>
       </div>
@@ -1963,6 +1977,13 @@ export const AcademicRecordsTab: React.FC<AcademicRecordsTabProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 6. CURRICULUM CHANGES AUDIT LOG */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'curriculum_changes' && (
+        <CurriculumChangesAuditView />
       )}
 
       {/* ========================================================================= */}

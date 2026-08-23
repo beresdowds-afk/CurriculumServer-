@@ -80,7 +80,8 @@ interface CurriculumServerDashboardProps {
   metrics: CurriculumServerSaaSMetrics;
   invoices: TenantBillingInvoice[];
   onSelectTenantToLaunch: (tenant: TenantSchoolApp) => void;
-  onOpenCloneModal: () => void;
+  onOpenProvisionModal?: () => void;
+  onOpenCloneModal?: () => void;
   onOpenConnectModal: () => void;
   onOpenCredentialsModal: (tenant: TenantSchoolApp) => void;
   onOpenFeaturesModal: (tenant: TenantSchoolApp) => void;
@@ -92,6 +93,7 @@ interface CurriculumServerDashboardProps {
 
 export type SaaSActiveTab = 
   | 'master_overview'
+  | 'provisioned_schools'
   | 'cloned_schools'
   | 'invoicing_ledger'
   | 'lease_contracts'
@@ -103,6 +105,7 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
   metrics,
   invoices,
   onSelectTenantToLaunch,
+  onOpenProvisionModal,
   onOpenCloneModal,
   onOpenConnectModal,
   onOpenCredentialsModal,
@@ -112,7 +115,7 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
   onNavigateToLanding,
   onNavigateToDomainPortal
 }) => {
-  const [activeTab, setActiveTab] = useState<SaaSActiveTab>('cloned_schools');
+  const [activeTab, setActiveTab] = useState<SaaSActiveTab>('provisioned_schools');
   const [searchQuery, setSearchQuery] = useState('');
   const [modelFilter, setModelFilter] = useState<'all' | BusinessModelType>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
@@ -258,15 +261,15 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
               className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 shadow-md flex items-center gap-2 transition-all"
             >
               <KeyRound className="w-4 h-4 text-sky-400" />
-              <span>Connect Cloned App</span>
+              <span>Connect Provisioned App</span>
             </button>
 
             <button
-              onClick={onOpenCloneModal}
+              onClick={onOpenProvisionModal || onOpenCloneModal}
               className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/60 flex items-center gap-2 transition-all hover:scale-[1.02]"
             >
               <Plus className="w-4 h-4" />
-              <span>Clone New School</span>
+              <span>Provision New School</span>
             </button>
           </div>
         </div>
@@ -313,10 +316,10 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
           <span className="text-[10px] text-purple-400/80 block mt-1">{metrics.leaseToOwnTenants} active buyout contracts</span>
         </div>
 
-        {/* Cloned Schools */}
+        {/* Provisioned Schools */}
         <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 transition-colors shadow-lg">
           <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-            <span className="font-semibold text-[11px] uppercase tracking-wider">Cloned Instances</span>
+            <span className="font-semibold text-[11px] uppercase tracking-wider">Provisioned Instances</span>
             <Building2 className="w-4 h-4 text-amber-400" />
           </div>
           <p className="text-xl font-black text-white">
@@ -344,7 +347,7 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
         <div className="flex items-center gap-2">
           {[
             { id: 'master_overview', label: 'Master SaaS Analytics', icon: TrendingUp },
-            { id: 'cloned_schools', label: 'Cloned School Fleet', count: filteredTenants.length, icon: Building2 },
+            { id: 'provisioned_schools', label: 'Provisioned School Fleet', count: filteredTenants.length, icon: Building2 },
             { id: 'invoicing_ledger', label: 'Billing Invoices Ledger', count: invoices.length, icon: CreditCard },
             { id: 'lease_contracts', label: 'Lease-to-Own Buyouts', count: metrics.leaseToOwnTenants, icon: Award },
             { id: 'features_matrix', label: 'Feature Flags Matrix', count: OPTIONAL_FEATURE_DEFINITIONS.length, icon: Sliders },
@@ -497,8 +500,8 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
         </div>
       )}
 
-      {/* TAB 2: CLONED SCHOOLS FLEET MANAGER */}
-      {activeTab === 'cloned_schools' && (
+      {/* TAB 2: PROVISIONED SCHOOLS FLEET MANAGER */}
+      {(activeTab === 'provisioned_schools' || activeTab === 'cloned_schools') && (
         <div className="space-y-6 animate-fadeIn">
           {/* Controls Filter Bar */}
           <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -557,11 +560,11 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
               </div>
 
               <button
-                onClick={onOpenCloneModal}
+                onClick={onOpenProvisionModal || onOpenCloneModal}
                 className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Clone School</span>
+                <span>Provision School</span>
               </button>
             </div>
           </div>

@@ -63,6 +63,7 @@ import {
 } from 'lucide-react';
 import { MainTabType } from './Navbar';
 import { TeacherModals } from './teacher-dashboard/TeacherModals';
+import { TeacherCurriculumViewerModal } from './teacher-dashboard/TeacherCurriculumViewerModal';
 
 // High-fidelity mobile app mockup asset
 import mobileAppImg from '../assets/images/flow_mobile_preview_1787052426217.jpg';
@@ -125,6 +126,7 @@ export const TeacherDashboardTab: React.FC<TeacherDashboardTabProps> = ({
   const [isDateFilterModalOpen, setIsDateFilterModalOpen] = useState(false);
   const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
   const [isAllToolsModalOpen, setIsAllToolsModalOpen] = useState(false);
+  const [isCurriculumViewerOpen, setIsCurriculumViewerOpen] = useState(false);
   const [isUserProfileMenuOpen, setIsUserProfileMenuOpen] = useState(false);
   const [isQuoteLiked, setIsQuoteLiked] = useState(false);
 
@@ -546,7 +548,26 @@ export const TeacherDashboardTab: React.FC<TeacherDashboardTabProps> = ({
                 <span className="text-[10px] font-black bg-emerald-900/80 px-2 py-0.5 rounded-md text-emerald-300">4</span>
               </button>
 
-              {/* 3. Lesson Notes */}
+              {/* 3. Assigned NERDC Curriculum */}
+              <button
+                onClick={() => {
+                  setActiveSidebarNav('assigned_curriculum');
+                  setIsCurriculumViewerOpen(true);
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition-all cursor-pointer ${
+                  activeSidebarNav === 'assigned_curriculum'
+                    ? 'bg-emerald-600/30 text-white font-extrabold border border-emerald-500/40 shadow-sm'
+                    : 'text-emerald-100/70 hover:bg-emerald-900/40 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <GraduationCap className="w-4 h-4 text-emerald-400" />
+                  <span>Assigned Curriculum</span>
+                </div>
+                <span className="text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded-md">NERDC</span>
+              </button>
+
+              {/* 4. Lesson Notes */}
               <button
                 onClick={() => {
                   setActiveSidebarNav('lesson_notes');
@@ -1338,6 +1359,27 @@ export const TeacherDashboardTab: React.FC<TeacherDashboardTabProps> = ({
 
                 </div>
 
+                {/* Assigned Curriculum Quick Banner */}
+                <div 
+                  onClick={() => setIsCurriculumViewerOpen(true)}
+                  className="p-3 rounded-2xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200/90 flex items-center justify-between gap-3 cursor-pointer transition-all group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
+                      <GraduationCap className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-slate-900 group-hover:text-emerald-800">
+                        Assigned NERDC Curriculum
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-medium">
+                        Download Scheme of Work & Learning Objectives
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-emerald-600 group-hover:translate-x-0.5 transition-transform" />
+                </div>
+
                 {/* View All Tools Full-Width Button */}
                 <button
                   onClick={() => setIsAllToolsModalOpen(true)}
@@ -1857,6 +1899,19 @@ export const TeacherDashboardTab: React.FC<TeacherDashboardTabProps> = ({
         onNavigateTab={onNavigateTab}
         onShowToast={showToast}
         onOpenAdvisorModal={onOpenAdvisorModal}
+      />
+
+      {/* Teacher Assigned NERDC Curriculum Viewer & Scheme of Work Modal */}
+      <TeacherCurriculumViewerModal
+        isOpen={isCurriculumViewerOpen}
+        onClose={() => setIsCurriculumViewerOpen(false)}
+        assignedSubjects={['General Mathematics', 'Further Mathematics', 'Basic Science & Technology', 'English Language']}
+        teacherName={teacherName}
+        onOpenLessonPlanWithTopic={(subject, topic) => {
+          setIsCurriculumViewerOpen(false);
+          onLaunchLessonModal();
+          showToast(`Opening AI Lesson Note Generator for ${subject.name} - ${topic.title}`);
+        }}
       />
 
       {/* Live Toast Message */}

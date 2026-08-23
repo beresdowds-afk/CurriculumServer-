@@ -34,7 +34,8 @@ import {
   Sliders,
   UserPlus,
   Printer,
-  Award
+  Award,
+  Bus
 } from 'lucide-react';
 
 export interface PageNavigationDomain {
@@ -67,6 +68,13 @@ export const ALL_PROJECT_DOMAINS: PageNavigationDomain[] = [
         title: 'Curriculum Server Showcase',
         description: 'Multi-tenant showcase landing, pricing calculator & deployment architecture',
         icon: Globe,
+        isCore: true
+      },
+      {
+        id: 'school_public_website',
+        title: 'School Public Website',
+        description: 'Provisioned school public homepage, prospectus, admissions & term calendar',
+        icon: Building2,
         isCore: true
       },
       {
@@ -223,6 +231,13 @@ export const ALL_PROJECT_DOMAINS: PageNavigationDomain[] = [
         title: 'Academic Calendar & Events',
         description: 'Term schedules, mid-term breaks, examination windows & public holidays',
         icon: CalendarDays
+      },
+      {
+        id: 'logistics_support',
+        title: 'Logistics Support Management (Bundle 5)',
+        description: 'Gate kiosk pass scanner, e-library repo, boarding hostels & bus fleet tracking',
+        icon: Bus,
+        isCore: true
       }
     ]
   },
@@ -433,6 +448,10 @@ export const GlobalPageNavigator: React.FC<GlobalPageNavigatorProps> = ({
     };
   }, [activeTab]);
 
+  if (activeTab === 'curriculum_server_landing' || activeTab === 'school_public_website') {
+    return null;
+  }
+
   return (
     <>
       {/* =========================================================================
@@ -540,6 +559,7 @@ export const GlobalPageNavigator: React.FC<GlobalPageNavigatorProps> = ({
             setIsCommandOpen(false);
           }}
           activeTab={activeTab}
+          currentUser={currentUser}
         />
       )}
 
@@ -607,13 +627,15 @@ interface CommandPaletteModalProps {
   onClose: () => void;
   onSelectPage: (tab: MainTabType) => void;
   activeTab: MainTabType;
+  currentUser: UserProfile;
 }
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   isOpen,
   onClose,
   onSelectPage,
-  activeTab
+  activeTab,
+  currentUser
 }) => {
   const [search, setSearch] = useState('');
 
@@ -621,11 +643,18 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
   // Flatten all pages for fuzzy searching
   const allPages = ALL_PROJECT_DOMAINS.flatMap(d =>
-    d.pages.map(p => ({
-      ...p,
-      domainName: d.name,
-      domainBadgeColor: d.badgeColor
-    }))
+    d.pages
+      .filter(p => {
+        if (currentUser.role !== 'super_admin' && (p.id === 'tenant_control_center' || p.id === 'docker_orchestration')) {
+          return false;
+        }
+        return true;
+      })
+      .map(p => ({
+        ...p,
+        domainName: d.name,
+        domainBadgeColor: d.badgeColor
+      }))
   );
 
   const filteredPages = allPages.filter(p =>
@@ -769,7 +798,14 @@ export const AllPagesDirectoryModal: React.FC<AllPagesDirectoryModalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {domain.pages.map(page => {
+                  {domain.pages
+                    .filter(page => {
+                      if (currentUser.role !== 'super_admin' && (page.id === 'tenant_control_center' || page.id === 'docker_orchestration')) {
+                        return false;
+                      }
+                      return true;
+                    })
+                    .map(page => {
                     const PageIcon = page.icon;
                     const isActive = activeTab === page.id;
                     return (

@@ -11,6 +11,7 @@ import { EntitlementEnforcementService, DEFAULT_PLAN_POLICIES } from '../service
 import { TamperEvidentAuditService } from '../services/tamperEvidentAuditService';
 import { TenantLifecycleManager } from '../services/tenantLifecycleManager';
 import { runAllTenantIsolationTests } from '../services/tenantIsolationTests';
+import { PspConnectivityWidget } from './PspConnectivityWidget';
 import { 
   Server, 
   Cpu, 
@@ -577,6 +578,9 @@ export const ControlPlaneCockpit: React.FC<ControlPlaneCockpitProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Real-time PSP Connectivity Heartbeat Monitor */}
+        <PspConnectivityWidget />
 
         {/* Cockpit Navigation Tabs */}
         <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl overflow-x-auto">

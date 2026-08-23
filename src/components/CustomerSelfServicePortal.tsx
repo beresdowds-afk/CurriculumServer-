@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   TenantSchoolApp, 
   TenantBillingInvoice,
@@ -6,7 +6,7 @@ import {
   CurriculumFlowBundleKey,
   SchoolBrandProfile
 } from '../types';
-import { OPTIONAL_FEATURE_DEFINITIONS } from '../mockCurriculumServerData';
+import { OPTIONAL_FEATURE_DEFINITIONS, INITIAL_PROVISIONED_TENANTS } from '../mockCurriculumServerData';
 import { 
   CURRICULUM_FLOW_BUNDLES, 
   calculateBundlePricing 
@@ -56,12 +56,15 @@ import {
   BookOpen
 } from 'lucide-react';
 
+const FALLBACK_DEFAULT_TENANT: TenantSchoolApp = INITIAL_PROVISIONED_TENANTS[0];
+
 interface CustomerSelfServicePortalProps {
-  tenants: TenantSchoolApp[];
-  invoices: TenantBillingInvoice[];
-  onLaunchTenant: (tenant: TenantSchoolApp) => void;
-  onUpdateTenant: (updated: TenantSchoolApp) => void;
+  tenants?: TenantSchoolApp[];
+  invoices?: TenantBillingInvoice[];
+  onLaunchTenant?: (tenant: TenantSchoolApp) => void;
+  onUpdateTenant?: (updated: TenantSchoolApp) => void;
   onBackToAdmin?: () => void;
+  onNavigateToTab?: (tab: string) => void;
 }
 
 export type ProprietorPortalTab = 
@@ -76,13 +79,15 @@ export type ProprietorPortalTab =
   | 'support';
 
 export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps> = ({
-  tenants,
-  invoices,
+  tenants = [],
+  invoices = [],
   onLaunchTenant,
   onUpdateTenant,
-  onBackToAdmin
+  onBackToAdmin,
+  onNavigateToTab
 }) => {
-  const [selectedTenantId, setSelectedTenantId] = useState(tenants[0]?.id || '');
+  const safeTenants = (tenants && tenants.length > 0) ? tenants : [FALLBACK_DEFAULT_TENANT];
+  const [selectedTenantId, setSelectedTenantId] = useState<string>(safeTenants[0]?.id || FALLBACK_DEFAULT_TENANT.id);
   const [activeTab, setActiveTab] = useState<ProprietorPortalTab>('overview');
   const [isUpdating, setIsUpdating] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -100,17 +105,37 @@ export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps>
   }>({ isOpen: false });
   const [isEquityCertModalOpen, setIsEquityCertModalOpen] = useState(false);
 
+  const currentTenant: TenantSchoolApp = safeTenants.find(t => t.id === selectedTenantId) || safeTenants[0] || FALLBACK_DEFAULT_TENANT;
+
+  // Keep selectedTenantId in sync if safeTenants changes
+  useEffect(() => {
+    if (safeTenants.length > 0 && !safeTenants.some(t => t.id === selectedTenantId)) {
+      setSelectedTenantId(safeTenants[0].id);
+    }
+  }, [safeTenants, selectedTenantId]);
+
   // Brand customizer local draft
   const [brandDraft, setBrandDraft] = useState({
-    primaryColor: '#059669',
-    secondaryColor: '#0f172a',
-    motto: 'Knowledge, Integrity & Global Leadership',
-    customDomain: ''
+    primaryColor: currentTenant.brandProfile?.brandTheme?.primaryColor || '#059669',
+    secondaryColor: currentTenant.brandProfile?.brandTheme?.secondaryColor || '#0f172a',
+    motto: currentTenant.brandProfile?.motto || 'Knowledge, Integrity & Global Leadership',
+    customDomain: currentTenant.customDomain || ''
   });
 
-  const currentTenant = tenants.find(t => t.id === selectedTenantId) || tenants[0];
-  const tenantInvoices = invoices.filter(
-    i => i.tenantAppId === currentTenant?.id || i.tenantSchoolName === currentTenant?.schoolName
+  // Update brandDraft when currentTenant changes
+  useEffect(() => {
+    if (currentTenant) {
+      setBrandDraft({
+        primaryColor: currentTenant.brandProfile?.brandTheme?.primaryColor || '#059669',
+        secondaryColor: currentTenant.brandProfile?.brandTheme?.secondaryColor || '#0f172a',
+        motto: currentTenant.brandProfile?.motto || 'Knowledge, Integrity & Global Leadership',
+        customDomain: currentTenant.customDomain || ''
+      });
+    }
+  }, [currentTenant.id]);
+
+  const tenantInvoices = (invoices || []).filter(
+    i => i.tenantAppId === currentTenant.id || i.tenantSchoolName === currentTenant.schoolName
   );
 
   const showToast = (msg: string) => {
@@ -119,27 +144,34 @@ export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps>
   };
 
   // 4 Bundles licensing logic
-  const currentBundles = currentTenant?.licensedBundles || {
+  const currentBundles: Record<CurriculumFlowBundleKey, boolean> = currentTenant.licensedBundles || {
     administration: true,
     teaching: true,
     assessment: true,
-    accounts_billing: true
+    accounts_billing: true,
+    logistics_support: false
   };
 
-  const pricingCalc = calculateBundlePricing(currentBundles, billingCycle === 'yearly');
+  const activeBundleKeys = (Object.keys(currentBundles) as CurriculumFlowBundleKey[]).filter(
+    k => currentBundles[k]
+  );
+  const pricingCalc = calculateBundlePricing(activeBundleKeys, billingCycle === 'yearly');
   const licensedBundlesCount = Object.values(currentBundles).filter(Boolean).length;
 
   const handleToggleBundle = (bundleKey: CurriculumFlowBundleKey) => {
-    if (!currentTenant) return;
+    if (!currentTenant || !onUpdateTenant) return;
     setIsUpdating(true);
 
     const isCurrentlyActive = !!currentBundles[bundleKey];
-    const newLicensed = {
+    const newLicensed: Record<CurriculumFlowBundleKey, boolean> = {
       ...currentBundles,
       [bundleKey]: !isCurrentlyActive
     };
 
-    const newPricing = calculateBundlePricing(newLicensed, billingCycle === 'yearly');
+    const newActiveKeys = (Object.keys(newLicensed) as CurriculumFlowBundleKey[]).filter(
+      k => newLicensed[k]
+    );
+    const newPricing = calculateBundlePricing(newActiveKeys, billingCycle === 'yearly');
 
     setTimeout(() => {
       const updated: TenantSchoolApp = {
@@ -157,10 +189,10 @@ export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps>
             requestType: isCurrentlyActive ? 'deactivate' : 'activate',
             status: 'approved',
             requestedAt: new Date().toISOString(),
-            requestedBy: `${currentTenant.principalName} (Proprietor)`,
+            requestedBy: `${currentTenant.principalName || 'Proprietor'} (Proprietor)`,
             monthlyPriceImpactNGN: isCurrentlyActive 
-              ? -CURRICULUM_FLOW_BUNDLES.find(b => b.key === bundleKey)!.monthlyPriceNGN 
-              : CURRICULUM_FLOW_BUNDLES.find(b => b.key === bundleKey)!.monthlyPriceNGN,
+              ? -(CURRICULUM_FLOW_BUNDLES.find(b => b.key === bundleKey)?.monthlyPriceNGN || 75000)
+              : (CURRICULUM_FLOW_BUNDLES.find(b => b.key === bundleKey)?.monthlyPriceNGN || 75000),
             notes: `Proprietor self-service portal ${isCurrentlyActive ? 'deactivation' : 'activation'} applied.`
           }
         ]
@@ -173,15 +205,16 @@ export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps>
   };
 
   const handleToggleFeature = (key: OptionalFeatureKey) => {
-    if (!currentTenant) return;
+    if (!currentTenant || !onUpdateTenant) return;
     setIsUpdating(true);
     setTimeout(() => {
+      const updatedFeatures: Record<OptionalFeatureKey, boolean> = {
+        ...currentTenant.enabledFeatures,
+        [key]: !currentTenant.enabledFeatures?.[key]
+      };
       const updated: TenantSchoolApp = {
         ...currentTenant,
-        enabledFeatures: {
-          ...currentTenant.enabledFeatures,
-          [key]: !currentTenant.enabledFeatures?.[key]
-        }
+        enabledFeatures: updatedFeatures
       };
       onUpdateTenant(updated);
       setIsUpdating(false);
@@ -199,25 +232,24 @@ export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps>
   };
 
   const handleSaveBrand = () => {
-    if (!currentTenant) return;
+    if (!currentTenant || !onUpdateTenant) return;
+    const baseBrand = currentTenant.brandProfile || INITIAL_PROVISIONED_TENANTS[0].brandProfile;
     const updated: TenantSchoolApp = {
       ...currentTenant,
       customDomain: brandDraft.customDomain || currentTenant.customDomain,
       brandProfile: {
-        ...currentTenant.brandProfile,
-        primaryColor: brandDraft.primaryColor,
-        secondaryColor: brandDraft.secondaryColor,
+        ...baseBrand,
         motto: brandDraft.motto,
         schoolName: currentTenant.schoolName,
-        shortName: currentTenant.brandProfile?.shortName || currentTenant.schoolName.substring(0, 12),
-        logoUrl: currentTenant.brandProfile?.logoUrl || '',
-        crestBadgeUrl: currentTenant.brandProfile?.crestBadgeUrl || '',
-        establishedYear: currentTenant.brandProfile?.establishedYear || 1998,
-        themePreset: 'custom',
-        headerBannerType: 'gradient',
-        schoolId: currentTenant.id,
-        updatedAt: new Date().toISOString()
-      }
+        shortName: baseBrand?.shortName || currentTenant.schoolName?.substring(0, 12) || 'School',
+        brandTheme: {
+          ...baseBrand?.brandTheme,
+          primaryColor: brandDraft.primaryColor,
+          secondaryColor: brandDraft.secondaryColor,
+          accentColor: baseBrand?.brandTheme?.accentColor || '#10b981',
+          presetKey: baseBrand?.brandTheme?.presetKey || 'emerald_prestige'
+        }
+      } as SchoolBrandProfile
     };
     onUpdateTenant(updated);
     showToast('School brand identity and custom domain settings saved.');
@@ -230,13 +262,13 @@ export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps>
       schoolName: currentTenant.schoolName,
       subdomain: currentTenant.subdomain,
       subscriptionTier: currentTenant.subscriptionTier,
-      activeStudentsCount: currentTenant.activeStudentsCount,
-      facultyCount: currentTenant.facultyCount,
+      activeStudentsCount: currentTenant.activeStudentsCount || 0,
+      facultyCount: currentTenant.facultyCount || 0,
       exportedAt: new Date().toISOString(),
       ndprCertified: true,
       integrityChecksumSha256: `sha256_${Date.now()}_bkp_valid`,
       records: {
-        studentsCount: currentTenant.activeStudentsCount,
+        studentsCount: currentTenant.activeStudentsCount || 0,
         classesActive: 18,
         curriculumCoverageAvg: '88.5%',
         bursaryStatus: 'Reconciled'
@@ -247,7 +279,7 @@ export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps>
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `CurriculumFlow_${currentTenant.schoolSlug}_DisasterRecovery_${new Date().toISOString().substring(0, 10)}.json`;
+    a.download = `CurriculumFlow_${currentTenant.schoolSlug || 'school'}_DisasterRecovery_${new Date().toISOString().substring(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -261,13 +293,19 @@ export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps>
     showToast(`Payment reference ${reference} verified. Entitlements and equity ledger updated.`);
   };
 
+  // Safe numerical calculations for capacity and student metrics
+  const activeStudents = currentTenant.activeStudentsCount || 0;
+  const capacity = currentTenant.studentCapacity || 1000;
+  const capacityUtilizedPercent = Math.min(100, Math.round((activeStudents / Math.max(1, capacity)) * 100));
+
   // Lease to own calculations
-  const leaseContract = currentTenant?.leaseToOwnContract;
+  const leaseContract = currentTenant.leaseToOwnContract;
   const monthsPaid = leaseContract?.monthsPaid || 14;
   const totalMonths = leaseContract?.amortizationPeriodMonths || 36;
   const equityAccumulated = leaseContract?.totalEquityAccumulated || 4200000;
-  const totalLeaseValue = leaseContract?.totalValuationNGN || 10800000;
+  const totalLeaseValue = leaseContract?.totalBuyoutPrice || 10800000;
   const buyoutDiscountedNGN = Math.round((totalLeaseValue - equityAccumulated) * 0.85); // 15% discount for immediate perpetual buyout
+  const equityRatio = Math.min(100, Math.round((monthsPaid / Math.max(1, totalMonths)) * 100));
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto animate-fadeIn pb-16 font-sans text-slate-100 selection:bg-emerald-500 selection:text-white">
@@ -314,7 +352,7 @@ export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps>
                   onChange={e => setSelectedTenantId(e.target.value)}
                   className="bg-transparent text-slate-200 text-xs font-bold focus:outline-none cursor-pointer pr-4"
                 >
-                  {tenants.map(t => (
+                  {safeTenants.map(t => (
                     <option key={t.id} value={t.id} className="bg-slate-900 text-slate-200">
                       {t.schoolName}
                     </option>
@@ -324,7 +362,7 @@ export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps>
             </div>
 
             <button
-              onClick={() => onLaunchTenant(currentTenant)}
+              onClick={() => onLaunchTenant ? onLaunchTenant(currentTenant) : showToast(`Launching ${currentTenant.schoolName}...`)}
               className="px-5 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-2xl text-xs font-bold transition-all shadow-lg shadow-emerald-950/80 flex items-center gap-2 cursor-pointer"
             >
               <span>Launch School App</span>

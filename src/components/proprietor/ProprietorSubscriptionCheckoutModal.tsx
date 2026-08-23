@@ -35,16 +35,22 @@ export const ProprietorSubscriptionCheckoutModal: React.FC<ProprietorSubscriptio
   onClose,
   onPaymentSuccess
 }) => {
-  const [paymentChannel, setPaymentChannel] = useState<'paystack' | 'monnify' | 'flutterwave' | 'bank_wire'>('paystack');
+  const [paymentChannel, setPaymentChannel] = useState<'paystack' | 'opay' | 'monnify' | 'flutterwave' | 'bank_wire'>('paystack');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [tellerReference, setTellerReference] = useState('');
-  const [txRef] = useState(`ref_cs_prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`);
+  const [opayPhoneNumber, setOpayPhoneNumber] = useState(tenant.principalPhone || '08031234567');
+  const [paystackSubMethod, setPaystackSubMethod] = useState<'card' | 'ussd' | 'transfer'>('card');
+  const [txRef, setTxRef] = useState(`ref_cs_prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`);
 
   const amountToPay = customAmount || invoice?.totalAmount || tenant.subscriptionPricePerMonth;
   const vatAmount = Math.round(amountToPay * 0.075);
   const totalAmount = amountToPay + vatAmount;
+
+  // Dynamic fee calculation based on PSP provider
+  const pspProcessingFee = paymentChannel === 'opay' ? 50 : paymentChannel === 'paystack' ? Math.min(2000, Math.round(amountToPay * 0.015)) : 0;
+  const grandTotal = totalAmount + (paymentChannel === 'bank_wire' ? 0 : pspProcessingFee);
 
   const handleCopy = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -54,11 +60,18 @@ export const ProprietorSubscriptionCheckoutModal: React.FC<ProprietorSubscriptio
 
   const handleExecutePayment = () => {
     setIsProcessing(true);
+    const generatedRef = paymentChannel === 'opay'
+      ? `OPAY_PROP_${Date.now().toString().slice(-8)}_${Math.floor(100 + Math.random() * 900)}`
+      : paymentChannel === 'paystack'
+      ? `PSTK_PROP_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`
+      : txRef;
+    setTxRef(generatedRef);
+
     setTimeout(() => {
       setIsProcessing(false);
       setIsCompleted(true);
       setTimeout(() => {
-        onPaymentSuccess(invoice?.id || `inv_${Date.now()}`, paymentChannel, txRef);
+        onPaymentSuccess(invoice?.id || `inv_${Date.now()}`, paymentChannel, generatedRef);
       }, 1200);
     }, 1500);
   };
@@ -131,15 +144,63 @@ export const ProprietorSubscriptionCheckoutModal: React.FC<ProprietorSubscriptio
 
               {/* Payment Channel Selector */}
               <div className="space-y-3">
-                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
-                  Select Settlement Method
-                </label>
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                    Select Integrated Payment Service Provider (PSP)
+                  </label>
+                  <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" />
+                    <span>CBN-Licensed Gateways</span>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {[
-                    { id: 'paystack', name: 'Paystack Card / USSD', desc: 'Instant Visa, Verve & Mastercard', icon: CreditCard },
-                    { id: 'monnify', name: 'Dedicated Virtual NUBAN', desc: 'Automated Wema Bank Wire', icon: Building2 },
-                    { id: 'flutterwave', name: 'Flutterwave Portal', desc: 'Barter, Mobile Money & Cards', icon: Smartphone },
-                    { id: 'bank_wire', name: 'Corporate Bank Wire', desc: 'Direct Teller / Invoice Upload', icon: Lock }
+                    { 
+                      id: 'paystack', 
+                      name: 'Paystack Gateway', 
+                      desc: 'Card, USSD & Apple Pay', 
+                      badge: 'Instant Card Auth',
+                      fee: '1.5% (Capped ₦2k)',
+                      icon: CreditCard,
+                      theme: 'cyan'
+                    },
+                    { 
+                      id: 'opay', 
+                      name: 'OPay Digital Bank', 
+                      desc: 'Dedicated NUBAN & Wallet', 
+                      badge: 'Zero Surcharge (₦50)',
+                      fee: 'Flat ₦50 Fee',
+                      icon: Smartphone,
+                      theme: 'emerald'
+                    },
+                    { 
+                      id: 'monnify', 
+                      name: 'Monnify / Wema NUBAN', 
+                      desc: 'Automated Bank Wire', 
+                      badge: 'NIP Direct',
+                      fee: '1.0% (Capped ₦1k)',
+                      icon: Building2,
+                      theme: 'blue'
+                    },
+                    { 
+                      id: 'flutterwave', 
+                      name: 'Flutterwave Barter', 
+                      desc: 'Mobile Money & Cards', 
+                      badge: 'Multi-Currency',
+                      fee: '1.4% Fee',
+                      icon: Smartphone,
+                      theme: 'amber'
+                    },
+                    { 
+                      id: 'bank_wire', 
+                      name: 'Corporate Bank Wire', 
+                      desc: 'Manual Teller / Upload', 
+                      badge: 'Direct GTBank',
+                      fee: '₦0 Surcharge',
+                      icon: Lock,
+                      theme: 'slate'
+                    }
                   ].map(ch => {
                     const Icon = ch.icon;
                     const isSelected = paymentChannel === ch.id;
@@ -148,21 +209,25 @@ export const ProprietorSubscriptionCheckoutModal: React.FC<ProprietorSubscriptio
                         key={ch.id}
                         type="button"
                         onClick={() => setPaymentChannel(ch.id as any)}
-                        className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                        className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                           isSelected
-                            ? 'bg-emerald-950/40 border-emerald-500/80 ring-1 ring-emerald-500/40'
+                            ? 'bg-emerald-950/40 border-emerald-500/80 ring-1 ring-emerald-500/40 shadow-lg shadow-emerald-950/50'
                             : 'bg-slate-950 border-slate-800 hover:border-slate-700'
                         }`}
                       >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <Icon className={`w-4 h-4 ${isSelected ? 'text-emerald-400' : 'text-slate-400'}`} />
-                          <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${isSelected ? 'border-emerald-400 bg-emerald-400' : 'border-slate-700'}`}>
-                            {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-slate-950" />}
-                          </span>
-                        </div>
                         <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <Icon className={`w-4 h-4 ${isSelected ? 'text-emerald-400' : 'text-slate-400'}`} />
+                            <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${isSelected ? 'border-emerald-400 bg-emerald-400' : 'border-slate-700'}`}>
+                              {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-slate-950" />}
+                            </span>
+                          </div>
                           <p className={`text-xs font-bold ${isSelected ? 'text-white' : 'text-slate-300'}`}>{ch.name}</p>
                           <p className="text-[10px] text-slate-500 line-clamp-1">{ch.desc}</p>
+                        </div>
+                        <div className="mt-2 pt-1.5 border-t border-slate-900 flex items-center justify-between text-[9px]">
+                          <span className="text-emerald-400/90 font-medium">{ch.badge}</span>
+                          <span className="text-slate-500 font-mono">{ch.fee}</span>
                         </div>
                       </button>
                     );
@@ -170,7 +235,138 @@ export const ProprietorSubscriptionCheckoutModal: React.FC<ProprietorSubscriptio
                 </div>
               </div>
 
-              {/* Channel-Specific Details */}
+              {/* Paystack Details */}
+              {paymentChannel === 'paystack' && (
+                <div className="p-4 rounded-2xl bg-slate-950 border border-cyan-900/50 space-y-3 animate-fadeIn text-xs">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <CreditCard className="w-4 h-4" />
+                      <span>Paystack Checkout Node</span>
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {(['card', 'ussd', 'transfer'] as const).map(m => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setPaystackSubMethod(m)}
+                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold capitalize cursor-pointer transition-all ${
+                            paystackSubMethod === m ? 'bg-cyan-600 text-white shadow-sm' : 'bg-slate-900 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {paystackSubMethod === 'card' && (
+                    <div className="space-y-2 text-xs">
+                      <p className="text-[11px] text-slate-300">
+                        Immediate recurring debit via tokenized Mastercard, Visa, or Nigerian Verve card.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
+                        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                          <span className="text-[9px] text-slate-500 uppercase block">Merchant Gateway:</span>
+                          <span className="font-bold text-white">CurriculumFlow Platform</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                          <span className="text-[9px] text-slate-500 uppercase block">Settlement SLA:</span>
+                          <span className="font-bold text-cyan-400">Instant T+0 Webhook</span>
+                        </div>
+                      </div>
+                      <div className="text-[10px] text-slate-400 flex items-center gap-1 pt-1">
+                        <Lock className="w-3 h-3 text-cyan-400" />
+                        <span>Protected by Paystack 256-bit AES PCI-DSS Level 1 encryption.</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {paystackSubMethod === 'ussd' && (
+                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
+                      <span className="text-[10px] text-slate-400 uppercase font-bold">Dial USSD Short Code on Proprietor Phone:</span>
+                      <div className="font-mono text-cyan-300 font-bold text-sm bg-slate-950 p-2 rounded-lg text-center border border-slate-800">
+                        *737*000*8190# (GTBank) • *894*000*412# (FirstBank)
+                      </div>
+                      <span className="text-[10px] text-slate-400 block">Funds clear instantly once authorized on your mobile handset.</span>
+                    </div>
+                  )}
+
+                  {paystackSubMethod === 'transfer' && (
+                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2 font-mono text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Paystack Dynamic Bank:</span>
+                        <strong className="text-white">Titan Paystack Bank</strong>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Dynamic Pay-in NUBAN:</span>
+                        <div className="flex items-center gap-1.5">
+                          <strong className="text-cyan-400 text-sm">9988102914</strong>
+                          <button 
+                            onClick={() => handleCopy('9988102914', 'pstk_nuban')}
+                            className="p-1 rounded bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+                          >
+                            {copiedField === 'pstk_nuban' ? <Check className="w-3 h-3 text-cyan-400" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* OPay Details */}
+              {paymentChannel === 'opay' && (
+                <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-900/50 space-y-3 animate-fadeIn text-xs">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Smartphone className="w-4 h-4" />
+                      <span>OPay Instant Settlement (CBN Licensed)</span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 text-[10px] font-bold border border-emerald-500/20">
+                      Lowest Processing Fee (₦50)
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1 font-mono">
+                      <span className="text-[10px] text-slate-400 uppercase block font-sans">Dedicated OPay Virtual Account:</span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-base font-black text-emerald-400">8031112233</span>
+                        <button 
+                          onClick={() => handleCopy('8031112233', 'opay_nuban')}
+                          className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] flex items-center gap-1 hover:bg-slate-700 cursor-pointer"
+                        >
+                          {copiedField === 'opay_nuban' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          <span>{copiedField === 'opay_nuban' ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      </div>
+                      <span className="text-[10px] text-slate-400 block font-sans">Bank Name: <strong>OPay Digital Services (Paycom)</strong></span>
+                      <span className="text-[10px] text-slate-400 block font-sans">Beneficiary: <strong>CurriculumFlow / {tenant.schoolName.substring(0, 15)}</strong></span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                      <span className="text-[10px] text-slate-400 uppercase block font-bold">OPay Wallet Push Authorization:</span>
+                      <input 
+                        type="text" 
+                        value={opayPhoneNumber}
+                        onChange={e => setOpayPhoneNumber(e.target.value)}
+                        placeholder="OPay registered phone (e.g. 0803...)"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:border-emerald-500 focus:outline-none"
+                      />
+                      <p className="text-[10px] text-slate-400 leading-tight">
+                        Push prompt sends instant biometric approval notice to your OPay mobile app.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>Real-time webhook callback triggers within 3.2 seconds with automated e-receipt dispatch.</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Monnify Details */}
               {paymentChannel === 'monnify' && (
                 <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 text-xs font-mono">
                   <div className="flex items-center justify-between text-slate-400">
@@ -196,6 +392,20 @@ export const ProprietorSubscriptionCheckoutModal: React.FC<ProprietorSubscriptio
                 </div>
               )}
 
+              {/* Flutterwave Details */}
+              {paymentChannel === 'flutterwave' && (
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 text-xs">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Gateway Portal:</span>
+                    <strong className="text-white">Flutterwave Multi-Rail Merchant Node</strong>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Accepts international Visa/Mastercard cards, M-Pesa, Barter, and Nigerian Bank Transfer rails.
+                  </p>
+                </div>
+              )}
+
+              {/* Bank Wire Details */}
               {paymentChannel === 'bank_wire' && (
                 <div className="space-y-3">
                   <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 text-xs font-mono">

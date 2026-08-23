@@ -344,18 +344,32 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
               </div>
 
               {/* Gateway Channel Selector Tabs */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300 block">
-                  Select Integrated Payment Service Provider (PSP)
-                </label>
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-300 block">
+                    Select Integrated Payment Service Provider (PSP)
+                  </label>
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className="text-slate-400">Alternative PSPs:</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedGateway(selectedGateway === 'paystack' ? 'opay' : 'paystack')}
+                      className="px-2 py-0.5 rounded-full bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 font-bold transition-all cursor-pointer flex items-center gap-1"
+                    >
+                      <span>Switch to {selectedGateway === 'paystack' ? 'OPay' : 'Paystack'}</span>
+                      <ArrowRight className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-3 gap-3">
                   {/* Paystack */}
                   <button
                     type="button"
                     onClick={() => setSelectedGateway('paystack')}
-                    className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                    className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden ${
                       selectedGateway === 'paystack'
-                        ? 'bg-cyan-950/40 border-cyan-500 ring-2 ring-cyan-500/20 text-white'
+                        ? 'bg-cyan-950/40 border-cyan-500 ring-2 ring-cyan-500/20 text-white shadow-lg shadow-cyan-950/50'
                         : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'
                     }`}
                   >
@@ -365,15 +379,19 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
                     </div>
                     <div className="font-bold text-xs text-white">Paystack</div>
                     <div className="text-[10px] text-slate-400">Card, USSD & Bank</div>
+                    <div className="mt-2 pt-1 border-t border-slate-800/80 flex items-center justify-between text-[9px]">
+                      <span className="text-cyan-400 font-mono">1.5% (Max ₦2k)</span>
+                      <span className="text-slate-500">PCI-DSS L1</span>
+                    </div>
                   </button>
 
                   {/* OPay */}
                   <button
                     type="button"
                     onClick={() => setSelectedGateway('opay')}
-                    className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                    className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden ${
                       selectedGateway === 'opay'
-                        ? 'bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/20 text-white'
+                        ? 'bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/20 text-white shadow-lg shadow-emerald-950/50'
                         : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'
                     }`}
                   >
@@ -383,6 +401,10 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
                     </div>
                     <div className="font-bold text-xs text-white">OPay Gateway</div>
                     <div className="text-[10px] text-slate-400">Virtual Transfer & Wallet</div>
+                    <div className="mt-2 pt-1 border-t border-slate-800/80 flex items-center justify-between text-[9px]">
+                      <span className="text-emerald-400 font-mono">Flat ₦50 Fee</span>
+                      <span className="text-emerald-500/80 font-bold">Fastest</span>
+                    </div>
                   </button>
 
                   {/* Bank Transfer */}
@@ -401,6 +423,10 @@ export const PaymentCheckoutModal: React.FC<PaymentCheckoutModalProps> = ({
                     </div>
                     <div className="font-bold text-xs text-white">Bank Transfer</div>
                     <div className="text-[10px] text-slate-400">Direct NIP / Teller Slip</div>
+                    <div className="mt-2 pt-1 border-t border-slate-800/80 flex items-center justify-between text-[9px]">
+                      <span className="text-blue-400 font-mono">₦0 Surcharge</span>
+                      <span className="text-slate-500">Manual Recon</span>
+                    </div>
                   </button>
                 </div>
               </div>

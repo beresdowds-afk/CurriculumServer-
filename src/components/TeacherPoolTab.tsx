@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   UserProfile, 
   Teacher, 
@@ -6,6 +6,7 @@ import {
   SubjectCurriculum,
   ClassGrade 
 } from '../types';
+import { NERDC_SUBJECTS_DATABASE } from '../data/nerdcDatabase';
 import { 
   Users, 
   UserPlus, 
@@ -27,6 +28,7 @@ import {
   Award,
   ChevronRight,
   AlertCircle,
+  Download,
   X
 } from 'lucide-react';
 
@@ -71,6 +73,9 @@ export const TeacherPoolTab: React.FC<TeacherPoolTabProps> = ({
     maxPeriodsPerWeek: 24,
     specializationNotes: ''
   });
+
+  const [modalSubjectSearch, setModalSubjectSearch] = useState('');
+  const [modalSubjectLevel, setModalSubjectLevel] = useState<'all' | 'jss' | 'sss'>('all');
 
   const departments = Array.from(new Set(teachers.map(t => t.department))).filter(Boolean);
 
@@ -456,16 +461,55 @@ export const TeacherPoolTab: React.FC<TeacherPoolTabProps> = ({
             {/* Assigned Subjects & Class Groups */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="bg-slate-850 p-4 rounded-2xl border border-slate-800 space-y-3">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Teaching Subject Allocations ({activeTeacher.subjects.length})</span>
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {activeTeacher.subjects.map((sub, idx) => (
-                    <span key={idx} className="text-xs font-semibold px-2.5 py-1 rounded-xl bg-slate-900 text-emerald-300 border border-slate-700">
-                      {sub}
-                    </span>
-                  ))}
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Teaching Subject Allocations ({activeTeacher.subjects.length})</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-semibold">DB Source of Truth</span>
+                </div>
+                <div className="space-y-2">
+                  {activeTeacher.subjects.map((sub, idx) => {
+                    const matchedSubj = NERDC_SUBJECTS_DATABASE.find(s => 
+                      s.name.toLowerCase() === sub.toLowerCase() ||
+                      s.code.toLowerCase() === sub.toLowerCase() ||
+                      sub.toLowerCase().includes(s.name.toLowerCase())
+                    );
+                    const topicCount = matchedSubj?.themes.reduce((acc, th) => acc + th.topics.length, 0) || 0;
+                    return (
+                      <div key={idx} className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-bold text-emerald-300">{sub}</div>
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            {matchedSubj ? `${matchedSubj.code} • ${matchedSubj.level.toUpperCase()} • ${topicCount} NERDC Topics` : 'NERDC Standard Aligned'}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              const topicList = matchedSubj ? matchedSubj.themes.flatMap(t => t.topics).map(t => t.title).join(', ') : 'Aligned with 2025/2026 NERDC National Gazette';
+                              alert(`📖 Viewing Updated NERDC Curriculum for ${sub}:\n\nLevel: ${matchedSubj?.level.toUpperCase() || 'JSS/SSS'}\nField: ${matchedSubj?.field || 'General'}\nStandard Topics: ${topicList}`);
+                            }}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold flex items-center gap-1"
+                            title="View NERDC Curriculum Outline"
+                          >
+                            <BookOpen className="w-3 h-3 text-emerald-400" />
+                            <span>View</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              alert(`📥 Downloading official 2025/2026 NERDC National Curriculum & Teaching Scheme for ${sub} (${matchedSubj?.code || 'NERDC-STD'})...`);
+                            }}
+                            className="p-1.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 text-[10px] font-semibold flex items-center gap-1"
+                            title="Download Curriculum Syllabus"
+                          >
+                            <Download className="w-3 h-3 text-emerald-400" />
+                            <span>Download</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -635,29 +679,95 @@ export const TeacherPoolTab: React.FC<TeacherPoolTabProps> = ({
                 />
               </div>
 
-              {/* Select Subjects */}
+              {/* Select Subjects - Authoritative NERDC Database */}
               <div>
-                <label className="text-slate-300 font-semibold block mb-1.5">
-                  Assigned Teaching Subjects ({formData.selectedSubjects.length} Selected)
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-36 overflow-y-auto p-2 bg-slate-800/80 rounded-xl border border-slate-700">
-                  {subjects.map(s => {
-                    const isChecked = formData.selectedSubjects.includes(s.name);
-                    return (
-                      <button
-                        type="button"
-                        key={s.id}
-                        onClick={() => toggleSubjectSelect(s.name)}
-                        className={`text-left p-1.5 rounded-lg text-[11px] font-medium transition-all ${
-                          isChecked 
-                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-700' 
-                            : 'bg-slate-900 text-slate-400 border border-slate-800 hover:bg-slate-850'
-                        }`}
-                      >
-                        {isChecked ? '✓ ' : '+ '}{s.name}
-                      </button>
-                    );
-                  })}
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-slate-300 font-semibold block text-xs">
+                    Assigned Teaching Subjects ({formData.selectedSubjects.length} Selected)
+                  </label>
+                  <span className="text-[10px] text-emerald-400 font-bold">
+                    Authoritative NERDC 2025/2026 Database
+                  </span>
+                </div>
+
+                {/* Sub-search and level filters */}
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                    <input
+                      type="text"
+                      value={modalSubjectSearch}
+                      onChange={(e) => setModalSubjectSearch(e.target.value)}
+                      placeholder="Filter all 34 NERDC subjects..."
+                      className="w-full bg-slate-850 text-slate-200 pl-8 pr-2 py-1.5 rounded-lg border border-slate-700 text-xs focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div className="flex rounded-lg bg-slate-850 p-0.5 border border-slate-700 text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setModalSubjectLevel('all')}
+                      className={`px-2 py-1 rounded-md transition-colors ${
+                        modalSubjectLevel === 'all' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalSubjectLevel('jss')}
+                      className={`px-2 py-1 rounded-md transition-colors ${
+                        modalSubjectLevel === 'jss' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      JSS (Basic)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalSubjectLevel('sss')}
+                      className={`px-2 py-1 rounded-md transition-colors ${
+                        modalSubjectLevel === 'sss' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      SSS (Senior)
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-44 overflow-y-auto p-2 bg-slate-850/90 rounded-xl border border-slate-700">
+                  {NERDC_SUBJECTS_DATABASE
+                    .filter(s => {
+                      if (modalSubjectLevel !== 'all' && s.level !== modalSubjectLevel) return false;
+                      if (modalSubjectSearch.trim()) {
+                        const q = modalSubjectSearch.toLowerCase();
+                        return s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q) || s.field.toLowerCase().includes(q);
+                      }
+                      return true;
+                    })
+                    .map(s => {
+                      const isChecked = formData.selectedSubjects.includes(s.name);
+                      return (
+                        <button
+                          type="button"
+                          key={s.id}
+                          onClick={() => toggleSubjectSelect(s.name)}
+                          className={`text-left p-2 rounded-lg text-[11px] font-medium transition-all flex flex-col justify-between ${
+                            isChecked 
+                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-600 shadow-sm' 
+                              : 'bg-slate-900 text-slate-300 border border-slate-800 hover:bg-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1 w-full">
+                            <span className="font-semibold truncate">{isChecked ? '✓ ' : '+ '}{s.name}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[9px] mt-1 text-slate-500">
+                            <span className="uppercase font-mono font-bold text-slate-400">{s.code}</span>
+                            <span className={`px-1 rounded ${s.level === 'jss' ? 'bg-indigo-950 text-indigo-300' : 'bg-purple-950 text-purple-300'}`}>
+                              {s.level.toUpperCase()}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
                 </div>
               </div>
 
