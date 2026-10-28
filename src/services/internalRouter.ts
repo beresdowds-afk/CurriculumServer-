@@ -121,6 +121,21 @@ export const ROUTE_REGISTRY: InternalRouteDefinition[] = [
     requiresAuth: true
   },
   {
+    id: 'quality_assurance',
+    path: '/quality-assurance',
+    aliases: ['/qa', '/testing-suite'],
+    title: 'Phase 8 Quality Assurance & Testing Suite',
+    shortTitle: 'Quality Assurance',
+    category: 'saas_cloud',
+    categoryTitle: 'CURRICULUM SERVER (Control Plane)',
+    description: 'Automated verification of NERDC curriculum, question banks, textbook generation engine & security',
+    breadcrumbs: ['Curriculum Server', 'Quality Assurance & Automated Testing Suite'],
+    domainScope: 'curriculum_server',
+    isSuperAdminOnly: true,
+    allowedRoles: ['super_admin'],
+    requiresAuth: true
+  },
+  {
     id: 'domain_management',
     path: '/domains',
     aliases: ['/dns', '/domain-registrar'],

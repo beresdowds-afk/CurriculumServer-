@@ -148,6 +148,8 @@ import { TerminalReportCardStudio } from './components/TerminalReportCardStudio'
 import { PromotionalMockExamPortal } from './components/PromotionalMockExamPortal';
 import { LogisticsSupportSuiteTab } from './components/LogisticsSupportSuiteTab';
 import { DockerOrchestrationConsole } from './components/DockerOrchestrationConsole';
+import { QualityAssuranceTab } from './components/QualityAssuranceTab';
+import { PastQuestionsProvenanceTab } from './components/PastQuestionsProvenanceTab';
 import { NavigationDrawer } from './components/NavigationDrawer';
 import { CurriculumAdvisorModal } from './components/CurriculumAdvisorModal';
 
@@ -2050,6 +2052,10 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'past_questions_provenance' && (
+          <PastQuestionsProvenanceTab currentUser={currentUser} />
+        )}
+
         {activeTab === 'secure_exams' && (
           <SecureExaminationTab
             currentUser={currentUser}
@@ -2111,6 +2117,10 @@ export default function App() {
             currentUser={currentUser}
             onBackToCockpit={() => setActiveTab('tenant_control_center')}
           />
+        )}
+
+        {activeTab === 'quality_assurance' && (
+          <QualityAssuranceTab />
         )}
       </main>
 

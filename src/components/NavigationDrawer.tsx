@@ -158,6 +158,15 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       highlight: true
     },
     {
+      id: 'quality_assurance',
+      label: 'Phase 8 Quality Assurance & Testing Suite',
+      shortLabel: 'Quality Assurance',
+      description: 'Automated verification of NERDC curriculum, question banks, textbook engine & security',
+      icon: ShieldCheck,
+      category: 'saas_cloud',
+      highlight: true
+    },
+    {
       id: 'domain_management',
       label: 'Domain Registrar & DNS Governance',
       shortLabel: 'Domain Portal',
@@ -412,6 +421,15 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       description: 'Curriculum-tagged item vault & CBT randomized variants',
       icon: Layers,
       category: 'assessment'
+    },
+    {
+      id: 'past_questions_provenance',
+      label: 'Past Questions & Provenance',
+      shortLabel: 'Past Exams & Provenance',
+      description: 'Authentic WAEC/NECO/BECE exam registry, provenance & copyright compliance',
+      icon: ShieldCheck,
+      category: 'assessment',
+      highlight: true
     },
     {
       id: 'secure_exams',

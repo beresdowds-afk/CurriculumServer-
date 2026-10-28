@@ -83,7 +83,9 @@ export type MainTabType =
   | 'report_card_studio'
   | 'promotional_mock_exams'
   | 'logistics_support'
-  | 'docker_orchestration';
+  | 'docker_orchestration'
+  | 'past_questions_provenance'
+  | 'quality_assurance';
 
 interface NavbarProps {
   currentUser: UserProfile;

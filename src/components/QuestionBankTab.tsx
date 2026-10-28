@@ -18,7 +18,8 @@ import {
   Filter, 
   BookOpen, 
   HelpCircle,
-  Award
+  Award,
+  FlaskConical
 } from 'lucide-react';
 
 interface QuestionBankTabProps {
@@ -129,11 +130,49 @@ export const QuestionBankTab: React.FC<QuestionBankTabProps> = ({
             <span className="text-xs px-3 py-1.5 rounded-xl bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono font-medium">
               {questionBank.length} Standardized Items
             </span>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/v1/question-bank/seed-theory-questions', { method: 'POST' });
+                  const data = await res.json();
+                  if (data.success && data.questions) {
+                    data.questions.forEach((q: any) => onAddQuestion(q));
+                    alert(`Successfully seeded ${data.questions.length} WAEC/NECO theory and practical questions!`);
+                  }
+                } catch (e) {
+                  console.error(e);
+                  alert('Failed to seed theory questions');
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-800/60 font-bold text-xs flex items-center gap-1.5 transition-all"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Seed WAEC Theory Bank</span>
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/v1/question-bank/seed-practical-questions', { method: 'POST' });
+                  const data = await res.json();
+                  if (data.success && data.questions) {
+                    data.questions.forEach((q: any) => onAddQuestion(q));
+                    alert(`Successfully seeded ${data.questions.length} WAEC/NECO practical questions!`);
+                  }
+                } catch (e) {
+                  console.error(e);
+                  alert('Failed to seed practical questions');
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-teal-400 border border-teal-800/60 font-bold text-xs flex items-center gap-1.5 transition-all"
+            >
+              <FlaskConical className="w-3.5 h-3.5" />
+              <span>Seed WAEC Practical Bank</span>
+            </button>
           </div>
         </div>
 
         {/* Filter Controls */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-6 pt-6 border-t border-slate-800 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-slate-800 text-xs">
           <div>
             <label className="text-slate-400 font-medium block mb-1">Subject</label>
             <select
@@ -153,31 +192,44 @@ export const QuestionBankTab: React.FC<QuestionBankTabProps> = ({
           </div>
 
           <div>
-            <label className="text-slate-400 font-medium block mb-1">Cognitive Level (Bloom's Taxonomy)</label>
+            <label className="text-slate-400 font-medium block mb-1">Question Type</label>
+            <select
+              value={(selectedCognitive as any)}
+              onChange={(e) => setSelectedCognitive(e.target.value)}
+              className="w-full bg-slate-800 text-slate-200 py-2 px-3 rounded-xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="all">All Formats (Objective & Theory)</option>
+              <option value="objective">Objective (MCQ)</option>
+              <option value="theory">Theory & Structured</option>
+              <option value="practical">Practical & Alternatives</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-slate-400 font-medium block mb-1">Cognitive Level</label>
             <select
               value={selectedCognitive}
               onChange={(e) => setSelectedCognitive(e.target.value)}
               className="w-full bg-slate-800 text-slate-200 py-2 px-3 rounded-xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
               <option value="all">All Cognitive Levels</option>
-              <option value="Remembering">Remembering / Knowledge</option>
-              <option value="Understanding">Understanding / Comprehension</option>
-              <option value="Applying">Applying / Problem Solving</option>
-              <option value="Analyzing">Analyzing / Critical Reasoning</option>
-              <option value="Evaluating">Evaluating / Judgment</option>
-              <option value="Creating">Creating / Synthesis</option>
+              <option value="Remembering">Remembering</option>
+              <option value="Understanding">Understanding</option>
+              <option value="Applying">Applying</option>
+              <option value="Analyzing">Analyzing</option>
+              <option value="Evaluating">Evaluating</option>
             </select>
           </div>
 
           <div>
-            <label className="text-slate-400 font-medium block mb-1">Search Questions & Objectives</label>
+            <label className="text-slate-400 font-medium block mb-1">Search Questions</label>
             <div className="relative">
               <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search prompt, topic, tags..."
+                placeholder="Search prompt, topic..."
                 className="w-full bg-slate-800 text-slate-200 pl-9 pr-3 py-2 rounded-xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
@@ -317,12 +369,28 @@ export const QuestionBankTab: React.FC<QuestionBankTabProps> = ({
                 </div>
               )}
 
-              {/* Step-by-step Solution */}
-              <div className="p-4 bg-slate-900 rounded-xl border border-slate-800 space-y-2 pt-3">
-                <span className="font-bold text-emerald-400 text-xs block">Step-by-Step Marking Key & Solution:</span>
+              {/* Step-by-step Solution & Marking Rubric */}
+              <div className="p-4 bg-slate-900 rounded-xl border border-slate-800 space-y-3 pt-3">
+                <span className="font-bold text-emerald-400 text-xs block">Model Answer & Marking Scheme:</span>
                 <p className="text-slate-300 font-mono text-[11px] whitespace-pre-line leading-relaxed">
-                  {activeQuestion.stepByStepSolution || activeQuestion.solution || activeQuestion.expectedAnswer}
+                  {activeQuestion.correctAnswer || activeQuestion.stepByStepSolution || activeQuestion.solution}
                 </p>
+
+                {activeQuestion.markingRubric && activeQuestion.markingRubric.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-slate-800">
+                    <span className="font-bold text-slate-300 text-[11px] uppercase tracking-wider block">
+                      Step-by-Step Marking Rubric ({activeQuestion.markingRubric.reduce((s, r) => s + (r.marksAwarded || 0), 0)} Marks Total):
+                    </span>
+                    <div className="space-y-1.5">
+                      {activeQuestion.markingRubric.map((step, si) => (
+                        <div key={si} className="flex items-center justify-between p-2 rounded-lg bg-slate-850 border border-slate-800 text-[11px] font-mono">
+                          <span className="text-slate-300">Step {si + 1}: {step.stepDescription}</span>
+                          <span className="text-emerald-400 font-bold whitespace-nowrap ml-2">+{step.marksAwarded} Marks</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

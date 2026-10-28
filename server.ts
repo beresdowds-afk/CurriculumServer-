@@ -1319,6 +1319,232 @@ app.post('/api/v1/question-bank/seed-past-questions', (req: Request, res: Respon
   }
 });
 
+app.post('/api/v1/question-bank/seed-theory-questions', (req: Request, res: Response) => {
+  try {
+    const list = textbookDb.seedTheoryQuestions();
+    res.json({ success: true, total: list.length, questions: list });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to seed theory questions' });
+  }
+});
+
+app.post('/api/v1/question-bank/seed-practical-questions', (req: Request, res: Response) => {
+  try {
+    const list = textbookDb.seedPracticalQuestions();
+    res.json({ success: true, total: list.length, questions: list });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to seed practical questions' });
+  }
+});
+
+app.post('/api/v1/question-bank/generate-practical', async (req: Request, res: Response) => {
+  try {
+    const { subjectName, classGrade, topic, count } = req.body;
+    if (!subjectName || !classGrade) {
+      res.status(400).json({ error: 'Missing required parameters: subjectName, classGrade' });
+      return;
+    }
+
+    const systemPrompt = `You are an expert Nigerian Educational Research and Development Council (NERDC) science practical examiner and WAEC/NECO Chief Practical Item Writer.
+Generate rigorous practical and alternative-to-practical science assessment items (Chemistry, Physics, Biology, Agricultural Science) strictly aligned with Nigerian curriculum standards.
+Each question must include:
+1. stem: Detailed laboratory or field practical prompt including experimental setup description, procedure instructions, or observation requirements.
+2. correctAnswer: Concise expected analytical results, calculation values, or identification keys.
+3. explanation: Scientific principles governing the experiment and expected phenomena.
+4. marks: Integer mark allocation (typically 10 marks).
+5. difficulty: 'Easy' | 'Medium' | 'Hard'.
+6. cognitiveDemand: 'Knowledge' | 'Comprehension' | 'Application' | 'Analysis' | 'Synthesis' | 'Evaluation'.
+7. markingRubric: Array of step breakdown items, each having stepDescription and marksAwarded.`;
+
+    const userPrompt = `Generate ${count || 2} practical assessment questions for:
+- Subject: ${subjectName}
+- Class: ${classGrade}
+- Topic: ${topic || 'Laboratory Practical & Alternative to Practical'}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.7-flash',
+      contents: userPrompt,
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            questions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  stem: { type: Type.STRING },
+                  correctAnswer: { type: Type.STRING },
+                  explanation: { type: Type.STRING },
+                  marks: { type: Type.INTEGER },
+                  difficulty: { type: Type.STRING },
+                  cognitiveDemand: { type: Type.STRING },
+                  markingRubric: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        stepDescription: { type: Type.STRING },
+                        marksAwarded: { type: Type.NUMBER },
+                      },
+                      required: ['stepDescription', 'marksAwarded'],
+                    },
+                  },
+                },
+                required: ['stem', 'correctAnswer', 'explanation', 'marks', 'difficulty', 'cognitiveDemand', 'markingRubric'],
+              },
+            },
+          },
+          required: ['questions'],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.text || '{}');
+    const createdItems: any[] = [];
+
+    if (parsed.questions && Array.isArray(parsed.questions)) {
+      for (const item of parsed.questions) {
+        const saved = textbookDb.saveQuestion({
+          id: `QB-AI-PRAC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          subjectId: 'sub-science',
+          classGrade: classGrade as any,
+          curriculumVersionId: 'NERDC-2024',
+          topicId: topic || 'practical-general',
+          learningObjectiveIds: ['obj-ai-prac-gen'],
+          questionType: 'practical',
+          stem: item.stem,
+          correctAnswer: item.correctAnswer || 'See model answer',
+          explanation: item.explanation || '',
+          markingRubric: item.markingRubric || [],
+          marks: item.marks || 10,
+          difficulty: (item.difficulty as any) || 'Medium',
+          cognitiveDemand: (item.cognitiveDemand as any) || 'Analysis',
+          sourceType: 'ai_practice',
+          sourceReference: 'Curriculum Server AI Practical Generator (Gemini 3.7 Flash)',
+          version: 1,
+          creationMethod: 'ai_assisted',
+          reviewStatus: 'pending_review',
+          exposureCount: 0,
+          createdAt: new Date().toISOString()
+        });
+        createdItems.push(saved);
+      }
+    }
+
+    res.json({ success: true, count: createdItems.length, questions: createdItems });
+  } catch (error: any) {
+    console.error('Error generating practical questions:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate practical questions' });
+  }
+});
+
+app.post('/api/v1/question-bank/generate-theory', async (req: Request, res: Response) => {
+  try {
+    const { subjectName, classGrade, topic, count, questionType } = req.body;
+    if (!subjectName || !classGrade) {
+      res.status(400).json({ error: 'Missing required parameters: subjectName, classGrade' });
+      return;
+    }
+
+    const systemPrompt = `You are an expert Nigerian Educational Research and Development Council (NERDC) item writer and Chief WAEC/NECO Examiner.
+Generate rigorous theory and structured-response assessment questions strictly aligned with Nigerian curriculum standards.
+Each question must include:
+1. stem: Comprehensive question prompt with multi-part structure (e.g. (a), (b)) where appropriate.
+2. correctAnswer: Concise model answer or expected key solution.
+3. explanation: Detailed pedagogical explanation.
+4. markingRubric: Array of step breakdown steps, each having stepDescription and marksAwarded (totaling 5-10 marks).
+5. difficulty: 'Easy' | 'Medium' | 'Hard'.
+6. cognitiveDemand: 'Knowledge' | 'Comprehension' | 'Application' | 'Analysis' | 'Synthesis' | 'Evaluation'.
+7. marks: Integer mark allocation.`;
+
+    const userPrompt = `Generate ${count || 2} ${questionType || 'theory'} questions for:
+- Subject: ${subjectName}
+- Class: ${classGrade}
+- Topic: ${topic || 'Core NERDC Curriculum Topics'}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.7-flash',
+      contents: userPrompt,
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            questions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  stem: { type: Type.STRING },
+                  correctAnswer: { type: Type.STRING },
+                  explanation: { type: Type.STRING },
+                  marks: { type: Type.INTEGER },
+                  difficulty: { type: Type.STRING },
+                  cognitiveDemand: { type: Type.STRING },
+                  markingRubric: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        stepDescription: { type: Type.STRING },
+                        marksAwarded: { type: Type.NUMBER },
+                      },
+                      required: ['stepDescription', 'marksAwarded'],
+                    },
+                  },
+                },
+                required: ['stem', 'correctAnswer', 'explanation', 'marks', 'difficulty', 'cognitiveDemand', 'markingRubric'],
+              },
+            },
+          },
+          required: ['questions'],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.text || '{}');
+    const createdItems: any[] = [];
+
+    if (parsed.questions && Array.isArray(parsed.questions)) {
+      for (const item of parsed.questions) {
+        const saved = textbookDb.saveQuestion({
+          id: `QB-AI-THEORY-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          subjectId: 'sub-general',
+          classGrade: classGrade as any,
+          curriculumVersionId: 'NERDC-2024',
+          topicId: topic || 'general',
+          learningObjectiveIds: ['obj-ai-theory-gen'],
+          questionType: (questionType as any) || 'theory',
+          stem: item.stem,
+          correctAnswer: item.correctAnswer || 'See model answer',
+          explanation: item.explanation || '',
+          markingRubric: item.markingRubric || [],
+          marks: item.marks || 8,
+          difficulty: (item.difficulty as any) || 'Medium',
+          cognitiveDemand: (item.cognitiveDemand as any) || 'Application',
+          sourceType: 'ai_practice',
+          sourceReference: 'Curriculum Server AI Theory Generator (Gemini 3.7 Flash)',
+          version: 1,
+          creationMethod: 'ai_assisted',
+          reviewStatus: 'pending_review',
+          exposureCount: 0,
+          createdAt: new Date().toISOString()
+        });
+        createdItems.push(saved);
+      }
+    }
+
+    res.json({ success: true, count: createdItems.length, questions: createdItems });
+  } catch (error: any) {
+    console.error('Error generating theory questions:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate theory questions' });
+  }
+});
+
 app.post('/api/v1/question-bank/items/:id/review', (req: Request, res: Response) => {
   try {
     const { id } = req.params;

@@ -303,6 +303,150 @@ class TextbookQuestionBankService {
     return Array.from(this.questions.values());
   }
 
+  public seedTheoryQuestions(): QuestionItem[] {
+    const theorySeeded: QuestionItem[] = [
+      {
+        id: 'QB-WAEC-THEORY-MTH-2023-05',
+        subjectId: 'sub-math',
+        classGrade: 'SS 3',
+        curriculumVersionId: 'NERDC-SSS-2024',
+        topicId: 'top-quadratic-equations',
+        learningObjectiveIds: ['obj-quad-2'],
+        questionType: 'theory',
+        stem: 'Using the quadratic formula, solve the equation 2x^2 - 7x + 3 = 0, leaving your answer to 2 decimal places where necessary. Show all preliminary steps and factorization checks.',
+        correctAnswer: 'x = 3 or x = 0.5',
+        explanation: 'Comparing with ax^2 + bx + c = 0, a = 2, b = -7, c = 3. Discriminant = b^2 - 4ac = (-7)^2 - 4(2)(3) = 49 - 24 = 25.',
+        markingRubric: [
+          { stepDescription: 'Correct identification of coefficients a=2, b=-7, c=3', marksAwarded: 1 },
+          { stepDescription: 'Correct substitution into quadratic formula x = (-b ± √(b^2 - 4ac)) / 2a', marksAwarded: 2 },
+          { stepDescription: 'Accurate calculation of discriminant (= 25) and square root (= 5)', marksAwarded: 2 },
+          { stepDescription: 'Computation of roots x = (7 + 5)/4 = 3 and x = (7 - 5)/4 = 0.5', marksAwarded: 3 }
+        ],
+        marks: 8,
+        difficulty: 'Medium',
+        cognitiveDemand: 'Application',
+        sourceType: 'verified_past_question',
+        sourceReference: 'WAEC May/June 2023 General Mathematics Paper 2, Question 5',
+        version: 1,
+        creationMethod: 'imported',
+        reviewStatus: 'approved',
+        reviewerId: 'usr-admin-01',
+        approvalTimestamp: new Date().toISOString(),
+        exposureCount: 112,
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: 'QB-WAEC-THEORY-PHY-2022-02',
+        subjectId: 'sub-phys',
+        classGrade: 'SS 2',
+        curriculumVersionId: 'NERDC-SSS-2024',
+        topicId: 'top-refraction',
+        learningObjectiveIds: ['obj-optics-1'],
+        questionType: 'practical',
+        stem: '(a) State Snell\'s Law of refraction.\n(b) Light travels from air into a transparent glass block with refractive index 1.52. If the angle of incidence in air is 45°, calculate the angle of refraction inside the glass. (sin 45° = 0.7071)',
+        correctAnswer: 'Angle of refraction r = 27.7°',
+        explanation: 'Snell\'s Law states that the ratio of the sine of the angle of incidence to the sine of the angle of refraction is a constant for a given pair of media.',
+        markingRubric: [
+          { stepDescription: '(a) Accurate statement of Snell\'s Law with constant refractive index condition', marksAwarded: 2 },
+          { stepDescription: '(b) Correct formula application n = sin i / sin r => sin r = sin 45° / 1.52', marksAwarded: 2 },
+          { stepDescription: '(b) Correct numerical division (0.7071 / 1.52 = 0.4652)', marksAwarded: 2 },
+          { stepDescription: '(b) Correct arcsine calculation and units (r = 27.7°)', marksAwarded: 2 }
+        ],
+        marks: 8,
+        difficulty: 'Hard',
+        cognitiveDemand: 'Analysis',
+        sourceType: 'verified_past_question',
+        sourceReference: 'WAEC 2022 Physics Paper 2, Question 2',
+        version: 1,
+        creationMethod: 'imported',
+        reviewStatus: 'approved',
+        reviewerId: 'usr-admin-01',
+        approvalTimestamp: new Date().toISOString(),
+        exposureCount: 94,
+        createdAt: new Date().toISOString()
+      }
+    ];
+
+    for (const q of theorySeeded) {
+      if (!this.questions.has(q.id)) {
+        this.questions.set(q.id, q);
+      }
+    }
+    return Array.from(this.questions.values());
+  }
+
+  public seedPracticalQuestions(): QuestionItem[] {
+    const practicalSeeded: QuestionItem[] = [
+      {
+        id: 'QB-WAEC-PRAC-CHE-2023-01',
+        subjectId: 'sub-chem',
+        classGrade: 'SS 3',
+        curriculumVersionId: 'NERDC-SSS-2024',
+        topicId: 'top-volumetric-analysis',
+        learningObjectiveIds: ['obj-titration-1'],
+        questionType: 'practical',
+        stem: 'You are provided with solution A containing 0.0500 mol dm^-3 HCl and solution B containing an unknown concentration of NaOH.\n(a) Describe the experimental procedure to determine the concentration of NaOH using methyl orange indicator.\n(b) State three safety precautions taken during volumetric analysis.\n(c) Complete the titration table given below and calculate the average titre value.',
+        correctAnswer: 'Average titre = 25.10 cm^3; Concentration of NaOH = 0.100 mol dm^-3',
+        explanation: 'In acid-base titration, concordant titre values within 0.20 cm^3 are averaged. Using cA vA / cB vB = na / nb.',
+        markingRubric: [
+          { stepDescription: '(a) Proper rinsing of pipette with base and burette with acid', marksAwarded: 2 },
+          { stepDescription: '(a) Clean color change observation (Yellow to orange/pink at end-point)', marksAwarded: 2 },
+          { stepDescription: '(b) Safety precautions (wear safety goggles, avoid skin contact with concentrated acid)', marksAwarded: 2 },
+          { stepDescription: '(c) Accurate titration table recording to 2 decimal places and concordant averaging', marksAwarded: 4 }
+        ],
+        marks: 10,
+        difficulty: 'Medium',
+        cognitiveDemand: 'Application',
+        sourceType: 'verified_past_question',
+        sourceReference: 'WAEC May/June 2023 Chemistry Practical Alternative B',
+        version: 1,
+        creationMethod: 'imported',
+        reviewStatus: 'approved',
+        reviewerId: 'usr-admin-01',
+        approvalTimestamp: new Date().toISOString(),
+        exposureCount: 150,
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: 'QB-WAEC-PRAC-PHY-2023-02',
+        subjectId: 'sub-phys',
+        classGrade: 'SS 3',
+        curriculumVersionId: 'NERDC-SSS-2024',
+        topicId: 'top-simple-pendulum',
+        learningObjectiveIds: ['obj-pend-1'],
+        questionType: 'practical',
+        stem: 'In a simple pendulum experiment to determine acceleration due to gravity g:\n(a) State the equipment checklist and procedure for measuring time for 20 oscillations at length l = 80.0 cm.\n(b) Plot a graph of T^2 (s^2) against l (m) and determine the slope s.\n(c) Calculate g using g = 4(pi^2) / s.',
+        correctAnswer: 'Slope s = 4.02 s^2 m^-1; g = 9.81 m s^-2',
+        explanation: 'T = 2π√(l/g) => T^2 = (4π^2 / g) * l. The slope of T^2 vs l gives 4π^2 / g.',
+        markingRubric: [
+          { stepDescription: '(a) Equipment checklist: Retort stand, pendulum bob, inextensible thread, stopwatch, metre rule', marksAwarded: 2 },
+          { stepDescription: '(b) Tabulation of l and corresponding t for 20 oscillations with derived T and T^2 values', marksAwarded: 4 },
+          { stepDescription: '(c) Correct slope calculation from large right-angled triangle on graph', marksAwarded: 2 },
+          { stepDescription: '(d) Computation of g with correct SI units (m s^-2)', marksAwarded: 2 }
+        ],
+        marks: 10,
+        difficulty: 'Hard',
+        cognitiveDemand: 'Analysis',
+        sourceType: 'verified_past_question',
+        sourceReference: 'WAEC May/June 2023 Physics Practical Alternative A',
+        version: 1,
+        creationMethod: 'imported',
+        reviewStatus: 'approved',
+        reviewerId: 'usr-admin-01',
+        approvalTimestamp: new Date().toISOString(),
+        exposureCount: 120,
+        createdAt: new Date().toISOString()
+      }
+    ];
+
+    for (const q of practicalSeeded) {
+      if (!this.questions.has(q.id)) {
+        this.questions.set(q.id, q);
+      }
+    }
+    return Array.from(this.questions.values());
+  }
+
   public updateQuestionReviewStatus(id: string, reviewStatus: QuestionItem['reviewStatus'], reviewerId?: string): QuestionItem | undefined {
     const q = this.questions.get(id);
     if (!q) return undefined;
