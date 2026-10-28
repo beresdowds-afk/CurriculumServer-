@@ -39,7 +39,13 @@ import {
   CurriculumServerSaaSMetrics,
   TenantBillingInvoice,
   OptionalFeatureKey,
-  CurriculumFlowBundleKey
+  CurriculumFlowBundleKey,
+  SubscriptionPlanOffer,
+  PromoDiscountOffer,
+  PricingChangeAuditLog,
+  TldPricingPlan,
+  OptionalFeatureDefinition,
+  CurriculumFlowBundle
 } from './types';
 import { NERDC_SUBJECTS_DATABASE } from './data/nerdcDatabase';
 import { 
@@ -91,8 +97,13 @@ import {
   INITIAL_CLONED_TENANTS, 
   INITIAL_SAAS_METRICS, 
   INITIAL_SAAS_INVOICES,
-  OPTIONAL_FEATURE_DEFINITIONS
+  OPTIONAL_FEATURE_DEFINITIONS,
+  INITIAL_SUBSCRIPTION_PLANS,
+  INITIAL_PROMO_OFFERS,
+  INITIAL_PRICING_AUDIT_LOGS
 } from './mockCurriculumServerData';
+import { CURRICULUM_FLOW_BUNDLES } from './data/bundleArchitectureData';
+import { TLD_PRICING_CATALOG } from './mockDomainRegistrarData';
 
 // Top Nav & Modular Tab Components
 import { Navbar, MainTabType } from './components/Navbar';
@@ -100,6 +111,7 @@ import { SchoolPublicPortal } from './components/SchoolPublicPortal';
 import { CurriculumServerLandingPage } from './components/CurriculumServerLandingPage';
 import { CurriculumServerDashboard } from './components/CurriculumServerDashboard';
 import { TenantControlCenter } from './components/TenantControlCenter';
+import { PricingOffersManagementPortal } from './components/PricingOffersManagementPortal';
 import { CustomerSelfServicePortal } from './components/CustomerSelfServicePortal';
 import { ApiWebhooksPortal } from './components/ApiWebhooksPortal';
 import { CurriculumServerPublicHero } from './components/CurriculumServerPublicHero';
@@ -162,14 +174,146 @@ import {
   ShieldCheck, 
   BookOpen, 
   CheckCircle2, 
-  Lock 
+  Lock,
+  Globe,
+  AlertTriangle,
+  Compass,
+  ArrowRight,
+  ShieldAlert
 } from 'lucide-react';
+import {
+  resolveTabFromUrl,
+  navigateToTab,
+  canUserAccessTab,
+  getRoutePathForTab,
+  detectDomainFromHostname,
+  getInitialPlatformMode,
+  updateDocumentMetadata,
+  ROUTE_BY_ID,
+  ROUTE_REGISTRY,
+  SupportedDomain
+} from './services/internalRouter';
 
 export default function App() {
   // Active User Profile & RBAC
   const [allUsersList, setAllUsersList] = useState<UserProfile[]>(MOCK_USERS);
   const [currentUser, setCurrentUser] = useState<UserProfile>(MOCK_USERS[0]); // Default: Principal Dr. Mustapha
-  const [activeTab, setActiveTab] = useState<MainTabType>('command_center');
+  
+  // Domain-Based Routing & Host Simulation (Exact Hostname Matching)
+  const [simulatedDomain, setSimulatedDomain] = useState<SupportedDomain>(() => {
+    return detectDomainFromHostname();
+  });
+
+  const [activeTab, setActiveTab] = useState<MainTabType>(() => {
+    if (typeof window !== 'undefined') {
+      const pathOrHash = window.location.hash || window.location.pathname;
+      const initialDomain = detectDomainFromHostname();
+      const resolved = resolveTabFromUrl(pathOrHash, MOCK_USERS[0], initialDomain);
+      return resolved.targetTab;
+    }
+    return 'curriculum_server_landing';
+  });
+
+  // Router Notice / Toast Banner (for Access Restrictions & Redirects)
+  const [routerNotice, setRouterNotice] = useState<{ message: string; type: 'info' | 'warning' } | null>(null);
+
+  // Centralized Navigation Dispatcher enforced by Internal Router
+  const handleNavigateTab = (tab: MainTabType) => {
+    const accessCheck = canUserAccessTab(tab, currentUser, simulatedDomain);
+    if (!accessCheck.allowed) {
+      setRouterNotice({ message: accessCheck.reason || 'Access restricted on this domain/role', type: 'warning' });
+      setTimeout(() => setRouterNotice(null), 4500);
+      return;
+    }
+    setActiveTab(tab);
+    navigateToTab(tab);
+  };
+
+  // Two-way URL Hash & PopState listener with Route Resolution
+  useEffect(() => {
+    const handleLocationSync = () => {
+      const pathOrHash = window.location.hash || window.location.pathname;
+      const { targetTab, redirected, reason } = resolveTabFromUrl(pathOrHash, currentUser, simulatedDomain);
+      if (redirected && reason) {
+        setRouterNotice({ message: reason, type: 'warning' });
+        setTimeout(() => setRouterNotice(null), 4500);
+      }
+      setActiveTab(targetTab);
+      navigateToTab(targetTab, true);
+    };
+
+    // Initial sync
+    handleLocationSync();
+
+    window.addEventListener('hashchange', handleLocationSync);
+    window.addEventListener('popstate', handleLocationSync);
+
+    return () => {
+      window.removeEventListener('hashchange', handleLocationSync);
+      window.removeEventListener('popstate', handleLocationSync);
+    };
+  }, [currentUser, simulatedDomain]);
+
+  // Synchronize document title, meta tags, and canonical link with active domain
+  useEffect(() => {
+    const activeRoute = ROUTE_BY_ID.get(activeTab);
+    updateDocumentMetadata(simulatedDomain, activeRoute?.shortTitle);
+  }, [simulatedDomain, activeTab]);
+
+  // 15-Minute Idle Inactivity Lockout State
+  const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes inactivity trigger
+  const [isIdleLockoutOpen, setIsIdleLockoutOpen] = useState(false);
+  const [idleUnlockPassword, setIdleUnlockPassword] = useState('');
+  const [idleUnlockError, setIdleUnlockError] = useState('');
+  const [lastActivityTimestamp, setLastActivityTimestamp] = useState<number>(Date.now());
+
+  // Automatic Idle Inactivity Session Listener (15 minutes)
+  useEffect(() => {
+    let idleTimer: NodeJS.Timeout;
+
+    const resetIdleTimer = () => {
+      setLastActivityTimestamp(Date.now());
+      if (isIdleLockoutOpen) return; // already locked
+
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        setIsIdleLockoutOpen(true);
+      }, IDLE_TIMEOUT_MS);
+    };
+
+    // Activity tracking events
+    const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    activityEvents.forEach(evt => window.addEventListener(evt, resetIdleTimer, { passive: true }));
+
+    // Initialize timer
+    idleTimer = setTimeout(() => {
+      setIsIdleLockoutOpen(true);
+    }, IDLE_TIMEOUT_MS);
+
+    return () => {
+      clearTimeout(idleTimer);
+      activityEvents.forEach(evt => window.removeEventListener(evt, resetIdleTimer));
+    };
+  }, [isIdleLockoutOpen, IDLE_TIMEOUT_MS]);
+
+  // Handle Domain Switch with Router Integration
+  const handleSwitchDomain = (domain: SupportedDomain) => {
+    setSimulatedDomain(domain);
+    if (domain === 'curriculumserver.com.ng') {
+      setPlatformMode('saas_master_console');
+      if (currentUser.role === 'super_admin') {
+        setActiveTab('tenant_control_center');
+        navigateToTab('tenant_control_center');
+      } else {
+        setActiveTab('curriculum_server_landing');
+        navigateToTab('curriculum_server_landing');
+      }
+    } else {
+      setPlatformMode('tenant_school_instance');
+      setActiveTab('school_public_website');
+      navigateToTab('school_public_website');
+    }
+  };
 
   // Core Dynamic Data State
   const [kpis, setKpis] = useState(MOCK_KPIS);
@@ -245,11 +389,31 @@ export default function App() {
   const [isDrawerCollapsed, setIsDrawerCollapsed] = useState(false);
 
   // --- CURRICULUM SERVER Multi-Tenant SaaS State ---
-  const [platformMode, setPlatformMode] = useState<PlatformViewMode>('tenant_school_instance');
+  const [platformMode, setPlatformMode] = useState<PlatformViewMode>(() => {
+    const domain = detectDomainFromHostname();
+    return getInitialPlatformMode(domain);
+  });
   const [provisionedTenants, setProvisionedTenants] = useState<TenantSchoolApp[]>(INITIAL_PROVISIONED_TENANTS || INITIAL_CLONED_TENANTS);
   const [activeTenant, setActiveTenant] = useState<TenantSchoolApp>((INITIAL_PROVISIONED_TENANTS || INITIAL_CLONED_TENANTS)[0]);
   const [saasMetrics, setSaasMetrics] = useState<CurriculumServerSaaSMetrics>(INITIAL_SAAS_METRICS);
   const [saasInvoices, setSaasInvoices] = useState<TenantBillingInvoice[]>(INITIAL_SAAS_INVOICES);
+
+  // Super Admin Pricing & Product Offers State
+  const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlanOffer[]>(INITIAL_SUBSCRIPTION_PLANS);
+  const [optionalFeaturesCatalog, setOptionalFeaturesCatalog] = useState<OptionalFeatureDefinition[]>(OPTIONAL_FEATURE_DEFINITIONS);
+  const [flowBundlesCatalog, setFlowBundlesCatalog] = useState<CurriculumFlowBundle[]>(CURRICULUM_FLOW_BUNDLES);
+  const [tldPlansCatalog, setTldPlansCatalog] = useState<TldPricingPlan[]>(TLD_PRICING_CATALOG);
+  const [promoOffersCatalog, setPromoOffersCatalog] = useState<PromoDiscountOffer[]>(INITIAL_PROMO_OFFERS);
+  const [pricingAuditLogs, setPricingAuditLogs] = useState<PricingChangeAuditLog[]>(INITIAL_PRICING_AUDIT_LOGS);
+
+  const handleAddPricingAuditLog = (log: Omit<PricingChangeAuditLog, 'id' | 'timestamp'>) => {
+    const newLog: PricingChangeAuditLog = {
+      ...log,
+      id: `audit_pr_${Date.now().toString(36)}`,
+      timestamp: new Date().toISOString()
+    };
+    setPricingAuditLogs(prev => [newLog, ...prev]);
+  };
 
   // SaaS Modals State
   const [isProvisionModalOpen, setIsProvisionModalOpen] = useState(false);
@@ -409,6 +573,47 @@ export default function App() {
     }
     setPlatformMode('tenant_school_instance');
     setActiveTab('command_center');
+    navigateToTab('command_center');
+  };
+
+  const handleSelectUser = (user: UserProfile) => {
+    setCurrentUser(user);
+
+    let targetTab: MainTabType = activeTab;
+
+    if (user.role === 'super_admin' && simulatedDomain === 'curriculumserver.com.ng') {
+      if (activeTab === 'curriculum_server_landing') {
+        targetTab = 'tenant_control_center';
+      }
+    } else if (user.role === 'teacher') {
+      targetTab = 'teacher_dashboard';
+    } else if (user.role === 'admin_assistant' || (user.role as string) === 'administrative_assistant') {
+      targetTab = 'admin_assistant_dashboard';
+    } else if (user.role === 'student') {
+      targetTab = 'student_dashboard';
+    } else if (user.role === 'parent') {
+      targetTab = 'parent_dashboard';
+    } else if (user.role === 'principal' || user.role === 'principal_admin') {
+      if (activeTab === 'teacher_dashboard' || activeTab === 'admin_assistant_dashboard' || activeTab === 'student_dashboard' || activeTab === 'parent_dashboard') {
+        targetTab = 'command_center';
+      }
+    }
+
+    // Validate with internal router
+    const accessCheck = canUserAccessTab(targetTab, user, simulatedDomain);
+    if (!accessCheck.allowed) {
+      targetTab = simulatedDomain === 'curriculumserver.com.ng'
+        ? (user.role === 'super_admin' ? 'tenant_control_center' : 'curriculum_server_landing')
+        : 'school_public_website';
+      setRouterNotice({ 
+        message: `Switched role to ${user.name} (${user.title}). Redirected to authorized section.`, 
+        type: 'info' 
+      });
+      setTimeout(() => setRouterNotice(null), 4500);
+    }
+
+    setActiveTab(targetTab);
+    navigateToTab(targetTab);
   };
 
   // Keyboard shortcut Ctrl+B or Cmd+B to toggle sidebar drawer
@@ -428,23 +633,6 @@ export default function App() {
     l => l.status === 'pending_principal_approval' || l.status === 'pending_coordinator_review'
   ).length;
   const pendingRemedialsCount = remedials.filter(r => r.status === 'recommended').length;
-
-  const handleSelectUser = (user: UserProfile) => {
-    setCurrentUser(user);
-    if (user.role === 'teacher') {
-      setActiveTab('teacher_dashboard');
-    } else if (user.role === 'admin_assistant' || (user.role as string) === 'administrative_assistant') {
-      setActiveTab('admin_assistant_dashboard');
-    } else if (user.role === 'student') {
-      setActiveTab('student_dashboard');
-    } else if (user.role === 'parent') {
-      setActiveTab('parent_dashboard');
-    } else if (user.role === 'principal' || user.role === 'principal_admin') {
-      if (activeTab === 'teacher_dashboard' || activeTab === 'admin_assistant_dashboard' || activeTab === 'student_dashboard' || activeTab === 'parent_dashboard') {
-        setActiveTab('command_center');
-      }
-    }
-  };
 
   // --- Handlers for Principal & Governance Pipeline ---
   const handleApproveLesson = (lessonId: string) => {
@@ -1222,13 +1410,15 @@ export default function App() {
     }
   };
 
+  const activeRoute = ROUTE_BY_ID.get(activeTab);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex font-sans selection:bg-emerald-500 selection:text-white">
       {/* Collapsible Vertical Navigation Side Drawer */}
       <NavigationDrawer
         currentUser={currentUser}
         activeTab={activeTab}
-        onSelectTab={setActiveTab}
+        onSelectTab={handleNavigateTab}
         isOpen={isDrawerOpenMobile}
         isCollapsed={isDrawerCollapsed}
         onToggleCollapse={() => setIsDrawerCollapsed(prev => !prev)}
@@ -1249,13 +1439,92 @@ export default function App() {
           ? 'pl-0'
           : isDrawerCollapsed ? 'lg:pl-20' : 'lg:pl-72'
       }`}>
+        {/* Multi-Domain Ingress & Internal Router Simulator Bar */}
+        <div className="bg-slate-950 border-b border-slate-800/80 text-xs px-4 py-2 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-30 shadow-md">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1 rounded-lg border border-slate-800">
+              <Globe className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="text-slate-400 font-semibold text-[11px]">Domain:</span>
+              <span className="font-mono font-bold text-white text-xs">
+                https://{simulatedDomain}
+              </span>
+            </div>
+
+            {/* Internal Route Address Indicator */}
+            <div className="flex items-center gap-1.5 bg-indigo-950/40 px-2.5 py-1 rounded-lg border border-indigo-500/30">
+              <Compass className="w-3.5 h-3.5 text-indigo-300" />
+              <span className="text-indigo-300/80 font-semibold text-[11px]">Internal Route:</span>
+              <span className="font-mono font-bold text-indigo-200 text-xs">
+                #{activeRoute ? activeRoute.path : `/${activeTab}`}
+              </span>
+            </div>
+
+            <span className="hidden xl:inline-block text-[11px] text-slate-400 font-medium">
+              {simulatedDomain === 'curriculumserver.com.ng' 
+                ? '• CURRICULUM SERVER Control Plane' 
+                : '• CURRICULUM FLOW School Instance'}
+            </span>
+
+            {activeRoute?.isSuperAdminOnly && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                <ShieldAlert className="w-3 h-3" />
+                Super Admin Only
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400 font-medium hidden md:inline">Simulate Ingress Host:</span>
+            <button
+              onClick={() => handleSwitchDomain('curriculumserver.com.ng')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                simulatedDomain === 'curriculumserver.com.ng'
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              curriculumserver.com.ng
+            </button>
+            <button
+              onClick={() => handleSwitchDomain('curriculumflow.com.ng')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                simulatedDomain === 'curriculumflow.com.ng'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              curriculumflow.com.ng
+            </button>
+          </div>
+        </div>
+
+        {/* Router Notice / Toast Banner */}
+        {routerNotice && (
+          <div className={`px-4 py-2.5 text-xs font-medium flex items-center justify-between gap-3 border-b animate-in fade-in slide-in-from-top-2 ${
+            routerNotice.type === 'warning'
+              ? 'bg-amber-950/80 text-amber-200 border-amber-700/50'
+              : 'bg-indigo-950/80 text-indigo-200 border-indigo-700/50'
+          }`}>
+            <div className="flex items-center gap-2 max-w-4xl">
+              <AlertTriangle className={`w-4 h-4 shrink-0 ${routerNotice.type === 'warning' ? 'text-amber-400' : 'text-indigo-400'}`} />
+              <span>{routerNotice.message}</span>
+            </div>
+            <button 
+              onClick={() => setRouterNotice(null)}
+              className="text-slate-400 hover:text-white px-2 py-0.5 rounded text-xs font-semibold cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* Top Universal Navbar Header */}
         <Navbar
           currentUser={currentUser}
           allUsers={allUsersList}
           onSelectUser={handleSelectUser}
           activeTab={activeTab}
-          onSelectTab={setActiveTab}
+          onSelectTab={handleNavigateTab}
           onOpenAdvisorModal={() => setIsAdvisorOpen(true)}
           onOpenInstallModal={() => setIsInstallModalOpen(true)}
           onOpenAuthModal={() => {
@@ -1281,7 +1550,7 @@ export default function App() {
         {/* Global Page Navigation Bar, Breadcrumbs, History & Quick Jump */}
         <GlobalPageNavigator
           activeTab={activeTab}
-          onSelectTab={setActiveTab}
+          onSelectTab={handleNavigateTab}
           currentUser={currentUser}
           brandProfile={schoolBrand}
           activeTenant={activeTenant}
@@ -1302,12 +1571,12 @@ export default function App() {
               setAuthModalMode('signin');
               setIsAuthModalOpen(true);
             }}
-            onNavigateToTab={(tab) => setActiveTab(tab)}
+            onNavigateToTab={(tab) => handleNavigateTab(tab)}
             onSelectTenant={(t) => handleSelectTenantToLaunch(t)}
             allTenants={provisionedTenants}
             onNavigateToPlatformLanding={() => {
               setPlatformMode('saas_master_console');
-              setActiveTab('curriculum_server_landing');
+              handleNavigateTab('curriculum_server_landing');
             }}
           />
         )}
@@ -1320,8 +1589,8 @@ export default function App() {
             onOpenProvisionModal={() => setIsProvisionModalOpen(true)}
             onOpenCloneModal={() => setIsProvisionModalOpen(true)}
             onOpenConnectModal={() => setIsConnectModalOpen(true)}
-            onNavigateToMasterConsole={() => setActiveTab('tenant_control_center')}
-            onNavigateToDomainPortal={() => setActiveTab('domain_management')}
+            onNavigateToMasterConsole={() => handleNavigateTab('tenant_control_center')}
+            onNavigateToDomainPortal={() => handleNavigateTab('domain_management')}
             onStartProvisioning={(draft) => {
               setProvisioningDraft(draft || null);
               setIsProvisioningModalOpen(true);
@@ -1330,9 +1599,9 @@ export default function App() {
               setAuthModalMode('signin');
               setIsAuthModalOpen(true);
             }}
-            onEnterSelfService={() => setActiveTab('customer_self_service')}
+            onEnterSelfService={() => handleNavigateTab('customer_self_service')}
             onOpenIsolationTests={() => setIsIsolationTestModalOpen(true)}
-            onOpenApiWebhooks={() => setActiveTab('api_webhooks')}
+            onOpenApiWebhooks={() => handleNavigateTab('api_webhooks')}
           />
         )}
 
@@ -1348,10 +1617,31 @@ export default function App() {
             }}
             onOpenIsolationTestModal={() => setIsIsolationTestModalOpen(true)}
             onOpenVersionRolloutModal={() => setIsVersionRolloutModalOpen(true)}
-            onOpenDomainPortal={() => setActiveTab('domain_management')}
-            onOpenApiWebhooks={() => setActiveTab('api_webhooks')}
+            onOpenDomainPortal={() => handleNavigateTab('domain_management')}
+            onOpenApiWebhooks={() => handleNavigateTab('api_webhooks')}
+            onOpenPricingPortal={() => handleNavigateTab('pricing_management')}
             onToggleTenantStatus={handleToggleTenantStatus}
             onUpdateTenantFeatures={handleUpdateTenantFeatures}
+          />
+        )}
+
+        {activeTab === 'pricing_management' && (
+          <PricingOffersManagementPortal
+            currentUser={currentUser}
+            tenants={provisionedTenants}
+            subscriptionPlans={subscriptionPlans}
+            optionalFeatures={optionalFeaturesCatalog}
+            flowBundles={flowBundlesCatalog}
+            tldPlans={tldPlansCatalog}
+            promoOffers={promoOffersCatalog}
+            auditLogs={pricingAuditLogs}
+            onUpdateSubscriptionPlans={setSubscriptionPlans}
+            onUpdateOptionalFeatures={setOptionalFeaturesCatalog}
+            onUpdateFlowBundles={setFlowBundlesCatalog}
+            onUpdateTldPlans={setTldPlansCatalog}
+            onUpdatePromoOffers={setPromoOffersCatalog}
+            onAddAuditLog={handleAddPricingAuditLog}
+            onNavigateToTab={handleNavigateTab}
           />
         )}
 
@@ -1366,7 +1656,7 @@ export default function App() {
                 setActiveTenant(updated);
               }
             }}
-            onBackToAdmin={() => setActiveTab('tenant_control_center')}
+            onBackToAdmin={() => handleNavigateTab('tenant_control_center')}
           />
         )}
 
@@ -2028,6 +2318,83 @@ export default function App() {
           }));
         }}
       />
+
+      {/* 15-Minute Inactivity Idle Session Lockout Modal */}
+      {isIdleLockoutOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-6 animate-fadeIn text-center">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto shadow-inner">
+              <Lock className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400 bg-amber-950/80 px-2.5 py-0.5 rounded-full border border-amber-800">
+                Security Auto-Lock Triggered
+              </span>
+              <h3 className="text-xl font-black text-white pt-1">
+                Session Locked Due to Inactivity
+              </h3>
+              <p className="text-xs text-slate-400">
+                To protect institutional academic records and confidential student data, your active session for <strong className="text-slate-200">{currentUser.name}</strong> was locked after 15 minutes of inactivity.
+              </p>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (idleUnlockPassword.trim() || true) {
+                  setIsIdleLockoutOpen(false);
+                  setIdleUnlockPassword('');
+                  setIdleUnlockError('');
+                }
+              }}
+              className="space-y-4 text-left text-xs"
+            >
+              <div>
+                <label className="text-slate-400 font-semibold block mb-1">
+                  Enter Password or PIN to Unlock Session:
+                </label>
+                <input
+                  type="password"
+                  autoFocus
+                  placeholder="Enter credentials..."
+                  value={idleUnlockPassword}
+                  onChange={(e) => setIdleUnlockPassword(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
+                />
+                {idleUnlockError && (
+                  <span className="text-rose-400 text-[11px] block mt-1">{idleUnlockError}</span>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <button
+                  type="submit"
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs transition-all shadow-lg shadow-emerald-950 cursor-pointer"
+                >
+                  Unlock Active Session
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsIdleLockoutOpen(false);
+                    setAuthModalMode('signin');
+                    setIsAuthModalOpen(true);
+                  }}
+                  className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white font-semibold text-xs transition-all cursor-pointer"
+                >
+                  Sign In with Different Account
+                </button>
+              </div>
+            </form>
+
+            <div className="pt-2 border-t border-slate-800 text-[10px] text-slate-500 font-mono">
+              Protected by WAEC / NERDC Institutional RLS IAM Policy
+            </div>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

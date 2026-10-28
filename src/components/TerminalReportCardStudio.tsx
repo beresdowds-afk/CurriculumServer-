@@ -7,6 +7,7 @@ import {
   TenantSchoolApp 
 } from '../types';
 import { INITIAL_REPORT_CARDS, INITIAL_TRANSCRIPTS } from '../data/reportCardMockData';
+import { ReportCardQrCode } from './ReportCardQrCode';
 import { 
   Printer, 
   Download, 
@@ -26,7 +27,13 @@ import {
   Eye,
   ZoomIn,
   ZoomOut,
-  Maximize2
+  Maximize2,
+  CheckSquare,
+  Square,
+  Users,
+  Check,
+  Building2,
+  Info
 } from 'lucide-react';
 
 interface TerminalReportCardStudioProps {
@@ -34,6 +41,328 @@ interface TerminalReportCardStudioProps {
   brandProfile?: SchoolBrandProfile;
   activeTenant?: TenantSchoolApp;
 }
+
+const getGradeBadgeClass = (grade: string) => {
+  switch (grade) {
+    case 'A1': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+    case 'B2': 
+    case 'B3': return 'bg-sky-500/20 text-sky-400 border-sky-500/30';
+    case 'C4':
+    case 'C5':
+    case 'C6': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+    case 'D7':
+    case 'E8': return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+    default: return 'bg-rose-500/20 text-rose-400 border-rose-500/30';
+  }
+};
+
+interface ReportCardCanvasProps {
+  report: TerminalReportCard;
+  brandProfile?: SchoolBrandProfile;
+  activeTenant?: TenantSchoolApp;
+  stampVerified: boolean;
+  isPrintPreviewActive?: boolean;
+  printPaperSize?: 'A4' | 'Letter';
+  previewZoom?: number;
+}
+
+export const ReportCardCanvas: React.FC<ReportCardCanvasProps> = ({
+  report,
+  brandProfile,
+  activeTenant,
+  stampVerified,
+  isPrintPreviewActive = false,
+  printPaperSize = 'A4',
+  previewZoom = 100
+}) => {
+  const schoolName = brandProfile?.schoolName || activeTenant?.name || "KING'S COLLEGE LAGOS";
+
+  return (
+    <div 
+      className="bg-white text-slate-900 rounded-3xl p-6 sm:p-10 border border-slate-300 shadow-2xl space-y-6 printable-report-card relative overflow-hidden transition-transform duration-200"
+      style={{ 
+        minHeight: '960px',
+        width: isPrintPreviewActive ? (printPaperSize === 'A4' ? '210mm' : '8.5in') : '100%',
+        maxWidth: isPrintPreviewActive ? (printPaperSize === 'A4' ? '210mm' : '8.5in') : '100%',
+        transform: isPrintPreviewActive ? `scale(${previewZoom / 100})` : 'none',
+        transformOrigin: 'top center'
+      }}
+    >
+      {/* Watermark Crest */}
+      <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
+        <GraduationCap className="w-96 h-96 text-slate-950" />
+      </div>
+
+      {/* School Official Letterhead */}
+      <div className="flex flex-col sm:flex-row items-center justify-between pb-6 border-b-2 border-slate-900 gap-4 text-center sm:text-left">
+        <div className="flex items-center gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-800 text-white flex items-center justify-center font-black text-2xl shadow shrink-0">
+            {brandProfile?.schoolName ? brandProfile.schoolName.substring(0, 2).toUpperCase() : 'CF'}
+          </div>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-950 uppercase">
+              {schoolName}
+            </h1>
+            <p className="text-xs text-slate-600 font-semibold">
+              {brandProfile?.tagline || "Excellence, Character & National Service • Founded 1909"}
+            </p>
+            <p className="text-[11px] text-slate-500">
+              3 Catholic Mission Street, Lagos Island, Lagos State, Nigeria • accredited by WAEC & NECO
+            </p>
+          </div>
+        </div>
+
+        <div className="text-center sm:text-right shrink-0">
+          <span className="px-3 py-1 bg-slate-950 text-white font-black text-xs uppercase tracking-widest rounded-lg inline-block mb-1">
+            Continuous Assessment & Terminal Report
+          </span>
+          <div className="text-xs font-bold text-slate-700">
+            <span>Session: </span><strong className="text-slate-950">{report.academicSession}</strong> | 
+            <span> Term: </span><strong className="text-slate-950">{report.term}</strong>
+          </div>
+        </div>
+      </div>
+
+      {/* Student Bio-Data & Attendance Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
+        <div>
+          <span className="text-slate-500 block text-[10px] font-bold uppercase">Student Full Name</span>
+          <strong className="text-slate-900 font-black text-sm">{report.studentName}</strong>
+        </div>
+        <div>
+          <span className="text-slate-500 block text-[10px] font-bold uppercase">Admission Number</span>
+          <strong className="text-slate-900 font-mono font-bold">{report.admissionNumber}</strong>
+        </div>
+        <div>
+          <span className="text-slate-500 block text-[10px] font-bold uppercase">Class / Stream</span>
+          <strong className="text-slate-900 font-bold">{report.classArm}</strong>
+        </div>
+        <div>
+          <span className="text-slate-500 block text-[10px] font-bold uppercase">Term Attendance</span>
+          <strong className="text-emerald-700 font-bold font-mono">
+            {report.timesPresent} / {report.timesSchoolOpened} Days (98.3%)
+          </strong>
+        </div>
+      </div>
+
+      {/* Academic Subjects Broadsheet Table */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-300">
+        <table className="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr className="bg-slate-950 text-white font-bold text-[11px] uppercase tracking-wider">
+              <th className="p-2.5">Subject</th>
+              <th className="p-2.5 text-center">1st CA (20)</th>
+              <th className="p-2.5 text-center">2nd CA (20)</th>
+              <th className="p-2.5 text-center">Exam (60)</th>
+              <th className="p-2.5 text-center">Total (100)</th>
+              <th className="p-2.5 text-center">Grade</th>
+              <th className="p-2.5 text-center">Class Avg</th>
+              <th className="p-2.5 text-center">High / Low</th>
+              <th className="p-2.5 text-center">Pos</th>
+              <th className="p-2.5">Remarks</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200 text-slate-800">
+            {report.subjectScores.map((score, index) => (
+              <tr key={score.subjectId} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50/70'}>
+                <td className="p-2.5 font-bold text-slate-950">
+                  {score.subjectName}
+                  <span className="text-[10px] text-slate-400 block font-mono font-normal">
+                    {score.subjectCode} • {score.subjectTeacherName}
+                  </span>
+                </td>
+                <td className="p-2.5 text-center font-mono">{score.ca1Score}</td>
+                <td className="p-2.5 text-center font-mono">{score.ca2Score}</td>
+                <td className="p-2.5 text-center font-mono font-semibold">{score.examScore}</td>
+                <td className="p-2.5 text-center font-mono font-black text-slate-950 text-sm">
+                  {score.totalScore}
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className={`px-2 py-0.5 rounded font-black font-mono text-xs border ${getGradeBadgeClass(score.grade)}`}>
+                    {score.grade}
+                  </span>
+                </td>
+                <td className="p-2.5 text-center font-mono text-slate-600">{score.classAverage}</td>
+                <td className="p-2.5 text-center font-mono text-[10px] text-slate-500">
+                  {score.classHighest} / {score.classLowest}
+                </td>
+                <td className="p-2.5 text-center font-bold text-slate-900 font-mono">{score.positionInSubject}</td>
+                <td className="p-2.5 font-semibold text-slate-700">{score.remark}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Performance Summary Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-emerald-50 border border-emerald-200 p-4 rounded-2xl text-xs text-emerald-950">
+        <div>
+          <span className="text-emerald-700 block text-[10px] uppercase font-bold">Total Marks</span>
+          <strong className="font-mono text-base font-black">
+            {report.totalMarksObtained} / {report.totalMarksPossible}
+          </strong>
+        </div>
+        <div>
+          <span className="text-emerald-700 block text-[10px] uppercase font-bold">Terminal Average</span>
+          <strong className="font-mono text-base font-black text-emerald-800">
+            {report.averagePercentage}%
+          </strong>
+        </div>
+        <div>
+          <span className="text-emerald-700 block text-[10px] uppercase font-bold">Cumulative GPA</span>
+          <strong className="font-mono text-base font-black">
+            {report.gpa} / 5.0
+          </strong>
+        </div>
+        <div>
+          <span className="text-emerald-700 block text-[10px] uppercase font-bold">Class Position</span>
+          <strong className="font-mono text-base font-black">
+            {report.classPosition} of {report.totalStudentsInClass}
+          </strong>
+        </div>
+        <div>
+          <span className="text-emerald-700 block text-[10px] uppercase font-bold">Cohort Rank</span>
+          <strong className="font-mono text-base font-black">
+            {report.cohortPosition} of {report.totalStudentsInCohort}
+          </strong>
+        </div>
+      </div>
+
+      {/* Affective & Psychomotor Behavioral Domain Rating Grids */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+        {/* Affective Domain */}
+        <div className="border border-slate-300 rounded-2xl p-4 bg-slate-50 space-y-2">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+            <span className="font-black text-slate-950 uppercase tracking-wide">
+              A. Affective Domain (Character & Values)
+            </span>
+            <span className="text-[10px] text-slate-500 font-semibold">Scale: 5 (High) - 1 (Low)</span>
+          </div>
+          <div className="space-y-1.5 pt-1">
+            {report.affectiveRatings.map(item => (
+              <div key={item.trait} className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                <span className="text-slate-700 font-medium">{item.trait}</span>
+                <div className="flex items-center gap-1 font-mono">
+                  {[1, 2, 3, 4, 5].map(score => (
+                    <span 
+                      key={score}
+                      className={`w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] ${
+                        item.rating === score 
+                          ? 'bg-slate-950 text-white' 
+                          : 'bg-white border border-slate-300 text-slate-400'
+                      }`}
+                    >
+                      {score}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Psychomotor Domain */}
+        <div className="border border-slate-300 rounded-2xl p-4 bg-slate-50 space-y-2">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+            <span className="font-black text-slate-950 uppercase tracking-wide">
+              B. Psychomotor Domain (Skills & Physical)
+            </span>
+            <span className="text-[10px] text-slate-500 font-semibold">Scale: 5 (High) - 1 (Low)</span>
+          </div>
+          <div className="space-y-1.5 pt-1">
+            {report.psychomotorRatings.map(item => (
+              <div key={item.skill} className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                <span className="text-slate-700 font-medium">{item.skill}</span>
+                <div className="flex items-center gap-1 font-mono">
+                  {[1, 2, 3, 4, 5].map(score => (
+                    <span 
+                      key={score}
+                      className={`w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] ${
+                        item.rating === score 
+                          ? 'bg-slate-950 text-white' 
+                          : 'bg-white border border-slate-300 text-slate-400'
+                      }`}
+                    >
+                      {score}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Form Master & Principal Remarks */}
+      <div className="space-y-3 text-xs">
+        <div className="border border-slate-300 rounded-2xl p-4 bg-slate-50">
+          <span className="text-slate-500 block text-[10px] uppercase font-bold">
+            Form Teacher's Evaluation & Recommendation:
+          </span>
+          <p className="text-slate-900 font-serif italic text-sm mt-1">
+            "{report.formTeacherRemark}"
+          </p>
+          <span className="text-slate-600 block text-[11px] font-bold mt-2">
+            Signed: {report.formTeacherName}
+          </span>
+        </div>
+
+        <div className="border border-slate-300 rounded-2xl p-4 bg-slate-50 relative">
+          <span className="text-slate-500 block text-[10px] uppercase font-bold">
+            Principal's Final Remark & Seal:
+          </span>
+          <p className="text-slate-900 font-serif italic text-sm mt-1">
+            "{report.principalRemark}"
+          </p>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mt-4 pt-3 border-t border-slate-200 gap-4">
+            <div>
+              <span className="text-slate-600 block text-[11px] font-bold">
+                {report.principalName}
+              </span>
+              <span className="text-[10px] text-slate-500 font-mono">
+                Date Issued: {report.issueDate}
+              </span>
+            </div>
+
+            {/* Official Stamp Simulation */}
+            {stampVerified && (
+              <div className="border-2 border-emerald-800 rounded-xl px-3 py-1.5 text-center text-emerald-900 font-serif uppercase tracking-widest font-black text-[10px] rotate-[-2deg] bg-emerald-50/50 shadow-sm shrink-0">
+                <span>★ KING'S COLLEGE ACADEMIC REGISTRY ★</span>
+                <div className="text-[8px] font-mono lowercase">verified official stamp</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer Term Transition & Verification QR Seal */}
+      <div className="pt-4 border-t-2 border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+        <div className="space-y-0.5 text-center sm:text-left">
+          <div className="text-slate-900 font-bold">
+            <span>Next Term Resumption Date: </span>
+            <strong className="text-slate-950 font-black">{report.nextTermBeginsDate}</strong>
+          </div>
+          <div className="text-slate-600 text-[11px]">
+            Next Term Billable Fees: <strong>₦{report.nextTermFeesNGN.toLocaleString()}</strong>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="text-right">
+            <span className="text-[10px] text-slate-500 block">Cryptographic Verification Code</span>
+            <strong className="text-[11px] font-mono text-slate-900">{report.qrSecurityVerificationCode}</strong>
+          </div>
+          <ReportCardQrCode 
+            report={report} 
+            schoolName={schoolName}
+            size={52}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> = ({
   currentUser,
@@ -43,8 +372,8 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
   const [reportCards, setReportCards] = useState<TerminalReportCard[]>(INITIAL_REPORT_CARDS);
   const [transcripts] = useState<MultiYearTranscriptRecord[]>(INITIAL_TRANSCRIPTS);
   const [selectedReportId, setSelectedReportId] = useState<string>(INITIAL_REPORT_CARDS[0].id);
-  const [activeViewMode, setActiveViewMode] = useState<'single_report' | 'batch_summary' | 'multi_year_transcript'>('single_report');
-  const [selectedClassArm, setSelectedClassArm] = useState<string>('all');
+  const [activeViewMode, setActiveViewMode] = useState<'single_report' | 'bulk_class_print' | 'batch_summary' | 'multi_year_transcript'>('single_report');
+  const [selectedClassArm, setSelectedClassArm] = useState<string>('SS 2 Alpha');
   const [selectedTerm, setSelectedTerm] = useState<string>('Term 2');
   const [selectedSession, setSelectedSession] = useState<string>('2025/2026');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -53,6 +382,11 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
   const [isPrintPreviewActive, setIsPrintPreviewActive] = useState<boolean>(false);
   const [printPaperSize, setPrintPaperSize] = useState<'A4' | 'Letter'>('A4');
   const [previewZoom, setPreviewZoom] = useState<number>(100);
+
+  // Bulk Selection State for Continuous Class-Wide Printing
+  const [selectedBulkStudentIds, setSelectedBulkStudentIds] = useState<string[]>(
+    INITIAL_REPORT_CARDS.map(r => r.id)
+  );
 
   const printAreaRef = useRef<HTMLDivElement>(null);
 
@@ -69,8 +403,26 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
     return matchesArm && matchesTerm && matchesSession && matchesSearch;
   });
 
+  const queuedReports = filteredReports.filter(r => selectedBulkStudentIds.includes(r.id));
+
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleToggleBulkStudent = (reportId: string) => {
+    setSelectedBulkStudentIds(prev => 
+      prev.includes(reportId) ? prev.filter(id => id !== reportId) : [...prev, reportId]
+    );
+  };
+
+  const handleSelectAllFiltered = () => {
+    const filteredIds = filteredReports.map(r => r.id);
+    setSelectedBulkStudentIds(Array.from(new Set([...selectedBulkStudentIds, ...filteredIds])));
+  };
+
+  const handleDeselectAllFiltered = () => {
+    const filteredIds = new Set(filteredReports.map(r => r.id));
+    setSelectedBulkStudentIds(prev => prev.filter(id => !filteredIds.has(id)));
   };
 
   const handleGenerateAiRemark = () => {
@@ -87,20 +439,6 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
       }));
       setIsAiRemarkGenerating(false);
     }, 600);
-  };
-
-  const getGradeBadgeClass = (grade: string) => {
-    switch (grade) {
-      case 'A1': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
-      case 'B2': 
-      case 'B3': return 'bg-sky-500/20 text-sky-400 border-sky-500/30';
-      case 'C4':
-      case 'C5':
-      case 'C6': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
-      case 'D7':
-      case 'E8': return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
-      default: return 'bg-rose-500/20 text-rose-400 border-rose-500/30';
-    }
   };
 
   return (
@@ -136,6 +474,17 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
               Report Sheet
             </button>
             <button
+              onClick={() => setActiveViewMode('bulk_class_print')}
+              className={`px-3 py-2 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeViewMode === 'bulk_class_print'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Bulk Class Print ({queuedReports.length})</span>
+            </button>
+            <button
               onClick={() => setActiveViewMode('batch_summary')}
               className={`px-3 py-2 rounded-xl font-bold transition-all cursor-pointer ${
                 activeViewMode === 'batch_summary'
@@ -143,7 +492,7 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Batch Summary
+              Batch Broadsheet
             </button>
             <button
               onClick={() => setActiveViewMode('multi_year_transcript')}
@@ -162,7 +511,7 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
             className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950 transition-all cursor-pointer"
           >
             <Printer className="w-4 h-4" />
-            <span>Print Official Sheet</span>
+            <span>Print Report Card</span>
           </button>
         </div>
       </div>
@@ -224,7 +573,7 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
         </div>
       </div>
 
-      {/* Main Studio Viewport */}
+      {/* VIEW MODE: Single Report Card */}
       {activeViewMode === 'single_report' && (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Left Column: Student Quick Roster */}
@@ -281,9 +630,8 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
             </div>
           </div>
 
-          {/* Right Column: High Fidelity Printable Report Card Sheet */}
+          {/* Right Column: Printable Canvas */}
           <div className="lg:col-span-3 space-y-4">
-            {/* Print Preview & Action Bar */}
             <div className="flex flex-wrap items-center justify-between bg-slate-900 border border-slate-800 rounded-2xl p-3.5 gap-3 text-xs">
               <div className="flex items-center gap-3">
                 <button
@@ -359,307 +707,133 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
                   className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 shadow transition-all cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
-                  <span>Print Sheet</span>
+                  <span>Print Report Card</span>
                 </button>
               </div>
             </div>
 
-            {/* Print Preview Container with Paper Dimensions */}
             <div className={`transition-all duration-300 ${isPrintPreviewActive ? 'bg-slate-950/80 p-6 sm:p-10 rounded-3xl border border-indigo-500/30 flex flex-col items-center overflow-x-auto' : ''}`}>
               {isPrintPreviewActive && (
                 <div className="mb-4 text-xs text-indigo-400 font-mono flex items-center gap-2">
                   <span>📄 {printPaperSize} Print-Ready Canvas (Portrait 1-Page Layout Bounds)</span>
-                  <span className="text-slate-500">• Target Margin: 12mm</span>
+                  <span className="text-slate-500">• Target Margin: 8mm</span>
                 </div>
               )}
 
-              {/* Official Report Sheet Canvas (Print-Friendly Structure) */}
-              <div 
-                ref={printAreaRef}
-                className="bg-white text-slate-900 rounded-3xl p-6 sm:p-10 border border-slate-300 shadow-2xl space-y-6 printable-report-card relative overflow-hidden transition-transform duration-200"
-                style={{ 
-                  minHeight: '960px',
-                  width: isPrintPreviewActive ? (printPaperSize === 'A4' ? '210mm' : '8.5in') : '100%',
-                  maxWidth: isPrintPreviewActive ? (printPaperSize === 'A4' ? '210mm' : '8.5in') : '100%',
-                  transform: isPrintPreviewActive ? `scale(${previewZoom / 100})` : 'none',
-                  transformOrigin: 'top center'
-                }}
-              >
-              {/* Watermark Crest */}
-              <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
-                <GraduationCap className="w-96 h-96 text-slate-950" />
-              </div>
-
-              {/* School Official Letterhead */}
-              <div className="flex flex-col sm:flex-row items-center justify-between pb-6 border-b-2 border-slate-900 gap-4 text-center sm:text-left">
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-2xl bg-emerald-800 text-white flex items-center justify-center font-black text-2xl shadow">
-                    {brandProfile?.schoolName ? brandProfile.schoolName.substring(0, 2).toUpperCase() : 'CF'}
-                  </div>
-                  <div>
-                    <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-950 uppercase">
-                      {brandProfile?.schoolName || activeTenant?.name || "KING'S COLLEGE LAGOS"}
-                    </h1>
-                    <p className="text-xs text-slate-600 font-semibold">
-                      {brandProfile?.tagline || "Excellence, Character & National Service • Founded 1909"}
-                    </p>
-                    <p className="text-[11px] text-slate-500">
-                      3 Catholic Mission Street, Lagos Island, Lagos State, Nigeria • accredited by WAEC & NECO
-                    </p>
-                  </div>
-                </div>
-
-                <div className="text-center sm:text-right shrink-0">
-                  <span className="px-3 py-1 bg-slate-950 text-white font-black text-xs uppercase tracking-widest rounded-lg inline-block mb-1">
-                    Continuous Assessment & Terminal Report
-                  </span>
-                  <div className="text-xs font-bold text-slate-700">
-                    <span>Session: </span><strong className="text-slate-950">{currentReport.academicSession}</strong> | 
-                    <span> Term: </span><strong className="text-slate-950">{currentReport.term}</strong>
-                  </div>
-                </div>
-              </div>
-
-              {/* Student Bio-Data & Attendance Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
-                <div>
-                  <span className="text-slate-500 block text-[10px] font-bold uppercase">Student Full Name</span>
-                  <strong className="text-slate-900 font-black text-sm">{currentReport.studentName}</strong>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[10px] font-bold uppercase">Admission Number</span>
-                  <strong className="text-slate-900 font-mono font-bold">{currentReport.admissionNumber}</strong>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[10px] font-bold uppercase">Class / Stream</span>
-                  <strong className="text-slate-900 font-bold">{currentReport.classArm}</strong>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[10px] font-bold uppercase">Term Attendance</span>
-                  <strong className="text-emerald-700 font-bold font-mono">
-                    {currentReport.timesPresent} / {currentReport.timesSchoolOpened} Days (98.3%)
-                  </strong>
-                </div>
-              </div>
-
-              {/* Academic Subjects Broadsheet Table */}
-              <div className="overflow-x-auto rounded-2xl border border-slate-300">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-950 text-white font-bold text-[11px] uppercase tracking-wider">
-                      <th className="p-2.5">Subject</th>
-                      <th className="p-2.5 text-center">1st CA (20)</th>
-                      <th className="p-2.5 text-center">2nd CA (20)</th>
-                      <th className="p-2.5 text-center">Exam (60)</th>
-                      <th className="p-2.5 text-center">Total (100)</th>
-                      <th className="p-2.5 text-center">Grade</th>
-                      <th className="p-2.5 text-center">Class Avg</th>
-                      <th className="p-2.5 text-center">High / Low</th>
-                      <th className="p-2.5 text-center">Pos</th>
-                      <th className="p-2.5">Remarks</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 text-slate-800">
-                    {currentReport.subjectScores.map((score, index) => (
-                      <tr key={score.subjectId} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50/70'}>
-                        <td className="p-2.5 font-bold text-slate-950">
-                          {score.subjectName}
-                          <span className="text-[10px] text-slate-400 block font-mono font-normal">
-                            {score.subjectCode} • {score.subjectTeacherName}
-                          </span>
-                        </td>
-                        <td className="p-2.5 text-center font-mono">{score.ca1Score}</td>
-                        <td className="p-2.5 text-center font-mono">{score.ca2Score}</td>
-                        <td className="p-2.5 text-center font-mono font-semibold">{score.examScore}</td>
-                        <td className="p-2.5 text-center font-mono font-black text-slate-950 text-sm">
-                          {score.totalScore}
-                        </td>
-                        <td className="p-2.5 text-center">
-                          <span className={`px-2 py-0.5 rounded font-black font-mono text-xs border ${getGradeBadgeClass(score.grade)}`}>
-                            {score.grade}
-                          </span>
-                        </td>
-                        <td className="p-2.5 text-center font-mono text-slate-600">{score.classAverage}</td>
-                        <td className="p-2.5 text-center font-mono text-[10px] text-slate-500">
-                          {score.classHighest} / {score.classLowest}
-                        </td>
-                        <td className="p-2.5 text-center font-bold text-slate-900 font-mono">{score.positionInSubject}</td>
-                        <td className="p-2.5 font-semibold text-slate-700">{score.remark}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Performance Summary Strip */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-emerald-50 border border-emerald-200 p-4 rounded-2xl text-xs text-emerald-950">
-                <div>
-                  <span className="text-emerald-700 block text-[10px] uppercase font-bold">Total Marks</span>
-                  <strong className="font-mono text-base font-black">
-                    {currentReport.totalMarksObtained} / {currentReport.totalMarksPossible}
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-emerald-700 block text-[10px] uppercase font-bold">Terminal Average</span>
-                  <strong className="font-mono text-base font-black text-emerald-800">
-                    {currentReport.averagePercentage}%
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-emerald-700 block text-[10px] uppercase font-bold">Cumulative GPA</span>
-                  <strong className="font-mono text-base font-black">
-                    {currentReport.gpa} / 5.0
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-emerald-700 block text-[10px] uppercase font-bold">Class Position</span>
-                  <strong className="font-mono text-base font-black">
-                    {currentReport.classPosition} of {currentReport.totalStudentsInClass}
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-emerald-700 block text-[10px] uppercase font-bold">Cohort Rank</span>
-                  <strong className="font-mono text-base font-black">
-                    {currentReport.cohortPosition} of {currentReport.totalStudentsInCohort}
-                  </strong>
-                </div>
-              </div>
-
-              {/* Affective & Psychomotor Behavioral Domain Rating Grids */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-                {/* Affective Domain */}
-                <div className="border border-slate-300 rounded-2xl p-4 bg-slate-50 space-y-2">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                    <span className="font-black text-slate-950 uppercase tracking-wide">
-                      A. Affective Domain (Character & Values)
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-semibold">Scale: 5 (High) - 1 (Low)</span>
-                  </div>
-                  <div className="space-y-1.5 pt-1">
-                    {currentReport.affectiveRatings.map(item => (
-                      <div key={item.trait} className="flex items-center justify-between py-1 border-b border-slate-200/60">
-                        <span className="text-slate-700 font-medium">{item.trait}</span>
-                        <div className="flex items-center gap-1 font-mono">
-                          {[1, 2, 3, 4, 5].map(score => (
-                            <span 
-                              key={score}
-                              className={`w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] ${
-                                item.rating === score 
-                                  ? 'bg-slate-950 text-white' 
-                                  : 'bg-white border border-slate-300 text-slate-400'
-                              }`}
-                            >
-                              {score}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Psychomotor Domain */}
-                <div className="border border-slate-300 rounded-2xl p-4 bg-slate-50 space-y-2">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                    <span className="font-black text-slate-950 uppercase tracking-wide">
-                      B. Psychomotor Domain (Skills & Physical)
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-semibold">Scale: 5 (High) - 1 (Low)</span>
-                  </div>
-                  <div className="space-y-1.5 pt-1">
-                    {currentReport.psychomotorRatings.map(item => (
-                      <div key={item.skill} className="flex items-center justify-between py-1 border-b border-slate-200/60">
-                        <span className="text-slate-700 font-medium">{item.skill}</span>
-                        <div className="flex items-center gap-1 font-mono">
-                          {[1, 2, 3, 4, 5].map(score => (
-                            <span 
-                              key={score}
-                              className={`w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] ${
-                                item.rating === score 
-                                  ? 'bg-slate-950 text-white' 
-                                  : 'bg-white border border-slate-300 text-slate-400'
-                              }`}
-                            >
-                              {score}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Form Master & Principal Remarks */}
-              <div className="space-y-3 text-xs">
-                <div className="border border-slate-300 rounded-2xl p-4 bg-slate-50">
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold">
-                    Form Teacher's Evaluation & Recommendation:
-                  </span>
-                  <p className="text-slate-900 font-serif italic text-sm mt-1">
-                    "{currentReport.formTeacherRemark}"
-                  </p>
-                  <span className="text-slate-600 block text-[11px] font-bold mt-2">
-                    Signed: {currentReport.formTeacherName}
-                  </span>
-                </div>
-
-                <div className="border border-slate-300 rounded-2xl p-4 bg-slate-50 relative">
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold">
-                    Principal's Final Remark & Seal:
-                  </span>
-                  <p className="text-slate-900 font-serif italic text-sm mt-1">
-                    "{currentReport.principalRemark}"
-                  </p>
-
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mt-4 pt-3 border-t border-slate-200 gap-4">
-                    <div>
-                      <span className="text-slate-600 block text-[11px] font-bold">
-                        {currentReport.principalName}
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        Date Issued: {currentReport.issueDate}
-                      </span>
-                    </div>
-
-                    {/* Official Stamp Simulation */}
-                    {stampVerified && (
-                      <div className="border-2 border-emerald-800 rounded-xl px-3 py-1.5 text-center text-emerald-900 font-serif uppercase tracking-widest font-black text-[10px] rotate-[-2deg] bg-emerald-50/50 shadow-sm shrink-0">
-                        <span>★ KING'S COLLEGE ACADEMIC REGISTRY ★</span>
-                        <div className="text-[8px] font-mono lowercase">verified official stamp</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer Term Transition & Verification QR Seal */}
-              <div className="pt-4 border-t-2 border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
-                <div className="space-y-0.5 text-center sm:text-left">
-                  <div className="text-slate-900 font-bold">
-                    <span>Next Term Resumption Date: </span>
-                    <strong className="text-slate-950 font-black">{currentReport.nextTermBeginsDate}</strong>
-                  </div>
-                  <div className="text-slate-600 text-[11px]">
-                    Next Term Billable Fees: <strong>₦{currentReport.nextTermFeesNGN.toLocaleString()}</strong>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 shrink-0">
-                  <div className="text-right">
-                    <span className="text-[10px] text-slate-500 block">Cryptographic Verification Code</span>
-                    <strong className="text-[11px] font-mono text-slate-900">{currentReport.qrSecurityVerificationCode}</strong>
-                  </div>
-                  <div className="w-12 h-12 bg-slate-950 text-white rounded-lg flex items-center justify-center p-1 shadow">
-                    <QrCode className="w-9 h-9 text-white" />
-                  </div>
-                </div>
-              </div>
+              <ReportCardCanvas 
+                report={currentReport}
+                brandProfile={brandProfile}
+                activeTenant={activeTenant}
+                stampVerified={stampVerified}
+                isPrintPreviewActive={isPrintPreviewActive}
+                printPaperSize={printPaperSize}
+                previewZoom={previewZoom}
+              />
             </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
+
+      {/* VIEW MODE: Bulk Selection & Continuous Batch Print */}
+      {activeViewMode === 'bulk_class_print' && (
+        <div className="space-y-6">
+          {/* Bulk Selection Queue Control Card */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+              <div className="space-y-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                  <Users className="w-4 h-4" />
+                  Continuous Batch Printing Engine
+                </span>
+                <h3 className="text-xl font-black text-white">
+                  Queue & Print All Student Cards for {selectedClassArm === 'all' ? 'All Classes' : selectedClassArm}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Select and queue student report cards for a continuous print run. Each report card prints on an individual page with standard A4 margins and QR verification seal.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleSelectAllFiltered}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Select All ({filteredReports.length})
+                </button>
+                <button
+                  onClick={handleDeselectAllFiltered}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Deselect All
+                </button>
+                <button
+                  onClick={handlePrint}
+                  disabled={queuedReports.length === 0}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black text-xs flex items-center gap-2 shadow-lg shadow-emerald-950 transition-all cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print All Queued Cards ({queuedReports.length})</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Roster Selection Checklist */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 pt-2">
+              {filteredReports.map(report => {
+                const isChecked = selectedBulkStudentIds.includes(report.id);
+                return (
+                  <div
+                    key={report.id}
+                    onClick={() => handleToggleBulkStudent(report.id)}
+                    className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center gap-3 ${
+                      isChecked 
+                        ? 'bg-indigo-950/40 border-indigo-500/60 text-white' 
+                        : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 ${
+                      isChecked ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-slate-700 bg-slate-900'
+                    }`}>
+                      {isChecked && <Check className="w-3.5 h-3.5" />}
+                    </div>
+                    <div className="min-w-0 truncate">
+                      <span className="font-bold text-xs block truncate text-slate-100">{report.studentName}</span>
+                      <span className="text-[11px] text-slate-400 font-mono">{report.admissionNumber} • #{report.classPosition}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Continuous Queued Cards Print Render Container */}
+          <div className="space-y-8">
+            <div className="flex items-center justify-between text-xs text-slate-400 px-2">
+              <span className="font-bold uppercase tracking-wider">
+                Live Continuous Print Stream ({queuedReports.length} Queued Pages)
+              </span>
+              <span className="text-emerald-400 font-mono">
+                Page Break Enforced per Card
+              </span>
+            </div>
+
+            {queuedReports.map((report, idx) => (
+              <div key={report.id} className="relative space-y-2">
+                <div className="flex items-center justify-between text-xs font-mono text-slate-500 px-3 py-1 bg-slate-950 rounded-xl border border-slate-800 no-print">
+                  <span>Page {idx + 1} of {queuedReports.length} • {report.studentName} ({report.admissionNumber})</span>
+                  <span>Average: {report.averagePercentage}% • GPA: {report.gpa}</span>
+                </div>
+                <ReportCardCanvas
+                  report={report}
+                  brandProfile={brandProfile}
+                  activeTenant={activeTenant}
+                  stampVerified={stampVerified}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* VIEW MODE: Multi-Year Transcript Record */}
       {activeViewMode === 'multi_year_transcript' && (
@@ -726,7 +900,7 @@ export const TerminalReportCardStudio: React.FC<TerminalReportCardStudioProps> =
         </div>
       )}
 
-      {/* VIEW MODE: Batch Summary & Broad Broadsheet */}
+      {/* VIEW MODE: Batch Summary & Broadsheet */}
       {activeViewMode === 'batch_summary' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">

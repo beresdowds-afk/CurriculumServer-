@@ -48,7 +48,8 @@ import {
   Workflow, 
   Braces, 
   FileCode, 
-  Send
+  Send,
+  BadgePercent
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -73,6 +74,7 @@ interface ControlPlaneCockpitProps {
   onOpenVersionRolloutModal?: () => void;
   onOpenDomainPortal?: () => void;
   onOpenApiWebhooks?: () => void;
+  onOpenPricingPortal?: () => void;
   onToggleTenantStatus?: (tenantId: string) => void;
   onUpdateTenantFeatures?: (tenantId: string, features: Record<OptionalFeatureKey, boolean>) => void;
 }
@@ -113,6 +115,7 @@ export const ControlPlaneCockpit: React.FC<ControlPlaneCockpitProps> = ({
   onOpenVersionRolloutModal,
   onOpenDomainPortal,
   onOpenApiWebhooks,
+  onOpenPricingPortal,
   onToggleTenantStatus
 }) => {
   const [activeSection, setActiveSection] = useState<CockpitViewSection>('orchestrator_matrix');
@@ -476,6 +479,19 @@ export const ControlPlaneCockpit: React.FC<ControlPlaneCockpitProps> = ({
               <Radio className={`w-3.5 h-3.5 ${isLiveStreamActive ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
               <span>{isLiveStreamActive ? 'Live Stream (3s)' : 'Stream Paused'}</span>
             </button>
+
+            {/* Pricing & Offers Portal */}
+            {onOpenPricingPortal && (
+              <button
+                onClick={onOpenPricingPortal}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-950/70 hover:bg-amber-900 text-amber-200 border border-amber-500/40 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                title="Manage SaaS subscription pricing, bundles, add-on features, and promo offers"
+              >
+                <BadgePercent className="w-4 h-4 text-amber-400" />
+                <span className="hidden sm:inline">Pricing & Offers</span>
+                <span className="sm:hidden">Pricing</span>
+              </button>
+            )}
 
             {/* Run Security Isolation Test */}
             {onOpenIsolationTestModal && (

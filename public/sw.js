@@ -1,5 +1,5 @@
-// CurriculumFlow Service Worker (PWA Offline & Asset Accelerator)
-const CACHE_NAME = 'curriculumflow-cache-v1';
+// Curriculum Platform Service Worker (PWA Offline & Multi-Domain Asset Accelerator)
+const CACHE_NAME = 'curriculum-platform-cache-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -43,6 +43,25 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // For HTML navigation requests, prefer network first so fresh code & domain routing load immediately,
+  // falling back to cached SPA shell if offline
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          return caches.match(event.request).then((cached) => cached || caches.match('/'));
+        })
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
@@ -66,11 +85,6 @@ self.addEventListener('fetch', (event) => {
         });
 
         return networkResponse;
-      }).catch(() => {
-        // Fallback for navigation requests
-        if (event.request.mode === 'navigate') {
-          return caches.match('/');
-        }
       });
     })
   );

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { MainTabType } from './Navbar';
 import { UserProfile, SchoolBrandProfile, TenantSchoolApp } from '../types';
+import { navigateToTab, ROUTE_BY_ID } from '../services/internalRouter';
 import {
   Search,
   Compass,
@@ -27,6 +28,7 @@ import {
   UserCheck,
   Palette,
   ScanFace,
+  BadgePercent,
   ClipboardList,
   CalendarDays,
   Cpu,
@@ -58,43 +60,57 @@ export interface PageNavigationDomain {
 export const ALL_PROJECT_DOMAINS: PageNavigationDomain[] = [
   {
     key: 'saas_cloud',
-    name: 'SaaS Cloud & Multi-Tenant Infrastructure',
-    shortName: 'SaaS Cloud',
+    name: 'CURRICULUM SERVER (Control Plane)',
+    shortName: 'Control Plane',
     icon: Server,
-    badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+    badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
     pages: [
       {
         id: 'curriculum_server_landing',
-        title: 'Curriculum Server Showcase',
+        title: 'Curriculum Server (Public Showcase)',
         description: 'Multi-tenant showcase landing, pricing calculator & deployment architecture',
         icon: Globe,
         isCore: true
       },
       {
-        id: 'school_public_website',
-        title: 'School Public Website',
-        description: 'Provisioned school public homepage, prospectus, admissions & term calendar',
-        icon: Building2,
-        isCore: true
-      },
-      {
-        id: 'curriculum_server',
-        title: 'Curriculum Server Master',
-        description: 'Multi-tenant school cloning engine, tenant health & lease-to-own billing',
+        id: 'docker_orchestration',
+        title: 'Docker Tenant Orchestrator & Shards',
+        description: 'Phased container runtime, cgroup v2 resource limits & live shard migrations (Super Admin only)',
         icon: Server,
-        isCore: true
+        isCore: true,
+        allowedRoles: ['super_admin']
       },
       {
         id: 'tenant_control_center',
-        title: 'Control Plane Cockpit',
-        description: 'Docker runtime clusters, Spanner schemas & resource allocation policies',
-        icon: Cpu
+        title: 'Control Plane & Infrastructure Cockpit',
+        description: 'Docker runtime clusters, Spanner schemas & resource allocation policies (Super Admin only)',
+        icon: Cpu,
+        isCore: true,
+        allowedRoles: ['super_admin']
       },
       {
-        id: 'customer_self_service',
-        title: 'Proprietor Self-Service Portal',
-        description: 'Tenant self-service license tier upgrades, billing invoices & add-ons',
-        icon: Building2
+        id: 'curriculum_server',
+        title: 'Curriculum Server (SaaS Master)',
+        description: 'Multi-tenant school cloning engine, tenant health & lease-to-own billing (Super Admin only)',
+        icon: Server,
+        isCore: true,
+        allowedRoles: ['super_admin']
+      },
+      {
+        id: 'pricing_management',
+        title: 'Product Offers & Pricing Management',
+        description: 'Subscription tiers, 4+1 modular bundles, add-on features, domain TLD rates & promo codes',
+        icon: BadgePercent,
+        isCore: true,
+        allowedRoles: ['super_admin']
+      },
+      {
+        id: 'api_webhooks',
+        title: 'REST API v1 & Webhooks Gateway',
+        description: 'REST v1 endpoints, cryptographic HMAC webhook events & embed widgets (Super Admin only)',
+        icon: Code,
+        isCore: true,
+        allowedRoles: ['super_admin']
       },
       {
         id: 'domain_management',
@@ -103,26 +119,27 @@ export const ALL_PROJECT_DOMAINS: PageNavigationDomain[] = [
         icon: Globe
       },
       {
-        id: 'api_webhooks',
-        title: 'REST API & Webhooks Gateway',
-        description: 'REST v1 endpoints, cryptographic HMAC webhook events & embed widgets',
-        icon: Code
-      },
-      {
-        id: 'docker_orchestration',
-        title: 'Docker Tenant Orchestrator & Shards',
-        description: 'Phased container runtime, cgroup v2 resource limits & live shard migrations',
-        icon: Server
+        id: 'customer_self_service',
+        title: 'Proprietor Self-Service Portal',
+        description: 'Tenant self-service license tier upgrades, billing invoices & add-ons',
+        icon: Building2
       }
     ]
   },
   {
     key: 'governance',
-    name: 'Executive Governance & Principal Command',
-    shortName: 'Governance',
+    name: 'EXECUTIVE & GOVERNANCE',
+    shortName: 'Executive & Governance',
     icon: ShieldCheck,
     badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
     pages: [
+      {
+        id: 'school_public_website',
+        title: 'School Public Website & Admissions',
+        description: 'Provisioned school public homepage, prospectus, admissions & term calendar',
+        icon: Building2,
+        isCore: true
+      },
       {
         id: 'command_center',
         title: 'School Command Center',
@@ -171,7 +188,7 @@ export const ALL_PROJECT_DOMAINS: PageNavigationDomain[] = [
   },
   {
     key: 'operations',
-    name: 'Instructional & Administrative Operations',
+    name: 'School Operations & Registry',
     shortName: 'Operations',
     icon: Building2,
     badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
@@ -272,10 +289,10 @@ export const ALL_PROJECT_DOMAINS: PageNavigationDomain[] = [
   },
   {
     key: 'curriculum',
-    name: 'Curriculum Engine & Pedagogical Flow',
+    name: 'Curriculum & Pedagogy',
     shortName: 'Curriculum',
     icon: BookOpen,
-    badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+    badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
     pages: [
       {
         id: 'curriculum_source',
@@ -306,10 +323,10 @@ export const ALL_PROJECT_DOMAINS: PageNavigationDomain[] = [
   },
   {
     key: 'assessment',
-    name: 'Assessment, CBT Exams & Analytics',
+    name: 'Assessment & Analytics',
     shortName: 'Assessment',
     icon: Lock,
-    badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+    badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
     pages: [
       {
         id: 'question_bank',
@@ -391,8 +408,8 @@ export const GlobalPageNavigator: React.FC<GlobalPageNavigatorProps> = ({
       setHistoryTrail(newTrail);
       setHistoryIndex(newTrail.length - 1);
     }
-    // Sync browser URL hash
-    window.location.hash = `#/${activeTab}`;
+    // Sync browser URL hash with internal router
+    navigateToTab(activeTab);
   }, [activeTab]);
 
   // Global Keyboard shortcuts: Ctrl+K / Cmd+K for Command Palette, Alt+Left/Right for history

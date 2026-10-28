@@ -49,6 +49,7 @@ export type MainTabType =
   | 'school_public_website'
   | 'curriculum_server'
   | 'tenant_control_center'
+  | 'pricing_management'
   | 'customer_self_service'
   | 'api_webhooks'
   | 'domain_management'

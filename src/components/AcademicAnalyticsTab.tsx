@@ -61,7 +61,11 @@ export const AcademicAnalyticsTab: React.FC<AcademicAnalyticsTabProps> = ({
   onGeneratePersonalizedWorksheet
 }) => {
   const [selectedStudentId, setSelectedStudentId] = useState<string>(studentProfiles[0]?.studentId || '');
-  const [activeAnalyticsSubTab, setActiveAnalyticsSubTab] = useState<'coverage' | 'teachers' | 'subject_trends' | 'students'>('coverage');
+  const [activeAnalyticsSubTab, setActiveAnalyticsSubTab] = useState<'coverage' | 'teachers' | 'subject_trends' | 'class_trends' | 'students'>('coverage');
+
+  // Class-Wide Performance Trends State
+  const [selectedClassStreamFilter, setSelectedClassStreamFilter] = useState<'all' | 'Sciences' | 'Commercial' | 'Arts' | 'Junior'>('all');
+  const [classTrendMetric, setClassTrendMetric] = useState<'average' | 'passRate' | 'distinctionRate'>('average');
 
   // Subject Performance Trends State
   const [selectedDepartment, setSelectedDepartment] = useState<'all' | 'Sciences' | 'Arts & Humanities' | 'Commercial' | 'Junior Secondary'>('all');
@@ -237,7 +241,19 @@ export const AcademicAnalyticsTab: React.FC<AcademicAnalyticsTabProps> = ({
             }`}
           >
             <BarChart3 className="w-4 h-4 text-emerald-400" />
-            <span>Subject Performance Trends (Recharts)</span>
+            <span>Subject Performance Trends</span>
+          </button>
+
+          <button
+            onClick={() => setActiveAnalyticsSubTab('class_trends')}
+            className={`px-4 py-2 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeAnalyticsSubTab === 'class_trends'
+                ? 'bg-indigo-600 text-white font-bold shadow'
+                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Layers className="w-4 h-4 text-indigo-400" />
+            <span>Class-Wide Trends Across Terms (Recharts)</span>
           </button>
 
           <button
@@ -786,6 +802,202 @@ export const AcademicAnalyticsTab: React.FC<AcademicAnalyticsTabProps> = ({
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 3. CLASS-WIDE PERFORMANCE TRENDS ACROSS TERMS (RECHARTS BAR CHART) */}
+      {/* ========================================================================= */}
+      {activeAnalyticsSubTab === 'class_trends' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Executive Overview Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Top Performing Cohort</span>
+              <div className="text-2xl font-black text-emerald-400 flex items-center gap-1.5">
+                <span>SS 2 Alpha</span>
+                <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
+                  81.2%
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-500">Sciences • +8.8% growth from Term 1</span>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Whole-School Mean Term 3</span>
+              <div className="text-2xl font-black text-blue-400">76.2%</div>
+              <span className="text-[10px] text-slate-400">Weighted across 7 class streams</span>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Overall Distinction Rate</span>
+              <div className="text-2xl font-black text-indigo-400">31.4%</div>
+              <span className="text-[10px] text-indigo-300 font-semibold">WAEC / BECE A1-B2 grade rate</span>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Tracked Student Cohort</span>
+              <div className="text-2xl font-black text-white">273 Students</div>
+              <span className="text-[10px] text-slate-400">Junior & Senior Secondary Arms</span>
+            </div>
+          </div>
+
+          {/* Chart Controls */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold text-slate-400 uppercase mr-1">Stream Filter:</span>
+              {[
+                { key: 'all', label: 'All Classes (7 Arms)' },
+                { key: 'Sciences', label: 'Senior Sciences' },
+                { key: 'Commercial', label: 'Commercial' },
+                { key: 'Arts', label: 'Arts & Humanities' },
+                { key: 'Junior', label: 'Junior School' }
+              ].map(st => (
+                <button
+                  key={st.key}
+                  onClick={() => setSelectedClassStreamFilter(st.key as any)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    selectedClassStreamFilter === st.key
+                      ? 'bg-indigo-600 text-white font-bold shadow'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-slate-400 uppercase mr-1">Metric:</span>
+              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+                <button
+                  onClick={() => setClassTrendMetric('average')}
+                  className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                    classTrendMetric === 'average' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Mean Score (%)
+                </button>
+                <button
+                  onClick={() => setClassTrendMetric('passRate')}
+                  className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                    classTrendMetric === 'passRate' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Credit Pass %
+                </button>
+                <button
+                  onClick={() => setClassTrendMetric('distinctionRate')}
+                  className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                    classTrendMetric === 'distinctionRate' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Distinction %
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Primary Recharts Grouped Bar Chart */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-indigo-400" />
+                  <span>Class-Wide Longitudinal Performance Comparison across Terms</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Term 1 (Michaelmas) vs Term 2 (Lent) vs Term 3 (Trinity Promotion) performance trends across all class streams.
+                </p>
+              </div>
+              <div className="flex items-center gap-4 text-xs font-mono">
+                <span className="flex items-center gap-1.5 text-amber-400">
+                  <span className="w-3 h-3 rounded bg-amber-500 inline-block" /> Term 1
+                </span>
+                <span className="flex items-center gap-1.5 text-cyan-400">
+                  <span className="w-3 h-3 rounded bg-cyan-500 inline-block" /> Term 2
+                </span>
+                <span className="flex items-center gap-1.5 text-emerald-400">
+                  <span className="w-3 h-3 rounded bg-emerald-500 inline-block" /> Term 3
+                </span>
+              </div>
+            </div>
+
+            <div className="h-96 w-full pt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={[
+                    { className: 'SS 2 Alpha', stream: 'Sciences', students: 38, 'Term 1': 72.4, 'Term 2': 76.8, 'Term 3': 81.2, passRate: 97.4, distinction: 42.1, gain: 8.8 },
+                    { className: 'SS 2 Beta', stream: 'Commercial', students: 35, 'Term 1': 67.8, 'Term 2': 71.5, 'Term 3': 75.9, passRate: 91.4, distinction: 31.4, gain: 8.1 },
+                    { className: 'SS 2 Gamma', stream: 'Arts', students: 32, 'Term 1': 69.2, 'Term 2': 73.0, 'Term 3': 78.4, passRate: 93.8, distinction: 34.4, gain: 9.2 },
+                    { className: 'SS 1 Alpha', stream: 'Sciences', students: 40, 'Term 1': 64.5, 'Term 2': 68.2, 'Term 3': 73.1, passRate: 87.5, distinction: 25.0, gain: 8.6 },
+                    { className: 'JSS 3 Alpha', stream: 'Junior', students: 42, 'Term 1': 70.1, 'Term 2': 74.9, 'Term 3': 80.5, passRate: 95.2, distinction: 38.1, gain: 10.4 },
+                    { className: 'JSS 2 Alpha', stream: 'Junior', students: 41, 'Term 1': 66.3, 'Term 2': 69.8, 'Term 3': 74.0, passRate: 88.0, distinction: 26.8, gain: 7.7 },
+                    { className: 'JSS 1 Alpha', stream: 'Junior', students: 45, 'Term 1': 61.5, 'Term 2': 66.4, 'Term 3': 72.2, passRate: 84.4, distinction: 22.2, gain: 10.7 }
+                  ].filter(c => selectedClassStreamFilter === 'all' || c.stream === selectedClassStreamFilter)}
+                  margin={{ top: 20, right: 30, left: 10, bottom: 20 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <XAxis 
+                    dataKey="className" 
+                    stroke="#64748b" 
+                    tick={{ fill: '#cbd5e1', fontSize: 12, fontWeight: 600 }}
+                    axisLine={{ stroke: '#334155' }}
+                  />
+                  <YAxis 
+                    stroke="#64748b" 
+                    domain={[40, 100]}
+                    tick={{ fill: '#cbd5e1', fontSize: 12 }}
+                    axisLine={{ stroke: '#334155' }}
+                    label={{ value: 'Class Mean Score (%)', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 11 }}
+                  />
+                  <ReferenceLine y={50} stroke="#f43f5e" strokeDasharray="3 3" label={{ value: 'Pass Benchmark (50%)', fill: '#f43f5e', fontSize: 10 }} />
+                  <ReferenceLine y={75} stroke="#10b981" strokeDasharray="3 3" label={{ value: 'Distinction (75%)', fill: '#10b981', fontSize: 10 }} />
+                  <RechartsTooltip 
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-slate-950 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-2">
+                            <div className="text-xs font-bold text-white border-b border-slate-800 pb-1">
+                              {data.className} ({data.stream}) • {data.students} Enrolled
+                            </div>
+                            <div className="space-y-1 text-xs">
+                              <div className="flex justify-between text-slate-300">
+                                <span>Term 1 (Michaelmas):</span>
+                                <span className="font-mono font-bold text-amber-400">{data['Term 1']}%</span>
+                              </div>
+                              <div className="flex justify-between text-slate-300">
+                                <span>Term 2 (Lent):</span>
+                                <span className="font-mono font-bold text-cyan-400">{data['Term 2']}%</span>
+                              </div>
+                              <div className="flex justify-between text-slate-300">
+                                <span>Term 3 (Trinity):</span>
+                                <span className="font-mono font-bold text-emerald-400">{data['Term 3']}%</span>
+                              </div>
+                              <div className="flex justify-between text-slate-300 pt-1 border-t border-slate-800 font-bold">
+                                <span>Total Growth Gain:</span>
+                                <span className="font-mono text-emerald-400">+{data.gain}%</span>
+                              </div>
+                              <div className="flex justify-between text-slate-400 text-[11px]">
+                                <span>Credit Pass Rate:</span>
+                                <span className="font-mono text-white">{data.passRate}%</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Legend wrapperStyle={{ paddingTop: '16px' }} formatter={(val) => <span className="text-xs text-slate-300 font-semibold">{val}</span>} />
+                  <Bar dataKey="Term 1" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="Term 2" fill="#06b6d4" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="Term 3" fill="#10b981" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
         </div>

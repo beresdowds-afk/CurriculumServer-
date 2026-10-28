@@ -44,7 +44,9 @@ import {
   Printer,
   Award,
   FileText,
-  Bus
+  Bus,
+  Tag,
+  BadgePercent
 } from 'lucide-react';
 import { MainTabType } from './Navbar';
 
@@ -100,22 +102,31 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
   };
 
   const navTabs: NavTabItem[] = useMemo(() => [
-    // 0. Curriculum Server Multi-Tenant SaaS Master & Landing
+    // 0. CURRICULUM SERVER Control Plane (Public Showcase + 4 Super Admin Infrastructure Modules)
     {
       id: 'curriculum_server_landing',
       label: 'Curriculum Server (Public Showcase)',
-      shortLabel: 'Showcase Landing',
+      shortLabel: 'Public Showcase',
       description: 'Public showcase, pricing calculator, and SaaS architecture',
       icon: Globe,
       category: 'saas_cloud',
       highlight: true
     },
     {
-      id: 'school_public_website',
-      label: 'School Public Website & Admissions',
-      shortLabel: 'Public Website',
-      description: 'Official school homepage, prospectus, admissions & public calendar',
-      icon: School,
+      id: 'docker_orchestration',
+      label: 'Docker Tenant Orchestrator & Shards',
+      shortLabel: 'Docker Orchestrator',
+      description: 'Phased container runtime, cgroup v2 resource limits & live shard migrations (Super Admin only)',
+      icon: Server,
+      category: 'saas_cloud',
+      highlight: true
+    },
+    {
+      id: 'tenant_control_center',
+      label: 'Control Plane & Infrastructure Cockpit',
+      shortLabel: 'Control Plane Cockpit',
+      description: 'Multi-tenant Docker runtime, PostgreSQL schemas, background queues & security boundaries (Super Admin only)',
+      icon: Cpu,
       category: 'saas_cloud',
       highlight: true
     },
@@ -123,34 +134,25 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       id: 'curriculum_server',
       label: 'Curriculum Server (SaaS Master)',
       shortLabel: 'Curriculum Server',
-      description: 'Multi-tenant school cloning, license management & SaaS subscriptions',
+      description: 'Multi-tenant school cloning, license management & SaaS subscriptions (Super Admin only)',
       icon: Server,
       category: 'saas_cloud',
       highlight: true
     },
     {
-      id: 'tenant_control_center',
-      label: 'SaaS Control Plane & Infrastructure Cockpit',
-      shortLabel: 'Control Plane Cockpit',
-      description: 'Multi-tenant Docker runtime, PostgreSQL schemas, background queues & security boundaries',
-      icon: Cpu,
-      category: 'saas_cloud',
-      highlight: true
-    },
-    {
-      id: 'customer_self_service',
-      label: 'Proprietor Self-Service Portal',
-      shortLabel: 'Proprietor Portal',
-      description: 'School subscription management, modular add-on toggles & billing invoices',
-      icon: Building2,
+      id: 'pricing_management',
+      label: 'Product Offers & Pricing Manager',
+      shortLabel: 'Pricing & Offers',
+      description: 'Super Admin pricing management, subscription tiers, 4+1 bundles, add-ons & promo codes',
+      icon: BadgePercent,
       category: 'saas_cloud',
       highlight: true
     },
     {
       id: 'api_webhooks',
       label: 'REST API v1 & Webhooks Gateway',
-      shortLabel: 'API & Webhooks',
-      description: 'API endpoints, HMAC signed events & embeddable school website widgets',
+      shortLabel: 'REST API & Webhooks',
+      description: 'API endpoints, HMAC signed events & embeddable school website widgets (Super Admin only)',
       icon: Code,
       category: 'saas_cloud',
       highlight: true
@@ -162,19 +164,28 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       description: 'NiRA registrar .sch.ng/.edu.ng/.ng registration, custom domains & DNS zones',
       icon: Globe,
       category: 'saas_cloud',
-      highlight: true
+      highlight: false
     },
     {
-      id: 'docker_orchestration',
-      label: 'Docker Tenant Orchestrator & Shards',
-      shortLabel: 'Docker Orchestrator',
-      description: 'Phased container runtime, cgroup v2 resource limits & live shard migrations',
-      icon: Server,
+      id: 'customer_self_service',
+      label: 'Proprietor Self-Service Portal',
+      shortLabel: 'Proprietor Portal',
+      description: 'School subscription management, modular add-on toggles & billing invoices',
+      icon: Building2,
       category: 'saas_cloud',
-      highlight: true
+      highlight: false
     },
 
-    // 1. Executive & Governance
+    // 1. EXECUTIVE & GOVERNANCE (CURRICULUM FLOW)
+    {
+      id: 'school_public_website',
+      label: 'School Public Website & Admissions',
+      shortLabel: 'Public Website',
+      description: 'Official school homepage, prospectus, admissions & public calendar',
+      icon: School,
+      category: 'governance',
+      highlight: true
+    },
     {
       id: 'command_center',
       label: 'School Command Center (Principal)',
@@ -447,18 +458,23 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
   ], [pendingApprovalsCount, pendingRemedialsCount]);
 
   const categories = [
-    { key: 'saas_cloud', label: 'Curriculum Server Cloud', color: 'text-emerald-400', border: 'border-emerald-800/40' },
-    { key: 'governance', label: 'Executive & Governance', color: 'text-purple-400', border: 'border-purple-800/40' },
-    { key: 'operations', label: 'School Operations & Registry', color: 'text-indigo-400', border: 'border-indigo-800/40' },
+    { key: 'saas_cloud', label: 'CURRICULUM SERVER (Control Plane)', color: 'text-indigo-400', border: 'border-indigo-800/40' },
+    { key: 'governance', label: 'EXECUTIVE & GOVERNANCE', color: 'text-purple-400', border: 'border-purple-800/40' },
+    { key: 'operations', label: 'School Operations & Registry', color: 'text-sky-400', border: 'border-sky-800/40' },
     { key: 'curriculum', label: 'Curriculum & Pedagogy', color: 'text-emerald-400', border: 'border-emerald-800/40' },
     { key: 'assessment', label: 'Assessment & Analytics', color: 'text-amber-400', border: 'border-amber-800/40' }
   ];
 
   const filteredTabs = useMemo(() => {
     let tabs = navTabs;
-    // Super-admin only tabs
+    // Super-admin only infrastructure tabs
     if (currentUser.role !== 'super_admin') {
-      tabs = tabs.filter(tab => tab.id !== 'tenant_control_center' && tab.id !== 'docker_orchestration');
+      tabs = tabs.filter(tab => 
+        tab.id !== 'tenant_control_center' && 
+        tab.id !== 'docker_orchestration' &&
+        tab.id !== 'curriculum_server' &&
+        tab.id !== 'api_webhooks'
+      );
     }
     if (!searchQuery.trim()) return tabs;
     const q = searchQuery.toLowerCase().trim();

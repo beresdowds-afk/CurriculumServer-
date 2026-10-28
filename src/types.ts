@@ -2215,6 +2215,74 @@ export interface CurriculumFlowBundle {
   badgeColor: string;
   iconName: string;
   features: CurriculumFlowBundleFeature[];
+  isActive?: boolean;
+  isCustom?: boolean;
+  discountPercentage?: number;
+}
+
+export interface SubscriptionPlanOffer {
+  id: string;
+  name: string;
+  tierKey: 'starter' | 'pro' | 'enterprise' | 'lease_to_own' | 'custom';
+  tagline: string;
+  description: string;
+  monthlyPriceNGN: number;
+  yearlyPriceNGN: number;
+  leaseToOwnMonthlyNGN?: number;
+  leaseToOwnTotalBuyoutNGN?: number;
+  leaseToOwnAmortizationMonths?: number;
+  setupFeeNGN: number;
+  currency: 'NGN' | 'USD';
+  studentCapacity: number;
+  facultyLimit: number;
+  storageLimitMb: number;
+  trialDays: number;
+  gracePeriodDays: number;
+  isPopular?: boolean;
+  isFeatured?: boolean;
+  isActive: boolean;
+  status: 'published' | 'draft' | 'archived';
+  includedBundles: CurriculumFlowBundleKey[];
+  includedFeatures: string[];
+  customLimitsDescription?: string;
+  colorScheme: string;
+  badgeText?: string;
+  iconName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PromoDiscountOffer {
+  id: string;
+  code: string;
+  title: string;
+  description: string;
+  discountType: 'percentage' | 'fixed_ngn';
+  discountValue: number; // e.g. 20 for 20% or 50000 for ₦50,000 off
+  applicableCategory: 'all' | 'subscription_plans' | 'bundles' | 'add_ons' | 'domains';
+  targetPlanId?: string;
+  minOrderValueNGN?: number;
+  maxDiscountNGN?: number;
+  startDate: string;
+  expiryDate: string;
+  usageLimit: number;
+  usedCount: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface PricingChangeAuditLog {
+  id: string;
+  timestamp: string;
+  adminName: string;
+  adminEmail: string;
+  targetType: 'subscription_plan' | 'bundle' | 'add_on_feature' | 'domain_tld' | 'promo_offer';
+  targetId: string;
+  targetName: string;
+  action: 'price_updated' | 'offer_created' | 'offer_deleted' | 'status_toggled' | 'catalog_imported' | 'reset_defaults';
+  oldValueSummary?: string;
+  newValueSummary: string;
+  notes?: string;
 }
 
 export interface BundleUpgradeRequest {
@@ -2243,15 +2311,19 @@ export type OptionalFeatureKey =
   | 'spanner_audit_trail';
 
 export interface OptionalFeatureDefinition {
+  id?: string;
   key: OptionalFeatureKey;
   name: string;
   shortDesc: string;
-  category: 'ai' | 'security' | 'fintech' | 'infrastructure' | 'communication';
+  category: 'ai' | 'security' | 'fintech' | 'infrastructure' | 'communication' | 'custom';
   monthlyPrice: number; // in NGN
   yearlyPrice: number;
   isCoreDefault?: boolean;
-  requiredTier?: 'Starter' | 'Pro' | 'Enterprise';
+  requiredTier?: 'Starter' | 'Pro' | 'Enterprise' | 'All';
   iconName: string;
+  isActive?: boolean;
+  isCustom?: boolean;
+  badge?: string;
 }
 
 export interface LeaseToOwnContract {
@@ -2504,14 +2576,19 @@ export interface SchoolCustomDomain {
 }
 
 export interface TldPricingPlan {
+  id?: string;
   tld: string;
-  category: 'Nigerian Education' | 'Sovereign ccTLD' | 'Global Commercial' | 'Specialty Academy';
+  category: 'Nigerian Education' | 'Sovereign ccTLD' | 'Global Commercial' | 'Specialty Academy' | 'Custom Extension';
   priceNGN: number;
   renewPriceNGN: number;
+  wholesaleCostNGN?: number;
+  marginPercent?: number;
   popular?: boolean;
   requiresVerification?: boolean;
   accreditationBody?: string;
   description: string;
+  isActive?: boolean;
+  isCustom?: boolean;
 }
 
 export interface DomainPurchaseOrder {

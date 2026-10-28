@@ -72,6 +72,7 @@ interface TenantControlCenterProps {
   onOpenVersionRolloutModal?: () => void;
   onOpenDomainPortal?: () => void;
   onOpenApiWebhooks?: () => void;
+  onOpenPricingPortal?: () => void;
   onToggleTenantStatus?: (tenantId: string) => void;
   onUpdateTenantFeatures?: (tenantId: string, features: Record<OptionalFeatureKey, boolean>) => void;
 }
@@ -101,6 +102,7 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
   onOpenVersionRolloutModal,
   onOpenDomainPortal,
   onOpenApiWebhooks,
+  onOpenPricingPortal,
   onToggleTenantStatus,
   onUpdateTenantFeatures
 }) => {
@@ -123,6 +125,7 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
         onOpenVersionRolloutModal={onOpenVersionRolloutModal}
         onOpenDomainPortal={onOpenDomainPortal}
         onOpenApiWebhooks={onOpenApiWebhooks}
+        onOpenPricingPortal={onOpenPricingPortal}
         onToggleTenantStatus={onToggleTenantStatus}
         onUpdateTenantFeatures={onUpdateTenantFeatures}
       />
