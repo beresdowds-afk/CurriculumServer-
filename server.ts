@@ -10,6 +10,8 @@ import { TenantSecurityContextManager } from './src/services/tenantSecurityConte
 import { EntitlementEnforcementService } from './src/services/entitlementEnforcementService';
 import { TamperEvidentAuditService } from './src/services/tamperEvidentAuditService';
 import { TenantLifecycleManager } from './src/services/tenantLifecycleManager';
+import { textbookDb } from './src/services/textbookQuestionBankService';
+import { textbookGenerationEngine } from './src/services/textbookGenerationEngine';
 
 dotenv.config();
 
@@ -1221,6 +1223,238 @@ app.get('/api/v1/embed/portal-widget', (req: Request, res: Response) => {
     portalUrl: `https://${tenantId || 'kingscollege'}.curriculumflow.com`,
     badgeHtml: `<div style="font-family:system-ui;padding:12px;border:1px solid #10b981;border-radius:8px;display:inline-flex;align-items:center;gap:8px;"><span style="color:#10b981;font-weight:bold;">✓ CurriculumFlow Verified</span></div>`
   });
+});
+
+// -------------------------------------------------------------
+// PHASE 2: TEXTBOOK & QUESTION BANK DATA FOUNDATION APIS
+// -------------------------------------------------------------
+app.get('/api/v1/textbooks', (req: Request, res: Response) => {
+  const { classGrade, subjectId } = req.query;
+  const textbooks = textbookDb.getTextbooks(classGrade as any, subjectId as string);
+  res.json({ total: textbooks.length, textbooks });
+});
+
+app.get('/api/v1/textbooks/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const textbook = textbookDb.getTextbookById(id);
+  if (!textbook) {
+    res.status(404).json({ error: 'Textbook not found' });
+    return;
+  }
+  res.json(textbook);
+});
+
+app.get('/api/v1/textbooks/:id/coverage', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const manifest = textbookDb.getCoverageManifest(id);
+  if (!manifest) {
+    res.status(404).json({ error: 'Coverage manifest not found for textbook' });
+    return;
+  }
+  res.json(manifest);
+});
+
+app.get('/api/v1/question-bank', (req: Request, res: Response) => {
+  const { subjectId, classGrade, questionType, reviewStatus } = req.query;
+  const questions = textbookDb.getQuestions({
+    subjectId: subjectId as string,
+    classGrade: classGrade as any,
+    questionType: questionType as string,
+    reviewStatus: reviewStatus as string,
+  });
+  res.json({ total: questions.length, questions });
+});
+
+app.post('/api/v1/question-bank', (req: Request, res: Response) => {
+  try {
+    const payload = req.body;
+    if (!payload.stem || !payload.subjectId) {
+      res.status(400).json({ error: 'Missing required question parameters: stem, subjectId' });
+      return;
+    }
+    const saved = textbookDb.saveQuestion({
+      id: payload.id || `QB-${Date.now()}`,
+      subjectId: payload.subjectId,
+      classGrade: payload.classGrade || 'JSS 1',
+      curriculumVersionId: payload.curriculumVersionId || 'NERDC-2024',
+      topicId: payload.topicId || 'general',
+      learningObjectiveIds: payload.learningObjectiveIds || [],
+      questionType: payload.questionType || 'objective',
+      stem: payload.stem,
+      options: payload.options,
+      correctAnswer: payload.correctAnswer || 'A',
+      explanation: payload.explanation || '',
+      markingRubric: payload.markingRubric,
+      marks: payload.marks || 2,
+      difficulty: payload.difficulty || 'Medium',
+      cognitiveDemand: payload.cognitiveDemand || 'Application',
+      sourceType: payload.sourceType || 'teacher_authored',
+      sourceReference: payload.sourceReference,
+      version: 1,
+      creationMethod: payload.creationMethod || 'manual',
+      reviewStatus: payload.reviewStatus || 'pending_review',
+      exposureCount: 0,
+      createdAt: new Date().toISOString()
+    });
+    res.json({ success: true, question: saved });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to save question' });
+  }
+});
+
+app.get('/api/v1/assessment-blueprints', (req: Request, res: Response) => {
+  res.json({ blueprints: textbookDb.getBlueprints() });
+});
+
+app.get('/api/v1/generation-jobs', (req: Request, res: Response) => {
+  res.json({ jobs: textbookDb.getJobs() });
+});
+
+app.post('/api/v1/question-bank/seed-past-questions', (req: Request, res: Response) => {
+  try {
+    const list = textbookDb.seedPastQuestions();
+    res.json({ success: true, total: list.length, questions: list });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to seed past questions' });
+  }
+});
+
+app.post('/api/v1/question-bank/items/:id/review', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reviewStatus, reviewerId } = req.body;
+    const updated = textbookDb.updateQuestionReviewStatus(id, reviewStatus, reviewerId);
+    if (!updated) {
+      res.status(404).json({ error: 'Question not found' });
+      return;
+    }
+    res.json({ success: true, question: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update question status' });
+  }
+});
+
+app.post('/api/v1/question-bank/generate-objective', async (req: Request, res: Response) => {
+  try {
+    const { subjectName, classGrade, topic, count } = req.body;
+    if (!subjectName || !classGrade) {
+      res.status(400).json({ error: 'Missing required parameters: subjectName, classGrade' });
+      return;
+    }
+
+    const systemPrompt = `You are an expert NERDC curriculum item writer and senior WAEC/NECO chief examiner.
+Generate multiple-choice objective questions strictly aligned with Nigerian educational standards.
+Each question must include a clear stem, 4 options (A, B, C, D), correct option key, detailed pedagogical explanation, Bloom's cognitive level, and difficulty rating.`;
+
+    const userPrompt = `Generate ${count || 3} objective questions for:
+- Subject: ${subjectName}
+- Class: ${classGrade}
+- Topic: ${topic || 'General NERDC Curriculum Core Topics'}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.7-flash',
+      contents: userPrompt,
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            questions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  stem: { type: Type.STRING },
+                  options: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        key: { type: Type.STRING },
+                        text: { type: Type.STRING },
+                      },
+                      required: ['key', 'text'],
+                    },
+                  },
+                  correctAnswer: { type: Type.STRING },
+                  explanation: { type: Type.STRING },
+                  difficulty: { type: Type.STRING },
+                  cognitiveDemand: { type: Type.STRING },
+                },
+                required: ['stem', 'options', 'correctAnswer', 'explanation', 'difficulty', 'cognitiveDemand'],
+              },
+            },
+          },
+          required: ['questions'],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.text || '{}');
+    const createdItems: any[] = [];
+
+    if (parsed.questions && Array.isArray(parsed.questions)) {
+      for (const item of parsed.questions) {
+        const saved = textbookDb.saveQuestion({
+          id: `QB-AI-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          subjectId: 'sub-general',
+          classGrade: classGrade as any,
+          curriculumVersionId: 'NERDC-2024',
+          topicId: topic || 'general',
+          learningObjectiveIds: ['obj-ai-gen'],
+          questionType: 'objective',
+          stem: item.stem,
+          options: item.options,
+          correctAnswer: item.correctAnswer || 'A',
+          explanation: item.explanation || '',
+          marks: 2,
+          difficulty: (item.difficulty as any) || 'Medium',
+          cognitiveDemand: (item.cognitiveDemand as any) || 'Application',
+          sourceType: 'ai_practice',
+          sourceReference: 'Curriculum Server AI Practice Generator (Gemini 3.7 Flash)',
+          version: 1,
+          creationMethod: 'ai_assisted',
+          reviewStatus: 'pending_review',
+          exposureCount: 0,
+          createdAt: new Date().toISOString()
+        });
+        createdItems.push(saved);
+      }
+    }
+
+    res.json({ success: true, count: createdItems.length, questions: createdItems });
+  } catch (error: any) {
+    console.error('Error generating objective questions:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate objective questions' });
+  }
+});
+
+// Phase 4: Textbook Generation Engine API endpoints
+app.post('/api/v1/textbooks/generate-outline', async (req: Request, res: Response) => {
+  try {
+    const { subjectIdOrCode, classGrade, authorName } = req.body;
+    if (!subjectIdOrCode || !classGrade) {
+      res.status(400).json({ error: 'Missing required parameters: subjectIdOrCode, classGrade' });
+      return;
+    }
+    const textbook = await textbookGenerationEngine.generateTextbookOutline(subjectIdOrCode, classGrade, authorName);
+    res.json({ success: true, textbook });
+  } catch (error: any) {
+    console.error('Error generating textbook outline:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate textbook outline' });
+  }
+});
+
+app.post('/api/v1/textbooks/:id/chapters/:chapterId/generate', async (req: Request, res: Response) => {
+  try {
+    const { id, chapterId } = req.params;
+    const chapter = await textbookGenerationEngine.generateChapterContent(id, chapterId);
+    res.json({ success: true, chapter });
+  } catch (error: any) {
+    console.error('Error generating chapter content:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate chapter content' });
+  }
 });
 
 // -------------------------------------------------------------
