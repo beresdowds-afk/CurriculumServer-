@@ -167,6 +167,24 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       highlight: true
     },
     {
+      id: 'export_governance',
+      label: 'Phase 11 Export Governance & Web Publishing',
+      shortLabel: 'Export & Publishing',
+      description: 'Approved web publishing, secure document generation, watermarks & encrypted backups',
+      icon: Download,
+      category: 'saas_cloud',
+      highlight: true
+    },
+    {
+      id: 'pilot_validation',
+      label: 'Phase 12 Pilot Validation & End-to-End Audit',
+      shortLabel: 'Pilot Validation',
+      description: 'End-to-end pilot for authorized subjects, review quality, answers, coverage, cost and performance',
+      icon: ShieldCheck,
+      category: 'saas_cloud',
+      highlight: true
+    },
+    {
       id: 'domain_management',
       label: 'Domain Registrar & DNS Governance',
       shortLabel: 'Domain Portal',

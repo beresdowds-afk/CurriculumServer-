@@ -85,7 +85,9 @@ export type MainTabType =
   | 'logistics_support'
   | 'docker_orchestration'
   | 'past_questions_provenance'
-  | 'quality_assurance';
+  | 'quality_assurance'
+  | 'export_governance'
+  | 'pilot_validation';
 
 interface NavbarProps {
   currentUser: UserProfile;

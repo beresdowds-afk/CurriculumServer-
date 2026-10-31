@@ -12,6 +12,7 @@ import { TamperEvidentAuditService } from './src/services/tamperEvidentAuditServ
 import { TenantLifecycleManager } from './src/services/tenantLifecycleManager';
 import { textbookDb } from './src/services/textbookQuestionBankService';
 import { textbookGenerationEngine } from './src/services/textbookGenerationEngine';
+import { runSecurityHardeningTestSuite } from './src/services/securityHardeningTests';
 
 dotenv.config();
 
@@ -20,22 +21,57 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// Server-side authorization guard for Control Plane operations
+// Server-side authorization guard for Control Plane operations (Hardened against header spoofing & weak tokens)
 function requireSuperAdmin(req: Request, res: Response, next: express.NextFunction) {
-  const role = (req.headers['x-user-role'] || req.headers['x-role'] || '') as string;
   const authHeader = (req.headers['authorization'] || '') as string;
+  let token = '';
 
-  // Check if request is authenticated as super_admin
-  if (role === 'super_admin' || authHeader.toLowerCase().includes('super_admin') || authHeader.includes('usr-super-admin-01')) {
-    return next();
+  if (authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7).trim();
+  } else if (authHeader) {
+    token = authHeader.trim();
   }
 
-  res.status(403).json({
-    error: 'HTTP 403 Forbidden: Super-admin authorization required for Control Plane operations.',
-    code: 'SUPER_ADMIN_REQUIRED',
-    platform: 'Curriculum Server Control Plane',
-    providedRole: role || 'unauthenticated'
-  });
+  // Strictly reject client-controlled headers like x-user-role or x-role as proof of authentication
+  if (!token) {
+    TenantSecurityContextManager.recordViolation({
+      violationType: 'UNAUTHORIZED_FEATURE_ACCESS',
+      sourceTenantId: 'CONTROL_PLANE_UNAUTHENTICATED',
+      actorIp: req.ip || '127.0.0.1',
+      endpoint: req.originalUrl || req.path,
+      payloadSummary: 'Privileged control plane access attempted without valid cryptographic bearer token. Client-controlled role headers ignored.',
+      severity: 'HIGH',
+      blocked: true
+    });
+    res.status(403).json({
+      error: 'HTTP 403 Forbidden: Cryptographic Bearer token authentication required for Control Plane operations. Client-controlled headers (x-user-role, x-role) are not trusted.',
+      code: 'SUPER_ADMIN_REQUIRED',
+      platform: 'Curriculum Server Control Plane'
+    });
+    return;
+  }
+
+  const verification = TenantSecurityContextManager.verifyTenantToken(token);
+  if (!verification.valid || !verification.context || verification.context.role !== 'super_admin') {
+    TenantSecurityContextManager.recordViolation({
+      violationType: 'UNAUTHORIZED_FEATURE_ACCESS',
+      sourceTenantId: verification.context?.tenantId || 'UNKNOWN',
+      actorIp: req.ip || '127.0.0.1',
+      endpoint: req.originalUrl || req.path,
+      payloadSummary: `Invalid or non-super-admin token presented for privileged route: ${verification.error || 'Insufficient privileges'}`,
+      severity: 'CRITICAL',
+      blocked: true
+    });
+    res.status(403).json({
+      error: `HTTP 403 Forbidden: Super-admin authorization required. ${verification.error || 'Token lacks super_admin role.'}`,
+      code: 'SUPER_ADMIN_REQUIRED',
+      platform: 'Curriculum Server Control Plane'
+    });
+    return;
+  }
+
+  (req as any).tenantContext = verification.context;
+  return next();
 }
 
 // Initialize Google Gemini AI SDK on the server side
@@ -1152,6 +1188,19 @@ app.get('/api/v1/control-plane/security-violations', requireSuperAdmin, (req: Re
     totalViolationsRecorded: violations.length,
     activeThreatsBlocked: violations.filter(v => v.blocked).length,
     violations
+  });
+});
+
+// Automated Security Hardening Test Suite Endpoint
+app.get('/api/v1/control-plane/security-hardening-tests', requireSuperAdmin, (req: Request, res: Response) => {
+  const testResults = runSecurityHardeningTestSuite();
+  const allPassed = testResults.every(t => t.passed);
+  res.json({
+    suite: 'Tenant Security & Authentication Hardening Test Suite',
+    status: allPassed ? 'PASSED' : 'FAILED',
+    totalTests: testResults.length,
+    passedCount: testResults.filter(t => t.passed).length,
+    results: testResults
   });
 });
 

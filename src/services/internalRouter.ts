@@ -136,6 +136,32 @@ export const ROUTE_REGISTRY: InternalRouteDefinition[] = [
     requiresAuth: true
   },
   {
+    id: 'export_governance',
+    path: '/export-governance',
+    aliases: ['/export', '/publishing', '/exports'],
+    title: 'Phase 11 Export Governance & Web Publishing',
+    shortTitle: 'Export & Publishing',
+    category: 'saas_cloud',
+    categoryTitle: 'CURRICULUM SERVER (Control Plane)',
+    description: 'Approved web publishing, secure document generation, cryptographic watermarks & encrypted database backups',
+    breadcrumbs: ['Curriculum Server', 'Export Governance & Approved Web Publishing'],
+    domainScope: 'curriculum_server',
+    requiresAuth: true
+  },
+  {
+    id: 'pilot_validation',
+    path: '/pilot-validation',
+    aliases: ['/pilot', '/validation', '/phase12'],
+    title: 'Phase 12 Pilot Validation & End-to-End Audit',
+    shortTitle: 'Pilot Validation',
+    category: 'saas_cloud',
+    categoryTitle: 'CURRICULUM SERVER (Control Plane)',
+    description: 'End-to-end pilot for authorized subjects using actual stored curriculum data, quality, answers, coverage, cost and performance.',
+    breadcrumbs: ['Curriculum Server', 'Phase 12 Pilot Validation & End-to-End Audit'],
+    domainScope: 'curriculum_server',
+    requiresAuth: true
+  },
+  {
     id: 'domain_management',
     path: '/domains',
     aliases: ['/dns', '/domain-registrar'],
@@ -587,13 +613,26 @@ export const ROUTE_BY_ID = new Map<MainTabType, InternalRouteDefinition>(
   ROUTE_REGISTRY.map(route => [route.id, route])
 );
 
-// Map lookup by Clean Normalized Path
+// Map lookup by Clean Normalized Path with robust hyphen/underscore and alias handling
 export const ROUTE_BY_PATH = new Map<string, InternalRouteDefinition>();
 ROUTE_REGISTRY.forEach(route => {
   ROUTE_BY_PATH.set(route.path.toLowerCase(), route);
+  
+  // Register route ID variations (underscores, hyphens, direct)
+  const idStr = route.id.toLowerCase();
+  const idHyphen = idStr.replace(/_/g, '-');
+  const idUnderscore = idStr.replace(/-/g, '_');
+  
+  ROUTE_BY_PATH.set(`/${idStr}`, route);
+  ROUTE_BY_PATH.set(`/${idHyphen}`, route);
+  ROUTE_BY_PATH.set(`/${idUnderscore}`, route);
+
   if (route.aliases) {
     route.aliases.forEach(alias => {
-      ROUTE_BY_PATH.set(alias.toLowerCase(), route);
+      const cleanAlias = alias.toLowerCase();
+      ROUTE_BY_PATH.set(cleanAlias, route);
+      ROUTE_BY_PATH.set(cleanAlias.replace(/_/g, '-'), route);
+      ROUTE_BY_PATH.set(cleanAlias.replace(/-/g, '_'), route);
     });
   }
 });

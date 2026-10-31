@@ -1,4 +1,7 @@
-import { TenantSchoolApp, UserProfile } from '../types';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import { TenantSchoolApp } from '../types';
 
 export interface TenantSecurityContext {
   tenantId: string;
@@ -8,6 +11,9 @@ export interface TenantSecurityContext {
   status: 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED' | 'PENDING' | 'DECOMMISSIONED';
   databaseName: string;
   storageNamespace: string;
+  issuer: string;
+  audience: string;
+  role: string;
   issuedAt: number;
   expiresAt: number;
   tokenSignature: string;
@@ -17,7 +23,14 @@ export interface TenantSecurityContext {
 export interface SecurityViolationEvent {
   id: string;
   timestamp: string;
-  violationType: 'CROSS_TENANT_ACCESS_ATTEMPT' | 'PATH_TRAVERSAL_ATTEMPT' | 'EXPIRED_TOKEN' | 'INVALID_SIGNATURE' | 'SUSPENDED_TENANT_ACCESS' | 'UNAUTHORIZED_FEATURE_ACCESS';
+  violationType: 
+    | 'CROSS_TENANT_ACCESS_ATTEMPT' 
+    | 'PATH_TRAVERSAL_ATTEMPT' 
+    | 'EXPIRED_TOKEN' 
+    | 'INVALID_SIGNATURE' 
+    | 'SUSPENDED_TENANT_ACCESS' 
+    | 'UNAUTHORIZED_FEATURE_ACCESS'
+    | 'HEADER_SPOOFING_ATTEMPT';
   sourceTenantId: string;
   targetTenantId?: string;
   actorIp: string;
@@ -27,31 +40,68 @@ export interface SecurityViolationEvent {
   blocked: boolean;
 }
 
-// Global in-memory security violation log for control-plane telemetry
-const SECURITY_VIOLATIONS_AUDIT: SecurityViolationEvent[] = [];
+const VIOLATIONS_FILE_PATH = path.join(process.cwd(), 'data', 'security_violations.json');
 
-// Secret key for HMAC token signing (in production, loaded from environment)
-const CONTROL_PLANE_SECRET = 'cs_sec_control_plane_hmac_2026_production_isolated';
+function loadPersistentViolations(): SecurityViolationEvent[] {
+  try {
+    if (fs.existsSync(VIOLATIONS_FILE_PATH)) {
+      const content = fs.readFileSync(VIOLATIONS_FILE_PATH, 'utf8');
+      return JSON.parse(content);
+    }
+  } catch (e) {
+    console.error('Failed to load persistent security violations:', e);
+  }
+  return [];
+}
+
+function savePersistentViolations(violations: SecurityViolationEvent[]): void {
+  try {
+    const dir = path.dirname(VIOLATIONS_FILE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const trimmed = violations.slice(0, 5000);
+    fs.writeFileSync(VIOLATIONS_FILE_PATH, JSON.stringify(trimmed, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Failed to save persistent security violations:', e);
+  }
+}
 
 /**
- * Standard simple hash function for client/runtime environment
- */
-function simpleHmacSha256(secret: string, message: string): string {
-  let hash = 0;
-  const combined = secret + ':' + message;
-  for (let i = 0; i < combined.length; i++) {
-    const char = combined.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0;
+  * Retrieves control plane secret from environment configuration.
+  * Fails closed in production if mandatory secret is missing or insecure.
+  */
+function getControlPlaneSecret(): string {
+  const secret = process.env.CONTROL_PLANE_SECRET || process.env.JWT_SECRET || process.env.APP_SECRET;
+  if (!secret || secret.trim() === '' || secret === 'default_insecure_secret') {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL SECURITY ERROR: CONTROL_PLANE_SECRET environment variable is missing or insecure in production mode. System failing closed.');
+    }
+    return 'dev_insecure_fallback_secret_curriculum_server_2026_secure';
   }
-  return 'sig_' + Math.abs(hash).toString(16) + '_' + message.length;
+  return secret;
+}
+
+function hmacSha256(secret: string, data: string): string {
+  return crypto.createHmac('sha256', secret).update(data).digest('hex');
+}
+
+function safeCompare(a: string, b: string): boolean {
+  try {
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
 }
 
 export class TenantSecurityContextManager {
   /**
-   * Generates a signed, tamper-resistant Tenant Security Context Token
-   */
-  static issueTenantToken(tenant: TenantSchoolApp, ttlSeconds: number = 86400): string {
+    * Issues a cryptographically signed, tamper-resistant Tenant Security Context Token using HMAC-SHA256.
+    */
+  static issueTenantToken(tenant: TenantSchoolApp, role: string = 'tenant_admin', ttlSeconds: number = 86400): string {
     const now = Math.floor(Date.now() / 1000);
     const payload = {
       tenantId: tenant.id,
@@ -61,49 +111,54 @@ export class TenantSecurityContextManager {
       status: tenant.status === 'active' ? 'ACTIVE' : tenant.status === 'suspended' ? 'SUSPENDED' : 'PENDING',
       databaseName: `db_${tenant.id.replace(/[^a-zA-Z0-9_]/g, '_')}`,
       storageNamespace: `/storage/tenants/${tenant.id.replace(/[^a-zA-Z0-9_-]/g, '')}`,
+      issuer: 'CurriculumServer-ControlPlane',
+      audience: tenant.id,
+      role: role,
       issuedAt: now,
       expiresAt: now + ttlSeconds
     };
 
+    const secret = getControlPlaneSecret();
     const serialized = JSON.stringify(payload);
-    const encoded = btoa(serialized);
-    const signature = simpleHmacSha256(CONTROL_PLANE_SECRET, serialized);
+    const encoded = Buffer.from(serialized).toString('base64');
+    const signature = hmacSha256(secret, encoded);
     return `${encoded}.${signature}`;
   }
 
   /**
-   * Validates a Tenant Token and reconstructs the verified Security Context
-   */
+    * Validates a Tenant Token and reconstructs the verified Security Context using constant-time cryptographic verification.
+    */
   static verifyTenantToken(token: string): { valid: boolean; context?: TenantSecurityContext; error?: string } {
-    if (!token || !token.includes('.')) {
-      return { valid: false, error: 'Malformed tenant security token' };
+    if (!token || typeof token !== 'string' || !token.includes('.')) {
+      return { valid: false, error: 'Malformed tenant security token structure' };
     }
 
     const [encoded, signature] = token.split('.');
     try {
-      const serialized = atob(encoded);
-      const expectedSignature = simpleHmacSha256(CONTROL_PLANE_SECRET, serialized);
+      const secret = getControlPlaneSecret();
+      const expectedSignature = hmacSha256(secret, encoded);
 
-      if (signature !== expectedSignature) {
+      if (!safeCompare(signature, expectedSignature)) {
         this.recordViolation({
           violationType: 'INVALID_SIGNATURE',
           sourceTenantId: 'UNKNOWN',
           actorIp: '127.0.0.1',
           endpoint: '/api/v1/*',
-          payloadSummary: 'Tampered token signature detected',
+          payloadSummary: 'Tampered token signature detected via cryptographic verification',
           severity: 'HIGH',
           blocked: true
         });
-        return { valid: false, error: 'Cryptographic signature mismatch. Token has been tampered with.' };
+        return { valid: false, error: 'Cryptographic signature mismatch. Token has been tampered with or signed with invalid secret.' };
       }
 
+      const serialized = Buffer.from(encoded, 'base64').toString('utf8');
       const payload = JSON.parse(serialized);
       const now = Math.floor(Date.now() / 1000);
 
       if (payload.expiresAt < now) {
         this.recordViolation({
           violationType: 'EXPIRED_TOKEN',
-          sourceTenantId: payload.tenantId,
+          sourceTenantId: payload.tenantId || 'UNKNOWN',
           actorIp: '127.0.0.1',
           endpoint: '/api/v1/*',
           payloadSummary: 'Expired token presented',
@@ -131,7 +186,7 @@ export class TenantSecurityContextManager {
         context: {
           ...payload,
           tokenSignature: signature,
-          permissions: ['read', 'write', 'execute_ai', 'exam_generation']
+          permissions: payload.role === 'super_admin' ? ['read', 'write', 'super_admin', 'control_plane'] : ['read', 'write', 'execute_ai', 'exam_generation']
         }
       };
     } catch (e: any) {
@@ -140,9 +195,9 @@ export class TenantSecurityContextManager {
   }
 
   /**
-   * Enforces strict tenant isolation. If a request is issued with Context Tenant A
-   * but attempts to read/write resource belonging to Tenant B, it is immediately blocked and logged.
-   */
+    * Enforces strict tenant isolation. If a request is issued with Context Tenant A
+    * but attempts to read/write resource belonging to Tenant B, it is immediately blocked and logged.
+    */
   static assertTenantBoundary(context: TenantSecurityContext, resourceTenantId: string, endpoint: string = ''): boolean {
     if (!context || !context.tenantId) {
       this.recordViolation({
@@ -179,8 +234,8 @@ export class TenantSecurityContextManager {
   }
 
   /**
-   * Sanitizes storage file paths and strictly verifies that path traversal ('..', '//', null-bytes) cannot escape tenant boundary
-   */
+    * Sanitizes storage file paths and strictly verifies that path traversal ('..', '//', null-bytes) cannot escape tenant boundary
+    */
   static sanitizeAndResolveStoragePath(context: TenantSecurityContext, relativePath: string): { safe: boolean; fullPath?: string; error?: string } {
     if (!relativePath || relativePath.includes('..') || relativePath.includes('\0')) {
       this.recordViolation({
@@ -201,33 +256,40 @@ export class TenantSecurityContextManager {
   }
 
   /**
-   * Records a security violation in the control-plane audit ledger
-   */
+    * Records a security violation in the durable control-plane audit ledger
+    */
   static recordViolation(violation: Omit<SecurityViolationEvent, 'id' | 'timestamp'>): SecurityViolationEvent {
     const event: SecurityViolationEvent = {
       ...violation,
       id: `sec_viol_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       timestamp: new Date().toISOString()
     };
-    SECURITY_VIOLATIONS_AUDIT.unshift(event);
-    if (SECURITY_VIOLATIONS_AUDIT.length > 200) {
-      SECURITY_VIOLATIONS_AUDIT.pop();
-    }
-    console.warn(`[SECURITY VIOLATION BLOCKED] ${event.violationType}: Tenant ${event.sourceTenantId} -> ${event.endpoint}`);
+
+    const violations = loadPersistentViolations();
+    violations.unshift(event);
+    savePersistentViolations(violations);
+
+    console.warn(`[SECURITY VIOLATION BLOCKED] ${event.violationType}: Tenant ${event.sourceTenantId} -> ${event.endpoint} (${event.payloadSummary})`);
     return event;
   }
 
   /**
-   * Retrieves all recorded security violation events for master control-plane inspection
-   */
+    * Retrieves all recorded security violation events from durable persistent storage
+    */
   static getSecurityViolations(): SecurityViolationEvent[] {
-    return [...SECURITY_VIOLATIONS_AUDIT];
+    return loadPersistentViolations();
   }
 
   /**
-   * Clears or flushes test violation records
-   */
+    * Clears violation log (primarily for testing suites)
+    */
   static clearViolations(): void {
-    SECURITY_VIOLATIONS_AUDIT.length = 0;
+    try {
+      if (fs.existsSync(VIOLATIONS_FILE_PATH)) {
+        fs.unlinkSync(VIOLATIONS_FILE_PATH);
+      }
+    } catch (e) {
+      console.error('Failed to clear violations:', e);
+    }
   }
 }
