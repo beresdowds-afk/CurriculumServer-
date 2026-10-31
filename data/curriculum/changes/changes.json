@@ -1,0 +1,244 @@
+[
+  {
+    "changeId": "chg_1793444099497_add_u7j2",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "ADDED_TOPIC",
+    "itemPath": "topics[top-mth-ss2-03]",
+    "itemTitle": "Spherical Trigonometry and GPS Coordinate Navigation",
+    "previousValue": null,
+    "newValue": {
+      "title": "Spherical Trigonometry and GPS Coordinate Navigation",
+      "subTopics": [
+        "Great circle distances",
+        "Nautical miles",
+        "GPS latitude and longitude calculations"
+      ],
+      "objectives": [
+        "Calculate shortest nautical distance between two Nigerian airport coordinates"
+      ]
+    },
+    "sourceEvidence": {
+      "documentId": "doc_evid_1793444099490_kcl0z",
+      "sectionReference": "NERDC Gazette 2026 Chapter 4 p.35"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-10-31T10:54:59.497Z",
+    "confidence": 1,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Dr. Folashade Adeyemi (editorial_director)",
+    "reviewedAt": "2026-10-31T11:02:30.526Z",
+    "reviewNotes": "Approved after WAEC Subject Panel alignment review."
+  },
+  {
+    "changeId": "chg_1793444099497_rem_i8qc",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "REMOVED_TOPIC",
+    "itemPath": "topics[top-mth-ss2-02]",
+    "itemTitle": "Plane Geometry & Bearings",
+    "previousValue": {
+      "title": "Plane Geometry & Bearings",
+      "subTopics": [
+        "2D Compass Bearings",
+        "Angles of Elevation"
+      ],
+      "objectives": [
+        "Solve 2D triangle bearing problems using sine and cosine rules"
+      ]
+    },
+    "newValue": null,
+    "sourceEvidence": {
+      "documentId": "doc_evid_1793444099490_kcl0z",
+      "sectionReference": "Omitted from updated syllabus publication"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-10-31T10:54:59.497Z",
+    "confidence": 1,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-10-31T10:54:59.506Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1793444099497_obj_e6bp",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "MODIFIED_OBJECTIVE",
+    "itemPath": "topics[top-mth-ss2-01].performanceObjectives",
+    "itemTitle": "Logarithms and Indices",
+    "previousValue": {
+      "removedObjectives": []
+    },
+    "newValue": {
+      "addedObjectives": [
+        "Calculate compound depreciation using natural logarithms"
+      ]
+    },
+    "sourceEvidence": {
+      "documentId": "doc_evid_1793444099490_kcl0z",
+      "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-10-31T10:54:59.497Z",
+    "confidence": 0.95,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-10-31T10:54:59.506Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1793444099497_eval_0f9v",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "EVALUATION_GUIDANCE_CHANGED",
+    "itemPath": "topics[top-mth-ss2-01].evaluationGuidance",
+    "itemTitle": "Logarithms and Indices",
+    "previousValue": [
+      "Administer 5 objective problems on logarithm rules"
+    ],
+    "newValue": [
+      "Administer 5 objective problems on logarithm rules and 1 theory problem"
+    ],
+    "sourceEvidence": {
+      "documentId": "doc_evid_1793444099490_kcl0z",
+      "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-10-31T10:54:59.497Z",
+    "confidence": 0.98,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-10-31T10:54:59.507Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1793444550525_add_9l38",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "ADDED_TOPIC",
+    "itemPath": "topics[top-mth-ss2-03]",
+    "itemTitle": "Spherical Trigonometry and GPS Coordinate Navigation",
+    "previousValue": null,
+    "newValue": {
+      "title": "Spherical Trigonometry and GPS Coordinate Navigation",
+      "subTopics": [
+        "Great circle distances",
+        "Nautical miles",
+        "GPS latitude and longitude calculations"
+      ],
+      "objectives": [
+        "Calculate shortest nautical distance between two Nigerian airport coordinates"
+      ]
+    },
+    "sourceEvidence": {
+      "documentId": "doc_evid_1793444550518_ycsew",
+      "sectionReference": "NERDC Gazette 2026 Chapter 4 p.35"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-10-31T11:02:30.525Z",
+    "confidence": 1,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-10-31T11:02:30.532Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1793444550525_rem_ckq9",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "REMOVED_TOPIC",
+    "itemPath": "topics[top-mth-ss2-02]",
+    "itemTitle": "Plane Geometry & Bearings",
+    "previousValue": {
+      "title": "Plane Geometry & Bearings",
+      "subTopics": [
+        "2D Compass Bearings",
+        "Angles of Elevation"
+      ],
+      "objectives": [
+        "Solve 2D triangle bearing problems using sine and cosine rules"
+      ]
+    },
+    "newValue": null,
+    "sourceEvidence": {
+      "documentId": "doc_evid_1793444550518_ycsew",
+      "sectionReference": "Omitted from updated syllabus publication"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-10-31T11:02:30.525Z",
+    "confidence": 1,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-10-31T11:02:30.534Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1793444550525_obj_guut",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "MODIFIED_OBJECTIVE",
+    "itemPath": "topics[top-mth-ss2-01].performanceObjectives",
+    "itemTitle": "Logarithms and Indices",
+    "previousValue": {
+      "removedObjectives": []
+    },
+    "newValue": {
+      "addedObjectives": [
+        "Calculate compound depreciation using natural logarithms"
+      ]
+    },
+    "sourceEvidence": {
+      "documentId": "doc_evid_1793444550518_ycsew",
+      "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-10-31T11:02:30.525Z",
+    "confidence": 0.95,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-10-31T11:02:30.535Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1793444550525_eval_g63a",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "EVALUATION_GUIDANCE_CHANGED",
+    "itemPath": "topics[top-mth-ss2-01].evaluationGuidance",
+    "itemTitle": "Logarithms and Indices",
+    "previousValue": [
+      "Administer 5 objective problems on logarithm rules"
+    ],
+    "newValue": [
+      "Administer 5 objective problems on logarithm rules and 1 theory problem"
+    ],
+    "sourceEvidence": {
+      "documentId": "doc_evid_1793444550518_ycsew",
+      "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-10-31T11:02:30.525Z",
+    "confidence": 0.98,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-10-31T11:02:30.538Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  }
+]

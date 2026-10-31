@@ -1,0 +1,110 @@
+[
+  {
+    "reviewId": "rev_1793444099497_tuzs",
+    "targetType": "CURRICULUM_SNAPSHOT",
+    "targetId": "chg_1793444099497_add_u7j2",
+    "state": "APPROVED",
+    "reviewerId": "usr-curator-01",
+    "reviewerName": "Dr. Folashade Adeyemi",
+    "reviewerRole": "editorial_director",
+    "decision": "APPROVED",
+    "editorialNotes": "Approved after WAEC Subject Panel alignment review.",
+    "timestamp": "2026-10-31T10:54:59.497Z"
+  },
+  {
+    "reviewId": "rev_1793444099506_kyzc",
+    "targetType": "CURRICULUM_SNAPSHOT",
+    "targetId": "chg_1793444099497_rem_i8qc",
+    "state": "APPROVED",
+    "reviewerId": "usr-admin-lead",
+    "reviewerName": "Alhaji Musa Garba",
+    "reviewerRole": "editorial_director",
+    "decision": "APPROVED",
+    "editorialNotes": "Batch approval for 2026 academic release.",
+    "timestamp": "2026-10-31T10:54:59.506Z"
+  },
+  {
+    "reviewId": "rev_1793444099507_a97f",
+    "targetType": "CURRICULUM_SNAPSHOT",
+    "targetId": "chg_1793444099497_obj_e6bp",
+    "state": "APPROVED",
+    "reviewerId": "usr-admin-lead",
+    "reviewerName": "Alhaji Musa Garba",
+    "reviewerRole": "editorial_director",
+    "decision": "APPROVED",
+    "editorialNotes": "Batch approval for 2026 academic release.",
+    "timestamp": "2026-10-31T10:54:59.506Z"
+  },
+  {
+    "reviewId": "rev_1793444099508_yp6y",
+    "targetType": "CURRICULUM_SNAPSHOT",
+    "targetId": "chg_1793444099497_eval_0f9v",
+    "state": "APPROVED",
+    "reviewerId": "usr-admin-lead",
+    "reviewerName": "Alhaji Musa Garba",
+    "reviewerRole": "editorial_director",
+    "decision": "APPROVED",
+    "editorialNotes": "Batch approval for 2026 academic release.",
+    "timestamp": "2026-10-31T10:54:59.507Z"
+  },
+  {
+    "reviewId": "rev_1793444550526_9yex",
+    "targetType": "CURRICULUM_SNAPSHOT",
+    "targetId": "chg_1793444099497_add_u7j2",
+    "state": "APPROVED",
+    "reviewerId": "usr-curator-01",
+    "reviewerName": "Dr. Folashade Adeyemi",
+    "reviewerRole": "editorial_director",
+    "decision": "APPROVED",
+    "editorialNotes": "Approved after WAEC Subject Panel alignment review.",
+    "timestamp": "2026-10-31T11:02:30.526Z"
+  },
+  {
+    "reviewId": "rev_1793444550532_8o77",
+    "targetType": "CURRICULUM_SNAPSHOT",
+    "targetId": "chg_1793444550525_add_9l38",
+    "state": "APPROVED",
+    "reviewerId": "usr-admin-lead",
+    "reviewerName": "Alhaji Musa Garba",
+    "reviewerRole": "editorial_director",
+    "decision": "APPROVED",
+    "editorialNotes": "Batch approval for 2026 academic release.",
+    "timestamp": "2026-10-31T11:02:30.532Z"
+  },
+  {
+    "reviewId": "rev_1793444550534_lfx2",
+    "targetType": "CURRICULUM_SNAPSHOT",
+    "targetId": "chg_1793444550525_rem_ckq9",
+    "state": "APPROVED",
+    "reviewerId": "usr-admin-lead",
+    "reviewerName": "Alhaji Musa Garba",
+    "reviewerRole": "editorial_director",
+    "decision": "APPROVED",
+    "editorialNotes": "Batch approval for 2026 academic release.",
+    "timestamp": "2026-10-31T11:02:30.534Z"
+  },
+  {
+    "reviewId": "rev_1793444550535_oc77",
+    "targetType": "CURRICULUM_SNAPSHOT",
+    "targetId": "chg_1793444550525_obj_guut",
+    "state": "APPROVED",
+    "reviewerId": "usr-admin-lead",
+    "reviewerName": "Alhaji Musa Garba",
+    "reviewerRole": "editorial_director",
+    "decision": "APPROVED",
+    "editorialNotes": "Batch approval for 2026 academic release.",
+    "timestamp": "2026-10-31T11:02:30.535Z"
+  },
+  {
+    "reviewId": "rev_1793444550538_5i81",
+    "targetType": "CURRICULUM_SNAPSHOT",
+    "targetId": "chg_1793444550525_eval_g63a",
+    "state": "APPROVED",
+    "reviewerId": "usr-admin-lead",
+    "reviewerName": "Alhaji Musa Garba",
+    "reviewerRole": "editorial_director",
+    "decision": "APPROVED",
+    "editorialNotes": "Batch approval for 2026 academic release.",
+    "timestamp": "2026-10-31T11:02:30.538Z"
+  }
+]

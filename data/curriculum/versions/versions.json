@@ -1,0 +1,44 @@
+[
+  {
+    "versionId": "NERDC-2024-V1",
+    "versionTag": "NERDC-2024-V1.0-OFFICIAL",
+    "title": "National Curriculum Framework for Secondary Education (2024 Baseline)",
+    "sourceDocumentId": "doc_baseline_nerdc_2024_gazette",
+    "sourceDocumentChecksum": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "effectiveAcademicYear": "2024/2025",
+    "effectiveDate": "2024-09-01T00:00:00.000Z",
+    "publishedAt": "2024-08-15T10:00:00.000Z",
+    "previousVersionId": null,
+    "integrityChecksum": "9f83c18b76e108157793d98ef2e22f254e08cf7e8e5033c5e8c18ec5bf7e02b8",
+    "approvedBy": {
+      "userId": "usr-nerdc-director",
+      "name": "Prof. Ismail Junaidu (Executive Secretary NERDC)",
+      "role": "editorial_director",
+      "timestamp": "2024-08-15T09:30:00.000Z"
+    },
+    "totalSubjects": 41,
+    "totalTopics": 55,
+    "status": "SUPERSEDED"
+  },
+  {
+    "versionId": "NERDC-CURR-2026.1-SSS-RELEASE",
+    "versionTag": "NERDC-2026-V1.0",
+    "title": "NERDC 2026 Secondary Curriculum Update (Senior Secondary Mathematics)",
+    "sourceDocumentId": "doc_evid_1793444099490_kcl0z",
+    "sourceDocumentChecksum": "f8410b0acdee2c40cf473af26930b8d5e073abec359ff6acc4aec5db6bca6707",
+    "effectiveAcademicYear": "2026/2027",
+    "effectiveDate": "2026-10-31T10:54:59.509Z",
+    "publishedAt": "2026-10-31T10:54:59.509Z",
+    "previousVersionId": "NERDC-2024-V1",
+    "integrityChecksum": "bdf15b64c41ce855faa1cd12cbd49cbd0229d07127de3aa321cf6e0da8cf7fc6",
+    "approvedBy": {
+      "userId": "usr-director-01",
+      "name": "Prof. Ismail Junaidu",
+      "role": "editorial_director",
+      "timestamp": "2026-10-31T10:54:59.509Z"
+    },
+    "totalSubjects": 41,
+    "totalTopics": 55,
+    "status": "ACTIVE"
+  }
+]

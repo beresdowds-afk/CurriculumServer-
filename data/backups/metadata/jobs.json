@@ -1,0 +1,71 @@
+[
+  {
+    "jobId": "job_bkp_1793444550548_1gzp",
+    "tenantId": "tenant-dr-fixture-1793444550548",
+    "tenantSchoolName": "Disposable Disaster Recovery Test College",
+    "action": "BACKUP",
+    "status": "COMPLETED",
+    "progressPercent": 100,
+    "checkpoints": [
+      "CHECKPOINT_INITIATED",
+      "CHECKPOINT_SCANNING_STORAGE_NAMESPACE",
+      "CHECKPOINT_COMPILING_DATABASE_RECORDS",
+      "CHECKPOINT_ENCRYPTING_AES256GCM",
+      "CHECKPOINT_WRITING_DURABLE_STORAGE",
+      "CHECKPOINT_COMPLETED_SUCCESSFULLY"
+    ],
+    "createdAt": "2026-10-31T11:02:30.549Z",
+    "startedAt": "2026-10-31T11:02:30.549Z",
+    "actor": "Automated DR Test Runner",
+    "snapshotId": "snp_tenant-dr-fixture-1793444550548_1793444550548",
+    "completedAt": "2026-10-31T11:02:30.573Z",
+    "bytesProcessed": 1195,
+    "checksumVerified": true
+  },
+  {
+    "jobId": "job_bkp_1793443709313_j74g",
+    "tenantId": "tenant-dr-fixture-1793443709312",
+    "tenantSchoolName": "Disposable Disaster Recovery Test College",
+    "action": "BACKUP",
+    "status": "COMPLETED",
+    "progressPercent": 100,
+    "checkpoints": [
+      "CHECKPOINT_INITIATED",
+      "CHECKPOINT_SCANNING_STORAGE_NAMESPACE",
+      "CHECKPOINT_COMPILING_DATABASE_RECORDS",
+      "CHECKPOINT_ENCRYPTING_AES256GCM",
+      "CHECKPOINT_WRITING_DURABLE_STORAGE",
+      "CHECKPOINT_COMPLETED_SUCCESSFULLY"
+    ],
+    "createdAt": "2026-10-31T10:48:29.313Z",
+    "startedAt": "2026-10-31T10:48:29.313Z",
+    "actor": "Automated DR Test Runner",
+    "snapshotId": "snp_tenant-dr-fixture-1793443709312_1793443709313",
+    "completedAt": "2026-10-31T10:48:29.334Z",
+    "bytesProcessed": 1194,
+    "checksumVerified": true
+  },
+  {
+    "jobId": "job_bkp_1793442610264_wx52",
+    "tenantId": "tenant-dr-fixture-1793442610263",
+    "tenantSchoolName": "Disposable Disaster Recovery Test College",
+    "action": "BACKUP",
+    "status": "COMPLETED",
+    "progressPercent": 100,
+    "checkpoints": [
+      "CHECKPOINT_INITIATED",
+      "CHECKPOINT_SCANNING_STORAGE_NAMESPACE",
+      "CHECKPOINT_COMPILING_DATABASE_RECORDS",
+      "CHECKPOINT_ENCRYPTING_AES256GCM",
+      "CHECKPOINT_WRITING_DURABLE_STORAGE",
+      "CHECKPOINT_COMPLETED_SUCCESSFULLY"
+    ],
+    "createdAt": "2026-10-31T10:30:10.264Z",
+    "startedAt": "2026-10-31T10:30:10.264Z",
+    "actor": "Automated DR Test Runner",
+    "snapshotId": "snp_tenant-dr-fixture-1793442610263_1793442610264",
+    "completedAt": "2026-10-31T10:30:10.288Z",
+    "bytesProcessed": 1196,
+    "checksumVerified": true
+  }
+]

@@ -2815,11 +2815,12 @@ export interface PlatformAuditRecord {
     | 'payment_received'
     | 'psp_webhook_processed'
     | 'admin_login'
-    | 'admin_action';
+    | 'admin_action'
+    | (string & {});
   target: string;
-  result: 'SUCCESS' | 'FAILED' | 'PENDING';
-  ipAddress: string;
-  deviceMetadata: string;
+  result: 'SUCCESS' | 'FAILED' | 'PENDING' | 'BLOCKED' | (string & {});
+  ipAddress?: string;
+  deviceMetadata?: string;
   details: string;
 }
 

@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { NERDC_SUBJECTS_DATABASE, NERDC_STATS } from './src/data/nerdcDatabase';
+import { ClassGrade } from './src/types';
 import { NerdcAnnualUpdateWorkerService } from './src/services/nerdcAnnualUpdateWorker';
 import { TenantSecurityContextManager } from './src/services/tenantSecurityContext';
 import { EntitlementEnforcementService } from './src/services/entitlementEnforcementService';
@@ -13,8 +14,18 @@ import { TenantLifecycleManager } from './src/services/tenantLifecycleManager';
 import { textbookDb } from './src/services/textbookQuestionBankService';
 import { textbookGenerationEngine } from './src/services/textbookGenerationEngine';
 import { runSecurityHardeningTestSuite } from './src/services/securityHardeningTests';
+import { serverBackupService } from './server/serverBackupService';
+import { defaultBackupStorageProvider } from './server/serverBackupStorage';
+import { runDisasterRecoveryTestSuite } from './server/serverDisasterRecoveryTests';
+import { serverAuditLedger } from './server/serverAuditLedger';
+import { runAuditLedgerTestSuite } from './server/serverAuditLedgerTests';
+import { serverNerdcUpdateManager } from './server/serverNerdcUpdateManager';
+import { runNerdcUpdateTestSuite } from './server/serverNerdcUpdateTests';
 
 dotenv.config();
+
+// Connect durable cryptographic server audit ledger backend
+TamperEvidentAuditService.setServerBackend(serverAuditLedger);
 
 const app = express();
 const PORT = 3000;
@@ -43,6 +54,21 @@ function requireSuperAdmin(req: Request, res: Response, next: express.NextFuncti
       severity: 'HIGH',
       blocked: true
     });
+
+    TamperEvidentAuditService.logPlatformAction({
+      actor: 'unauthenticated_caller',
+      actorRole: 'anonymous',
+      tenantId: 'platform_control_plane',
+      action: 'control_plane_access_blocked',
+      target: req.originalUrl || req.path,
+      result: 'BLOCKED',
+      outcome: 'BLOCKED',
+      reason: 'No bearer token provided. Client-controlled headers ignored.',
+      ipAddress: req.ip || '127.0.0.1',
+      deviceMetadata: (req.headers['user-agent'] as string) || 'API Client',
+      details: 'Attempted access to privileged control plane route without cryptographic bearer token.'
+    });
+
     res.status(403).json({
       error: 'HTTP 403 Forbidden: Cryptographic Bearer token authentication required for Control Plane operations. Client-controlled headers (x-user-role, x-role) are not trusted.',
       code: 'SUPER_ADMIN_REQUIRED',
@@ -62,6 +88,21 @@ function requireSuperAdmin(req: Request, res: Response, next: express.NextFuncti
       severity: 'CRITICAL',
       blocked: true
     });
+
+    TamperEvidentAuditService.logPlatformAction({
+      actor: verification.context?.email || verification.context?.tenantId || 'unauthorized_token_caller',
+      actorRole: verification.context?.role || 'unauthorized',
+      tenantId: verification.context?.tenantId || 'platform_control_plane',
+      action: 'control_plane_access_blocked',
+      target: req.originalUrl || req.path,
+      result: 'BLOCKED',
+      outcome: 'BLOCKED',
+      reason: verification.error || 'Token lacks super_admin role',
+      ipAddress: req.ip || '127.0.0.1',
+      deviceMetadata: (req.headers['user-agent'] as string) || 'API Client',
+      details: `Forbidden privileged route access attempt: ${verification.error || 'Insufficient role'}`
+    });
+
     res.status(403).json({
       error: `HTTP 403 Forbidden: Super-admin authorization required. ${verification.error || 'Token lacks super_admin role.'}`,
       code: 'SUPER_ADMIN_REQUIRED',
@@ -266,6 +307,21 @@ app.get('/api/nerdc/worker/config', requireSuperAdmin, (req: Request, res: Respo
 app.post('/api/nerdc/worker/config', requireSuperAdmin, (req: Request, res: Response) => {
   const worker = NerdcAnnualUpdateWorkerService.getInstance();
   const updated = worker.updateConfig(req.body);
+
+  TamperEvidentAuditService.logPlatformAction({
+    actor: (req as any).tenantContext?.email || 'super_admin',
+    actorRole: 'super_admin',
+    tenantId: 'platform_control_plane',
+    action: 'nerdc_worker_config_updated',
+    target: 'worker:nerdc_annual_update',
+    result: 'SUCCESS',
+    outcome: 'SUCCESS',
+    resourceType: 'system_service',
+    resourceId: 'nerdc_annual_update_worker',
+    details: `Updated worker config: revision ${updated.currentRevisionTag}, isEnabled: ${updated.isEnabled}, schedule: ${updated.cronSchedule}`,
+    ipAddress: req.ip || '127.0.0.1'
+  });
+
   res.json({ message: 'NERDC Annual Update Worker configuration updated successfully', config: updated });
 });
 
@@ -273,8 +329,37 @@ app.post('/api/nerdc/worker/sync', requireSuperAdmin, async (req: Request, res: 
   const worker = NerdcAnnualUpdateWorkerService.getInstance();
   try {
     const report = await worker.triggerManualSync('SUPER_ADMIN_MANUAL_DISPATCH');
+
+    TamperEvidentAuditService.logPlatformAction({
+      actor: (req as any).tenantContext?.email || 'super_admin',
+      actorRole: 'super_admin',
+      tenantId: 'platform_control_plane',
+      action: 'nerdc_curriculum_sync_triggered',
+      target: 'curriculum:national_database',
+      result: 'SUCCESS',
+      outcome: 'SUCCESS',
+      resourceType: 'curriculum',
+      resourceId: report.executionId,
+      details: `Triggered manual sync. Processed ${report.subjectsProcessed} subjects, ${report.diffs.length} diffs detected.`,
+      ipAddress: req.ip || '127.0.0.1'
+    });
+
     res.json({ message: 'NERDC Curriculum baseline synchronization executed successfully', report });
   } catch (err: any) {
+    TamperEvidentAuditService.logPlatformAction({
+      actor: (req as any).tenantContext?.email || 'super_admin',
+      actorRole: 'super_admin',
+      tenantId: 'platform_control_plane',
+      action: 'nerdc_curriculum_sync_triggered',
+      target: 'curriculum:national_database',
+      result: 'FAILED',
+      outcome: 'FAILURE',
+      reason: err.message,
+      resourceType: 'curriculum',
+      resourceId: 'manual_sync_failed',
+      details: `Sync dispatch failed: ${err.message}`,
+      ipAddress: req.ip || '127.0.0.1'
+    });
     res.status(500).json({ error: err.message || 'Worker sync failed' });
   }
 });
@@ -321,6 +406,202 @@ app.get('/api/nerdc/curriculum-changes', (req: Request, res: Response) => {
 app.get('/api/nerdc/worker/logs', requireSuperAdmin, (req: Request, res: Response) => {
   const worker = NerdcAnnualUpdateWorkerService.getInstance();
   res.json({ logs: worker.getLogs() });
+});
+
+// =============================================================
+// ENTERPRISE NERDC CURRICULUM INGESTION, VERSIONING & GOVERNANCE
+// =============================================================
+
+// 1. Authoritative Source Registry
+app.get('/api/v1/curriculum/sources', (req: Request, res: Response) => {
+  const sources = serverNerdcUpdateManager.getSources();
+  res.json({ total: sources.length, sources });
+});
+
+app.post('/api/v1/curriculum/sources', requireSuperAdmin, (req: Request, res: Response) => {
+  try {
+    const created = serverNerdcUpdateManager.registerSource(req.body);
+    res.json({ success: true, source: created });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Failed to register source' });
+  }
+});
+
+// 2. Manual Source Upload & Ingestion
+app.post('/api/v1/curriculum/sources/:id/upload', requireSuperAdmin, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { contentBase64, originalFileName, publicationMetadata, fileType, sourceVersion } = req.body;
+
+    if (!contentBase64 || !originalFileName) {
+      res.status(400).json({ error: 'Missing contentBase64 or originalFileName' });
+      return;
+    }
+
+    const buffer = Buffer.from(contentBase64, 'base64');
+    const evidence = serverNerdcUpdateManager.ingestDocument({
+      sourceId: id,
+      buffer,
+      originalFileName,
+      sourceUrlOrOrigin: `manual_upload:${(req as any).tenantContext?.email || 'admin'}`,
+      publicationMetadata,
+      fileType,
+      sourceVersion,
+      actor: (req as any).tenantContext?.email || 'admin'
+    });
+
+    res.json({
+      success: true,
+      message: 'Source evidence document preserved with cryptographic SHA-256 seal',
+      evidence
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Ingestion failed' });
+  }
+});
+
+// 3. Preserved Evidence Documents & Verification
+app.get('/api/v1/curriculum/evidence', (req: Request, res: Response) => {
+  const documents = serverNerdcUpdateManager.getPreservedDocuments();
+  res.json({ total: documents.length, documents });
+});
+
+app.get('/api/v1/curriculum/evidence/:id/verify', (req: Request, res: Response) => {
+  try {
+    const result = serverNerdcUpdateManager.verifyDocumentIntegrity(req.params.id);
+    res.json(result);
+  } catch (err: any) {
+    res.status(404).json({ error: err.message });
+  }
+});
+
+// 4. Genuine Curriculum Changes & Human Editorial Approval
+app.get('/api/v1/curriculum/changes', (req: Request, res: Response) => {
+  const { subjectId, status } = req.query;
+  const changes = serverNerdcUpdateManager.getChanges({
+    subjectId: subjectId as string,
+    status: status as string
+  });
+  res.json({ total: changes.length, changes });
+});
+
+app.post('/api/v1/curriculum/changes/:id/review', requireSuperAdmin, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { decision, notes, reviewerName, reviewerRole } = req.body;
+
+    const reviewed = serverNerdcUpdateManager.reviewCurriculumChange({
+      changeId: id,
+      decision,
+      reviewerId: (req as any).tenantContext?.tenantId || 'admin',
+      reviewerName: reviewerName || (req as any).tenantContext?.email || 'Dr. Folashade Adeyemi',
+      reviewerRole: reviewerRole || 'editorial_director',
+      notes
+    });
+
+    res.json({ success: true, change: reviewed });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Review failed' });
+  }
+});
+
+// 5. Governed Curriculum Versions & Publishing
+app.get('/api/v1/curriculum/versions', (req: Request, res: Response) => {
+  const versions = serverNerdcUpdateManager.getGovernedVersions();
+  res.json({ total: versions.length, versions });
+});
+
+app.post('/api/v1/curriculum/versions/publish', requireSuperAdmin, (req: Request, res: Response) => {
+  try {
+    const { versionId, versionTag, title, sourceDocumentId, effectiveAcademicYear } = req.body;
+    const release = serverNerdcUpdateManager.publishApprovedVersion({
+      versionId,
+      versionTag,
+      title,
+      sourceDocumentId,
+      effectiveAcademicYear,
+      approver: {
+        userId: (req as any).tenantContext?.tenantId || 'usr-director',
+        name: (req as any).tenantContext?.email || 'Prof. Ismail Junaidu (Executive Secretary NERDC)',
+        role: 'editorial_director'
+      }
+    });
+
+    res.json({ success: true, release });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Publication failed' });
+  }
+});
+
+// 6. Downstream Impact Analysis
+app.get('/api/v1/curriculum/impact-analysis', (req: Request, res: Response) => {
+  try {
+    const { subjectId, classGrade, previousVersionId, newVersionId } = req.query;
+    if (!subjectId || !classGrade) {
+      res.status(400).json({ error: 'Missing subjectId or classGrade parameter' });
+      return;
+    }
+
+    const report = serverNerdcUpdateManager.analyzeDownstreamImpact({
+      subjectId: subjectId as string,
+      classGrade: classGrade as ClassGrade,
+      previousVersionId: (previousVersionId as string) || 'NERDC-2024-V1',
+      newVersionId: (newVersionId as string) || 'NERDC-2026-V1'
+    });
+
+    res.json(report);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Impact analysis failed' });
+  }
+});
+
+// 7. Durable Sync Jobs & Retries
+app.get('/api/v1/curriculum/jobs', (req: Request, res: Response) => {
+  const jobs = serverNerdcUpdateManager.getJobs();
+  res.json({ total: jobs.length, jobs });
+});
+
+app.post('/api/v1/curriculum/jobs/trigger', requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { sourceId, jobType } = req.body;
+    const job = serverNerdcUpdateManager.createJob({
+      sourceId: sourceId || 'src-nerdc-math-sss',
+      jobType: jobType || 'MANUAL_SYNC',
+      actor: (req as any).tenantContext?.email || 'super_admin'
+    });
+
+    const completed = await serverNerdcUpdateManager.executeJob(job.jobId);
+    res.json({ success: true, job: completed });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Job failed' });
+  }
+});
+
+app.post('/api/v1/curriculum/jobs/:id/retry', requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const retried = await serverNerdcUpdateManager.retryJob(req.params.id);
+    res.json({ success: true, job: retried });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Retry failed' });
+  }
+});
+
+// 8. Automated 13-Point NERDC Update & Governance Test Suite
+app.get('/api/v1/curriculum/update-drills', requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const drillResults = await runNerdcUpdateTestSuite();
+    const allPassed = drillResults.every(r => r.passed);
+    res.json({
+      suite: 'NERDC Source Ingestion, Version Governance & Downstream Impact Suite',
+      status: allPassed ? 'PASSED' : 'FAILED',
+      totalTests: drillResults.length,
+      passedCount: drillResults.filter(r => r.passed).length,
+      timestamp: new Date().toISOString(),
+      results: drillResults
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Drill execution failed' });
+  }
 });
 
 // -------------------------------------------------------------
@@ -1164,21 +1445,86 @@ app.post('/api/v1/control-plane/issue-token', (req: Request, res: Response) => {
   res.json({ token, tenantId: tenant.id, issuedAt: new Date().toISOString() });
 });
 
-// Control Plane Audit Ledger (Tamper-Evident SHA-256 HMAC Chain)
+// Control Plane Audit Ledger (Tamper-Evident SHA-256 HMAC Chain with persistent storage & filtering)
 app.get('/api/v1/control-plane/audit-ledger', requireSuperAdmin, (req: Request, res: Response) => {
-  const records = TamperEvidentAuditService.getAuditRecords();
-  const integrity = TamperEvidentAuditService.verifyLedgerIntegrity();
+  const { tenantId, actor, action, startDate, endDate, limit } = req.query;
+  const records = serverAuditLedger.queryAuditEvents({
+    tenantId: tenantId as string,
+    actor: actor as string,
+    action: action as string,
+    startDate: startDate as string,
+    endDate: endDate as string,
+    limit: limit ? parseInt(limit as string, 10) : 100
+  });
+  const integrity = serverAuditLedger.verifyLedgerIntegrity();
   res.json({
     totalRecords: records.length,
     ledgerIntegrity: integrity,
-    records: records.slice(0, 100)
+    records
   });
 });
 
 // Verify cryptographic integrity of entire audit ledger
 app.get('/api/v1/control-plane/verify-ledger', requireSuperAdmin, (req: Request, res: Response) => {
-  const result = TamperEvidentAuditService.verifyLedgerIntegrity();
+  const result = serverAuditLedger.verifyLedgerIntegrity();
   res.json(result);
+});
+
+// Export cryptographically verified audit records (JSON / CSV format)
+app.get('/api/v1/control-plane/audit-ledger/export', requireSuperAdmin, (req: Request, res: Response) => {
+  const { tenantId, format } = req.query;
+  const exportFormat = (format === 'csv' ? 'csv' : 'json') as 'json' | 'csv';
+  const exported = serverAuditLedger.exportAuditReport(tenantId as string, exportFormat);
+
+  TamperEvidentAuditService.logPlatformAction({
+    actor: (req as any).tenantContext?.email || 'super_admin',
+    actorRole: 'super_admin',
+    action: 'audit_ledger_exported',
+    target: tenantId ? `tenant:${tenantId}` : 'system:all_tenants',
+    result: 'SUCCESS',
+    details: `Exported audit ledger report in ${exportFormat.toUpperCase()} format`,
+    tenantId: (tenantId as string) || 'platform_control_plane',
+    outcome: 'SUCCESS',
+    resourceType: 'audit_ledger',
+    resourceId: (tenantId as string) || 'global'
+  });
+
+  if (exportFormat === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="curriculumserver_audit_${Date.now()}.csv"`);
+    res.send(exported);
+  } else {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="curriculumserver_audit_${Date.now()}.json"`);
+    res.send(exported);
+  }
+});
+
+// List signed periodic audit checkpoints
+app.get('/api/v1/control-plane/audit-ledger/checkpoints', requireSuperAdmin, (req: Request, res: Response) => {
+  const checkpoints = serverAuditLedger.getCheckpoints();
+  res.json({
+    totalCheckpoints: checkpoints.length,
+    checkpoints
+  });
+});
+
+// Automated Enterprise Audit Ledger Verification Test Suite
+app.get('/api/v1/control-plane/audit-ledger/tests', requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const results = await runAuditLedgerTestSuite();
+    const allPassed = results.every(r => r.passed);
+    res.json({
+      suite: 'Enterprise Tamper-Evident Audit Ledger Test Suite',
+      status: allPassed ? 'PASSED' : 'FAILED',
+      totalTests: results.length,
+      passedCount: results.filter(r => r.passed).length,
+      timestamp: new Date().toISOString(),
+      results
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Audit test suite failed' });
+  }
 });
 
 // Control Plane Security Violations & Breaches
@@ -1234,23 +1580,135 @@ app.post('/api/v1/tenants/:id/lifecycle-state', requireSuperAdmin, (req: Request
   });
 });
 
-// Tenant Backup Snapshots (List / Create)
+// =============================================================
+// DISASTER RECOVERY & AUTHENTIC TENANT BACKUP / RESTORE SUITE
+// =============================================================
+
+// 1. List authentic backup snapshots for a tenant
 app.get('/api/v1/tenants/:id/snapshots', (req: Request, res: Response) => {
   const { id } = req.params;
-  const snapshots = TenantLifecycleManager.getSnapshotsForTenant(id);
+  const snapshots = serverBackupService.getSnapshots(id);
   res.json({
     tenantId: id,
     totalSnapshots: snapshots.length,
+    policy: serverBackupService.getPolicy(),
     snapshots
   });
 });
 
-app.post('/api/v1/tenants/:id/snapshots', (req: Request, res: Response) => {
+// 2. Create authentic AES-256-GCM encrypted backup snapshot
+app.post('/api/v1/tenants/:id/snapshots', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { schoolName } = req.body;
-  const dummyTenant: any = { id, schoolName: schoolName || `School-${id}`, subscriptionTier: 'Enterprise' };
-  const snapshot = TenantLifecycleManager.createBackupSnapshot(dummyTenant, false, req.body.actor || 'Platform Admin');
-  res.json({ success: true, snapshot });
+  const { schoolName, actorName } = req.body;
+  const dummyTenant: any = { 
+    id, 
+    schoolName: schoolName || `School-${id}`, 
+    subscriptionTier: 'Apex Enterprise',
+    status: 'active'
+  };
+
+  try {
+    const snapshot = await serverBackupService.createRealBackup(
+      dummyTenant, 
+      false, 
+      actorName || 'Platform Administrator',
+      req.ip || '127.0.0.1'
+    );
+    res.json({ 
+      success: true, 
+      message: `Authentic recoverable snapshot created successfully (${snapshot.sizeMb} MB, ${snapshot.databaseTablesCount} tables, ${snapshot.filesCount} files)`,
+      snapshot 
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to create backup snapshot' });
+  }
+});
+
+// 3. Restore tenant from authentic verified backup snapshot
+app.post('/api/v1/tenants/:id/restore', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { snapshotId, requireExplicitConfirmation, confirmationReason, confirmedBy, targetTenantId } = req.body;
+
+  if (!snapshotId) {
+    res.status(400).json({ error: 'Missing required snapshotId in restore request payload' });
+    return;
+  }
+
+  try {
+    const result = await serverBackupService.restoreSnapshot(snapshotId, {
+      targetTenantId: targetTenantId || id,
+      requireExplicitConfirmation: requireExplicitConfirmation !== false,
+      confirmationReason: confirmationReason || 'Operational disaster recovery request',
+      confirmedBy: confirmedBy || 'Authorized Administrator',
+      actorName: confirmedBy || 'Platform Administrator',
+      ipAddress: req.ip || '127.0.0.1'
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ 
+      success: false, 
+      error: err.message || 'Restoration failed',
+      code: err.message?.includes('CROSS_TENANT') ? 'CROSS_TENANT_VIOLATION' : err.message?.includes('INTEGRITY') ? 'INTEGRITY_VIOLATION' : 'RESTORE_ERROR'
+    });
+  }
+});
+
+// 4. Verify cryptographic SHA-256 integrity of a stored backup artifact
+app.get('/api/v1/tenants/:id/snapshots/:snapshotId/verify', async (req: Request, res: Response) => {
+  const { id, snapshotId } = req.params;
+  const snapshots = serverBackupService.getSnapshots(id);
+  const snapshot = snapshots.find(s => s.snapshotId === snapshotId);
+
+  if (!snapshot) {
+    res.status(404).json({ error: `Snapshot ${snapshotId} not found for tenant ${id}` });
+    return;
+  }
+
+  const verifyResult = await defaultBackupStorageProvider.verifyArtifact(snapshot.storageLocation, snapshot.checksumSha256);
+
+  res.json({
+    snapshotId,
+    tenantId: id,
+    status: verifyResult.valid ? 'VALID_UNMODIFIED' : 'CORRUPTED_OR_TAMPERED',
+    recordedChecksum: snapshot.checksumSha256,
+    actualStorageChecksum: verifyResult.actualChecksum,
+    artifactSizeBytes: verifyResult.sizeBytes,
+    verifiedAt: new Date().toISOString()
+  });
+});
+
+// 5. Disaster Recovery Policy & SLA configuration
+app.get('/api/v1/control-plane/disaster-recovery-policy', (req: Request, res: Response) => {
+  res.json(serverBackupService.getPolicy());
+});
+
+app.post('/api/v1/control-plane/disaster-recovery-policy', requireSuperAdmin, (req: Request, res: Response) => {
+  const updated = serverBackupService.updatePolicy(req.body);
+  res.json({
+    message: 'Disaster recovery policy updated successfully',
+    policy: updated
+  });
+});
+
+// 6. Automated Disaster Recovery Drill Test Suite
+app.get('/api/v1/control-plane/disaster-recovery-drills', requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const drillResults = await runDisasterRecoveryTestSuite();
+    const allPassed = drillResults.every(r => r.passed);
+    res.json({
+      suite: 'Disaster Recovery & End-to-End Restoration Validation Suite',
+      status: allPassed ? 'PASSED' : 'FAILED',
+      totalTests: drillResults.length,
+      passedCount: drillResults.filter(r => r.passed).length,
+      timestamp: new Date().toISOString(),
+      rpoTarget: '24 Hours',
+      rtoTarget: '5 Minutes',
+      results: drillResults
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'DR drill execution failed' });
+  }
 });
 
 // Tenant Lease-To-Own Buyout Status
@@ -1603,6 +2061,21 @@ app.post('/api/v1/question-bank/items/:id/review', (req: Request, res: Response)
       res.status(404).json({ error: 'Question not found' });
       return;
     }
+
+    TamperEvidentAuditService.logPlatformAction({
+      actor: reviewerId || 'academic_curator',
+      actorRole: 'curator',
+      tenantId: 'platform_control_plane',
+      action: reviewStatus === 'approved' ? 'question_item_approved' : reviewStatus === 'rejected' ? 'question_item_rejected' : 'question_item_reviewed',
+      target: `question:${id}`,
+      result: 'SUCCESS',
+      outcome: 'SUCCESS',
+      resourceType: 'question_item',
+      resourceId: id,
+      details: `Question ${id} updated to status '${reviewStatus}' by ${reviewerId || 'curator'}`,
+      ipAddress: req.ip || '127.0.0.1'
+    });
+
     res.json({ success: true, question: updated });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to update question status' });

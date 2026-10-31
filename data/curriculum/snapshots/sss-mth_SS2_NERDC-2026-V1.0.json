@@ -1,0 +1,93 @@
+{
+  "subjectId": "sss-mth",
+  "subjectCode": "MTH",
+  "subjectName": "General Mathematics",
+  "classGrade": "SS 2",
+  "level": "sss",
+  "field": "science_math",
+  "themes": [
+    {
+      "title": "Numbers and Numeration",
+      "description": "Logarithms and sequences",
+      "topics": [
+        {
+          "topicId": "top-mth-ss2-01",
+          "title": "Logarithms and Indices",
+          "term": "Term 1",
+          "week": 2,
+          "subTopics": [
+            "Laws of indices",
+            "Logarithmic equations",
+            "Natural logarithms (ln)"
+          ],
+          "learningObjectives": [
+            "Solve exponential equations using logarithms"
+          ],
+          "performanceObjectives": [
+            "Apply log laws to commercial arithmetic calculations",
+            "Calculate compound depreciation using natural logarithms"
+          ],
+          "activities": {
+            "teacherActivities": [
+              "Teacher illustrates concepts on chalkboard and facilitates discussion."
+            ],
+            "studentActivities": [
+              "Students take notes and participate in problem solving."
+            ]
+          },
+          "evaluationGuidance": [
+            "Administer 5 objective problems on logarithm rules and 1 theory problem"
+          ],
+          "recommendedTextbooks": [
+            "Official NERDC Approved Textbooks Series"
+          ],
+          "provenance": {
+            "documentId": "doc_evid_1793444550518_ycsew",
+            "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16",
+            "pageNumber": 1
+          }
+        },
+        {
+          "topicId": "top-mth-ss2-03",
+          "title": "Spherical Trigonometry and GPS Coordinate Navigation",
+          "term": "Term 2",
+          "week": 6,
+          "subTopics": [
+            "Great circle distances",
+            "Nautical miles",
+            "GPS latitude and longitude calculations"
+          ],
+          "learningObjectives": [
+            "Compute distances along parallels of latitude"
+          ],
+          "performanceObjectives": [
+            "Calculate shortest nautical distance between two Nigerian airport coordinates"
+          ],
+          "activities": {
+            "teacherActivities": [
+              "Teacher illustrates concepts on chalkboard and facilitates discussion."
+            ],
+            "studentActivities": [
+              "Students take notes and participate in problem solving."
+            ]
+          },
+          "evaluationGuidance": [
+            "WAEC Paper 2 compulsory theory question"
+          ],
+          "recommendedTextbooks": [
+            "Official NERDC Approved Textbooks Series"
+          ],
+          "provenance": {
+            "documentId": "doc_evid_1793444550518_ycsew",
+            "sectionReference": "NERDC Gazette 2026 Chapter 4 p.35",
+            "pageNumber": 1
+          }
+        }
+      ]
+    }
+  ],
+  "documentId": "doc_evid_1793444550518_ycsew",
+  "extractedAt": "2026-10-31T11:02:30.525Z",
+  "aiAssisted": false,
+  "humanValidationStatus": "VALIDATED"
+}

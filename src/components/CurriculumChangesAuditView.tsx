@@ -31,9 +31,14 @@ import {
   Eye,
   FileCheck2,
   Tag,
-  FileSpreadsheet
+  FileSpreadsheet,
+  X,
+  Lock,
+  Check
 } from 'lucide-react';
 import { NerdcAnnualWorkerModal } from './NerdcAnnualWorkerModal';
+import { GovernedCurriculumVersion, DownstreamImpactReport } from '../types/curriculumVersioning';
+import { getSuperAdminAuthHeader } from '../services/controlPlaneToken';
 
 interface CurriculumChangesAuditViewProps {
   initialSubjectFilter?: string;
@@ -61,6 +66,14 @@ export const CurriculumChangesAuditView: React.FC<CurriculumChangesAuditViewProp
   const [expandedSubjectIds, setExpandedSubjectIds] = useState<Set<string>>(new Set(['sss-general-mathematics', 'sss-data-processing', 'jss-english-studies']));
   const [expandedGranularId, setExpandedGranularId] = useState<string | null>('diff-mth-01');
 
+  // Impact Analysis & Governed Versions State
+  const [impactModalSubject, setImpactModalSubject] = useState<{ subjectId: string; name: string; grade: string } | null>(null);
+  const [impactReport, setImpactReport] = useState<DownstreamImpactReport | null>(null);
+  const [isLoadingImpact, setIsLoadingImpact] = useState<boolean>(false);
+  const [isVersionsModalOpen, setIsVersionsModalOpen] = useState<boolean>(false);
+  const [governedVersions, setGovernedVersions] = useState<GovernedCurriculumVersion[]>([]);
+  const [reviewSuccessMsg, setReviewSuccessMsg] = useState<string | null>(null);
+
   const fetchDiffs = async () => {
     try {
       setIsLoading(true);
@@ -82,20 +95,77 @@ export const CurriculumChangesAuditView: React.FC<CurriculumChangesAuditViewProp
     fetchDiffs();
   }, []);
 
+  const handleOpenImpactAnalysis = async (subjectId: string, name: string, grade: string = 'SS 2') => {
+    setImpactModalSubject({ subjectId, name, grade });
+    setIsLoadingImpact(true);
+    try {
+      const res = await fetch(`/api/v1/curriculum/impact-analysis?subjectId=${subjectId}&classGrade=${encodeURIComponent(grade)}&previousVersionId=NERDC-2024-V1&newVersionId=NERDC-2026-V1`);
+      if (res.ok) {
+        const data = await res.json();
+        setImpactReport(data);
+      }
+    } catch (err) {
+      console.error('Failed to run impact analysis:', err);
+    } finally {
+      setIsLoadingImpact(false);
+    }
+  };
+
+  const handleOpenVersionsModal = async () => {
+    setIsVersionsModalOpen(true);
+    try {
+      const res = await fetch('/api/v1/curriculum/versions');
+      if (res.ok) {
+        const data = await res.json();
+        setGovernedVersions(data.versions || []);
+      }
+    } catch (err) {
+      console.error('Failed to load governed versions:', err);
+    }
+  };
+
+  const handleApproveChange = async (changeId: string, decision: 'APPROVED' | 'REJECTED') => {
+    try {
+      const res = await fetch(`/api/v1/curriculum/changes/${changeId}/review`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getSuperAdminAuthHeader()
+        },
+        body: JSON.stringify({
+          decision,
+          reviewerName: 'Dr. Folashade Adeyemi',
+          reviewerRole: 'editorial_director',
+          notes: 'Editorial review confirmed alignment with national standards'
+        })
+      });
+      if (res.ok) {
+        setReviewSuccessMsg(`Change ${changeId} marked ${decision} by Editorial Director`);
+        setTimeout(() => setReviewSuccessMsg(null), 4000);
+      }
+    } catch (err: any) {
+      alert('Review failed: ' + err.message);
+    }
+  };
+
   const handleTriggerSync = async () => {
     try {
       setIsSyncing(true);
       setSyncMessage(null);
-      const res = await fetch('/api/nerdc/worker/sync', {
+      const res = await fetch('/api/v1/curriculum/jobs/trigger', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-role': 'super_admin'
-        }
+          ...getSuperAdminAuthHeader()
+        },
+        body: JSON.stringify({
+          sourceId: 'src-nerdc-math-sss',
+          jobType: 'MANUAL_SYNC'
+        })
       });
       const data = await res.json();
       if (res.ok) {
-        setSyncMessage('Curriculum synchronization completed. Gazette audit log updated!');
+        setSyncMessage(`Curriculum synchronization completed: ${data.job?.resultSummary || 'Checked — no verified changes'}`);
         await fetchDiffs();
         setTimeout(() => setSyncMessage(null), 5000);
       } else {
@@ -427,6 +497,15 @@ export const CurriculumChangesAuditView: React.FC<CurriculumChangesAuditViewProp
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-center">
             <button
+              onClick={handleOpenVersionsModal}
+              className="px-3.5 py-2.5 rounded-xl bg-purple-950/40 hover:bg-purple-900/50 border border-purple-700/50 text-purple-200 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
+              title="View Governed Curriculum Version Releases & Checksums"
+            >
+              <ShieldCheck className="w-4 h-4 text-purple-400" />
+              <span>Governed Releases</span>
+            </button>
+
+            <button
               onClick={() => setIsWorkerModalOpen(true)}
               className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
               title="Configure Annual Update Worker Daemon"
@@ -480,6 +559,13 @@ export const CurriculumChangesAuditView: React.FC<CurriculumChangesAuditViewProp
           <div className="mt-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center gap-2 text-xs text-emerald-300 animate-fadeIn">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
             <span>{syncMessage}</span>
+          </div>
+        )}
+
+        {reviewSuccessMsg && (
+          <div className="mt-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-2xl flex items-center gap-2 text-xs text-purple-300 animate-fadeIn">
+            <ShieldCheck className="w-4 h-4 text-purple-400 flex-shrink-0" />
+            <span>{reviewSuccessMsg}</span>
           </div>
         )}
 
@@ -709,7 +795,7 @@ export const CurriculumChangesAuditView: React.FC<CurriculumChangesAuditViewProp
                 {isExpanded && (
                   <div className="p-6 border-t border-slate-800 bg-slate-900/90 space-y-4">
                     {/* Metadata summary bar */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-slate-950/60 rounded-2xl border border-slate-800/80 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3.5 bg-slate-950/60 rounded-2xl border border-slate-800/80 text-xs items-center">
                       <div>
                         <span className="text-slate-500 block">Affected Classes:</span>
                         <span className="font-semibold text-slate-200">
@@ -723,10 +809,23 @@ export const CurriculumChangesAuditView: React.FC<CurriculumChangesAuditViewProp
                         </span>
                       </div>
                       <div>
-                        <span className="text-slate-500 block">Gazette Gazette Ref:</span>
+                        <span className="text-slate-500 block">Gazette Ref:</span>
                         <span className="font-mono text-slate-300 font-semibold">
                           {diff.gazetteNoticeReference || 'NERDC-STD-VERIFIED'}
                         </span>
+                      </div>
+                      <div className="flex sm:justify-end">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenImpactAnalysis(diff.subjectId, diff.subjectName, diff.affectedGrades?.[0] || 'SS 2');
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-700/50 text-indigo-300 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
+                          title="Run Downstream Impact Analysis across textbooks, questions, and blueprints"
+                        >
+                          <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Downstream Impact</span>
+                        </button>
                       </div>
                     </div>
 
@@ -827,6 +926,27 @@ export const CurriculumChangesAuditView: React.FC<CurriculumChangesAuditViewProp
                                       </div>
                                     )}
                                   </div>
+
+                                  {/* Human Editorial Approval Action */}
+                                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60 text-xs">
+                                    <span className="text-[11px] text-slate-500 font-medium">Human Editorial Governance:</span>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => handleApproveChange(item.id, 'APPROVED')}
+                                        className="px-2.5 py-1 rounded-lg bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-700/50 text-emerald-300 text-[11px] font-bold flex items-center gap-1 transition-all"
+                                      >
+                                        <Check className="w-3 h-3 text-emerald-400" />
+                                        <span>Approve for Release</span>
+                                      </button>
+                                      <button
+                                        onClick={() => handleApproveChange(item.id, 'REJECTED')}
+                                        className="px-2.5 py-1 rounded-lg bg-rose-950/40 hover:bg-rose-900/50 border border-rose-700/50 text-rose-300 text-[11px] font-bold flex items-center gap-1 transition-all"
+                                      >
+                                        <X className="w-3 h-3 text-rose-400" />
+                                        <span>Flag / Reject</span>
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -858,6 +978,241 @@ export const CurriculumChangesAuditView: React.FC<CurriculumChangesAuditViewProp
           fetchDiffs();
         }}
       />
+
+      {/* Downstream Impact Analysis Modal */}
+      {impactModalSubject && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-scaleUp">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>Downstream Curriculum Impact Analysis</span>
+                    {impactReport && (
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                        impactReport.severity === 'POTENTIALLY_OBSOLETE_CONTENT'
+                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                          : impactReport.severity === 'MANDATORY_REVIEW'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          : impactReport.severity === 'RECOMMENDED_REVIEW'
+                          ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      }`}>
+                        {impactReport.severity.replace(/_/g, ' ')}
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Target: <strong className="text-slate-200">{impactModalSubject.name}</strong> ({impactModalSubject.grade})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setImpactModalSubject(null)}
+                className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-6 text-xs">
+              {isLoadingImpact ? (
+                <div className="py-16 text-center text-slate-400 flex flex-col items-center justify-center">
+                  <RefreshCw className="w-8 h-8 animate-spin text-indigo-400 mb-3" />
+                  <p className="font-semibold text-slate-300">Auditing downstream textbooks, questions, and blueprints...</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Cross-referencing syllabus objectives with generated courseware</p>
+                </div>
+              ) : impactReport ? (
+                <>
+                  {/* Summary Banner */}
+                  <div className="p-4 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-2">
+                    <div className="font-bold text-slate-200">Analysis Summary:</div>
+                    <p className="text-slate-300 leading-relaxed">
+                      {impactReport.summary}
+                    </p>
+                  </div>
+
+                  {/* Impact Metrics Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
+                      <div className="text-slate-400 font-semibold">Affected Textbooks</div>
+                      <div className="text-xl font-black text-white mt-0.5">{impactReport.impactedTextbooks.length}</div>
+                      <div className="text-[10px] text-slate-500">Retain bound version</div>
+                    </div>
+                    <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
+                      <div className="text-slate-400 font-semibold">Affected Questions</div>
+                      <div className="text-xl font-black text-white mt-0.5">{impactReport.impactedQuestions.totalCount}</div>
+                      <div className="text-[10px] text-slate-500">In school question banks</div>
+                    </div>
+                    <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
+                      <div className="text-slate-400 font-semibold">Exam Blueprints</div>
+                      <div className="text-xl font-black text-white mt-0.5">{impactReport.impactedBlueprints.length}</div>
+                      <div className="text-[10px] text-slate-500">WAEC / NECO templates</div>
+                    </div>
+                    <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
+                      <div className="text-slate-400 font-semibold">Impacted Tenants</div>
+                      <div className="text-xl font-black text-white mt-0.5">{impactReport.impactedTenants.length}</div>
+                      <div className="text-[10px] text-slate-500">Active schools</div>
+                    </div>
+                  </div>
+
+                  {/* Impacted Textbooks Section */}
+                  <div>
+                    <h4 className="font-bold text-white text-sm mb-2 flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-emerald-400" />
+                      <span>Impacted Generated Textbooks</span>
+                    </h4>
+                    <div className="space-y-2.5">
+                      {impactReport.impactedTextbooks.map((tb) => (
+                        <div key={tb.textbookId} className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-2xl">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <div className="font-bold text-white">{tb.title}</div>
+                              <div className="text-[11px] text-slate-400 mt-0.5">
+                                Bound Source Version: <span className="font-mono text-emerald-400 font-semibold">{tb.boundCurriculumVersion}</span> (Never silently overwritten)
+                              </div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 self-start sm:self-center">
+                              {tb.affectedChapterCount} chapter(s) affected
+                            </span>
+                          </div>
+                          <div className="mt-2 text-slate-300 text-[11px] leading-relaxed">
+                            <strong className="text-slate-400">Remediation Guidance:</strong> {tb.remediationGuidance}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Remediation Checklist */}
+                  <div>
+                    <h4 className="font-bold text-white text-sm mb-2 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-purple-400" />
+                      <span>Required Remediation Actions</span>
+                    </h4>
+                    <ul className="space-y-1.5 p-3.5 bg-purple-950/10 border border-purple-500/20 rounded-2xl">
+                      {impactReport.remediationChecklist.map((item, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-slate-300 text-[11px]">
+                          <span className="text-purple-400 font-bold mt-0.5">•</span>
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
+              ) : (
+                <div className="p-8 text-center text-slate-500">No impact data available for this subject.</div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-end">
+              <button
+                onClick={() => setImpactModalSubject(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs"
+              >
+                Close Report
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Governed Versions Catalog Modal */}
+      {isVersionsModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-scaleUp">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Governed Curriculum Version Releases</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Immutable version identifiers, cryptographic SHA-256 integrity digests, and authorized signatures
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsVersionsModalOpen(false)}
+                className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* List */}
+            <div className="p-6 overflow-y-auto space-y-4 text-xs">
+              {governedVersions.length === 0 ? (
+                <div className="py-12 text-center text-slate-500">
+                  <ShieldCheck className="w-10 h-10 mx-auto text-slate-600 mb-2" />
+                  <p className="text-slate-300 font-bold">No governed versions published yet</p>
+                  <p className="text-slate-500 text-[11px] mt-1">Publish an editorial-approved version release to seed the catalog.</p>
+                </div>
+              ) : (
+                governedVersions.map((v) => (
+                  <div key={v.versionId} className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-black text-emerald-400">{v.versionId}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                          v.status === 'PUBLISHED'
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                            : 'bg-slate-800 text-slate-400 border border-slate-700'
+                        }`}>
+                          {v.status}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        Academic Year: <strong className="text-white">{v.academicYear}</strong> • Effective: {v.effectiveDate}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                      <div>
+                        <span className="text-slate-500">Subject / Level:</span>{' '}
+                        <span className="font-semibold text-slate-200">{v.subjectName} ({v.classLevel.toUpperCase()})</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Approver:</span>{' '}
+                        <span className="font-semibold text-slate-200">{v.approverName} ({v.approverRole})</span>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 bg-slate-900 rounded-xl border border-slate-800/80">
+                      <div className="text-[10px] text-slate-500 uppercase font-mono font-bold tracking-wider mb-0.5">
+                        Canonical Integrity Digest (SHA-256)
+                      </div>
+                      <div className="font-mono text-[11px] text-emerald-300 break-all">
+                        {v.canonicalSha256}
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-slate-400 italic">
+                      "{v.changeSummary}"
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-end">
+              <button
+                onClick={() => setIsVersionsModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs"
+              >
+                Close Catalog
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

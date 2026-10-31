@@ -1,0 +1,36 @@
+[
+  {
+    "violationType": "CROSS_TENANT_ACCESS_ATTEMPT",
+    "sourceTenantId": "tenant-alpha-01",
+    "targetTenantId": "tenant-beta-02",
+    "actorIp": "127.0.0.1",
+    "endpoint": "/api/v1/students",
+    "payloadSummary": "Cross-tenant access attempt: Tenant tenant-alpha-01 tried accessing resources of Tenant tenant-beta-02",
+    "severity": "CRITICAL",
+    "blocked": true,
+    "id": "sec_viol_1793442616779_5oh1x",
+    "timestamp": "2026-10-31T10:30:16.779Z"
+  },
+  {
+    "violationType": "EXPIRED_TOKEN",
+    "sourceTenantId": "tenant-alpha-01",
+    "actorIp": "127.0.0.1",
+    "endpoint": "/api/v1/*",
+    "payloadSummary": "Expired token presented",
+    "severity": "MEDIUM",
+    "blocked": true,
+    "id": "sec_viol_1793442616779_ma38f",
+    "timestamp": "2026-10-31T10:30:16.779Z"
+  },
+  {
+    "violationType": "INVALID_SIGNATURE",
+    "sourceTenantId": "UNKNOWN",
+    "actorIp": "127.0.0.1",
+    "endpoint": "/api/v1/*",
+    "payloadSummary": "Tampered token signature detected via cryptographic verification",
+    "severity": "HIGH",
+    "blocked": true,
+    "id": "sec_viol_1793442616778_zq58b",
+    "timestamp": "2026-10-31T10:30:16.778Z"
+  }
+]

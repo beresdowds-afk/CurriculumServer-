@@ -1,0 +1,50 @@
+[
+  {
+    "snapshotId": "snp_tenant-dr-fixture-1793444550548_1793444550548",
+    "tenantId": "tenant-dr-fixture-1793444550548",
+    "tenantSchoolName": "Disposable Disaster Recovery Test College",
+    "databaseName": "db_tenant_dr_fixture_1793444550548",
+    "storageNamespace": "/storage/tenants/tenant_dr_fixture_1793444550548",
+    "createdAt": "2026-10-31T11:02:30.572Z",
+    "sizeMb": 0.01,
+    "databaseTablesCount": 7,
+    "filesCount": 2,
+    "checksumSha256": "d39e078a9eb17d297b98641c4a1cbff913de5b8a07567aa290ea89a1263f4a9c",
+    "storageLocation": "/app/applet/data/backups/artifacts/tenant-dr-fixture-1793444550548/snp_tenant-dr-fixture-1793444550548_1793444550548.tar.gz.enc",
+    "status": "corrupted",
+    "lastVerificationDate": "2026-10-31T11:02:30.594Z",
+    "isAutomatedNightly": false
+  },
+  {
+    "snapshotId": "snp_tenant-dr-fixture-1793443709312_1793443709313",
+    "tenantId": "tenant-dr-fixture-1793443709312",
+    "tenantSchoolName": "Disposable Disaster Recovery Test College",
+    "databaseName": "db_tenant_dr_fixture_1793443709312",
+    "storageNamespace": "/storage/tenants/tenant_dr_fixture_1793443709312",
+    "createdAt": "2026-10-31T10:48:29.333Z",
+    "sizeMb": 0.01,
+    "databaseTablesCount": 7,
+    "filesCount": 2,
+    "checksumSha256": "0d4a2de8c36970bc551a5f0b4db4ba15298c96d6bc0afa508f4dac059c7fb2da",
+    "storageLocation": "/app/applet/data/backups/artifacts/tenant-dr-fixture-1793443709312/snp_tenant-dr-fixture-1793443709312_1793443709313.tar.gz.enc",
+    "status": "corrupted",
+    "lastVerificationDate": "2026-10-31T10:48:29.356Z",
+    "isAutomatedNightly": false
+  },
+  {
+    "snapshotId": "snp_tenant-dr-fixture-1793442610263_1793442610264",
+    "tenantId": "tenant-dr-fixture-1793442610263",
+    "tenantSchoolName": "Disposable Disaster Recovery Test College",
+    "databaseName": "db_tenant_dr_fixture_1793442610263",
+    "storageNamespace": "/storage/tenants/tenant_dr_fixture_1793442610263",
+    "createdAt": "2026-10-31T10:30:10.287Z",
+    "sizeMb": 0.01,
+    "databaseTablesCount": 7,
+    "filesCount": 2,
+    "checksumSha256": "89ca1c40491ccd0c71f8862576637855a75ce71ff0e23e711b841758af3fda88",
+    "storageLocation": "/app/applet/data/backups/artifacts/tenant-dr-fixture-1793442610263/snp_tenant-dr-fixture-1793442610263_1793442610264.tar.gz.enc",
+    "status": "corrupted",
+    "lastVerificationDate": "2026-10-31T10:30:10.308Z",
+    "isAutomatedNightly": false
+  }
+]

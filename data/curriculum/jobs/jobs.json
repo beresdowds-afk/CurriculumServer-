@@ -1,0 +1,82 @@
+[
+  {
+    "jobId": "job_sync_1793444099501_3r68",
+    "jobType": "MANUAL_SYNC",
+    "status": "FAILED",
+    "sourceId": "src-test-unreachable",
+    "progressPercent": 15,
+    "checkpoints": [
+      "job_registered",
+      "source_connection_initiated"
+    ],
+    "currentStep": "CONNECTING_TO_SOURCE",
+    "createdAt": "2026-10-31T10:54:59.501Z",
+    "updatedAt": "2026-10-31T10:54:59.502Z",
+    "retryCount": 0,
+    "maxRetries": 3,
+    "actor": "admin@curriculumserver.ng",
+    "failureReason": "SOURCE_UNREACHABLE: Official source 'Unreachable External Gazette Server' is flagged as unreachable. Manual document upload required."
+  },
+  {
+    "jobId": "job_sync_1793444099504_4sva",
+    "jobType": "MANUAL_SYNC",
+    "status": "COMPLETED",
+    "sourceId": "src-nerdc-math-sss",
+    "progressPercent": 100,
+    "checkpoints": [
+      "job_registered",
+      "source_connection_initiated",
+      "source_fingerprint_verified",
+      "curriculum_diff_computed",
+      "job_completed"
+    ],
+    "currentStep": "COMPLETED",
+    "createdAt": "2026-10-31T10:54:59.504Z",
+    "updatedAt": "2026-10-31T10:54:59.505Z",
+    "retryCount": 0,
+    "maxRetries": 3,
+    "actor": "sync_daemon",
+    "completedAt": "2026-10-31T10:54:59.505Z",
+    "resultSummary": "CHECKED — NO VERIFIED CURRICULUM CHANGES FOUND"
+  },
+  {
+    "jobId": "job_sync_1793444550530_c8vv",
+    "jobType": "MANUAL_SYNC",
+    "status": "FAILED",
+    "sourceId": "src-test-unreachable",
+    "progressPercent": 15,
+    "checkpoints": [
+      "job_registered",
+      "source_connection_initiated"
+    ],
+    "currentStep": "CONNECTING_TO_SOURCE",
+    "createdAt": "2026-10-31T11:02:30.530Z",
+    "updatedAt": "2026-10-31T11:02:30.530Z",
+    "retryCount": 0,
+    "maxRetries": 3,
+    "actor": "admin@curriculumserver.ng",
+    "failureReason": "SOURCE_UNREACHABLE: Official source 'Unreachable External Gazette Server' is flagged as unreachable. Manual document upload required."
+  },
+  {
+    "jobId": "job_sync_1793444550531_k05x",
+    "jobType": "MANUAL_SYNC",
+    "status": "COMPLETED",
+    "sourceId": "src-nerdc-math-sss",
+    "progressPercent": 100,
+    "checkpoints": [
+      "job_registered",
+      "source_connection_initiated",
+      "source_fingerprint_verified",
+      "curriculum_diff_computed",
+      "job_completed"
+    ],
+    "currentStep": "COMPLETED",
+    "createdAt": "2026-10-31T11:02:30.531Z",
+    "updatedAt": "2026-10-31T11:02:30.532Z",
+    "retryCount": 0,
+    "maxRetries": 3,
+    "actor": "sync_daemon",
+    "completedAt": "2026-10-31T11:02:30.532Z",
+    "resultSummary": "CHECKED — NO VERIFIED CURRICULUM CHANGES FOUND"
+  }
+]
