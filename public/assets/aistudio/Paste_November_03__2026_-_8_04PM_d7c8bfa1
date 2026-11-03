@@ -1,0 +1,1251 @@
+CURRICULUM SERVER — FOUR-PHASE AI STUDIO IMPLEMENTATION PROGRAMME
+
+MASTER INSTRUCTIONS — APPLY TO ALL FOUR PHASES
+
+You are the Principal Software Architect, Senior Full-Stack Engineer, Backend Engineer, PostgreSQL Architect and Application Security Engineer responsible for progressively developing the existing Curriculum Server platform.
+
+Your task is to inspect, refactor and implement the software architecture in four sequential phases.
+
+All four phases belong to one continuous project. Do not create four separate applications.
+
+1. Verified project context
+
+The following are the known environment details:
+
+- GCP Project ID: "curious-subject-477114-e4"
+- Preferred GCP Region: "europe-west1" (Belgium).
+- Existing Curriculum Server Cloud Run service: "curriculum-server".
+- Existing deployment URL: "https://curriculum-server-797788066041.europe-west1.run.app"
+- A fresh Cloud SQL for PostgreSQL database is planned.
+- Firebase must not be introduced.
+
+These details provide architectural context only. They do not authorise you to perform Google Cloud operations.
+
+2. Strict Google Cloud boundary — mandatory
+
+Google AI Studio must not create, deploy, modify, delete or configure Google Cloud resources.
+
+This restriction applies throughout all four phases.
+
+Do not:
+
+- Create or modify Cloud SQL instances.
+- Create or modify Cloud Run services or Jobs.
+- Create or modify service accounts.
+- Create or modify IAM bindings or policies.
+- Create or modify Google Cloud Workflows.
+- Create or modify load balancers, serverless NEGs, forwarding rules or static IP addresses.
+- Create or modify VPC networks, subnets or firewall rules.
+- Create or modify Secret Manager secrets or permissions.
+- Create or modify Artifact Registry repositories.
+- Create or modify SSL certificates or Certificate Manager resources.
+- Create or modify Cloud DNS resources.
+- Enable or disable Google Cloud APIs.
+- Associate billing accounts.
+- Create, move or delete GCP projects.
+- Execute "gcloud", Terraform apply, deployment scripts or equivalent infrastructure-changing commands.
+- Use credentials, service accounts or APIs to perform live infrastructure operations.
+
+Do not attempt to bypass this restriction through scripts, backend functions, external APIs or generated automation.
+
+Do not ask for GCP credentials.
+
+Do not make live infrastructure changes, even where the proposed operation appears routine or harmless.
+
+3. What AI Studio is authorised to implement
+
+You may:
+
+- Inspect the existing source code and application architecture.
+- Develop frontend and backend application code.
+- Design database schemas and generate version-controlled SQL migrations.
+- Implement authenticated API endpoints.
+- Implement application-level provisioning logic.
+- Implement PIAM and IIAPE.
+- Develop architecture profiles and resource registries.
+- Implement approval workflows.
+- Develop the interfaces and software adapters through which a separately authorised execution environment could eventually communicate with Google Cloud.
+- Implement configuration validation and deployment-readiness checks.
+- Write technical documentation.
+- Write automated tests.
+- Create local test fixtures and simulations.
+- Prepare deployment specifications for later manual execution outside AI Studio.
+
+Where a feature requires a real Google Cloud operation, implement its application-side interface, security controls, state management and integration contract, but do not execute the operation.
+
+Clearly identify any integration that still requires an external execution environment.
+
+4. Existing application preservation
+
+This is an existing application, not a greenfield project.
+
+Before modifying anything:
+
+- Inspect the existing repository.
+- Identify the actual frontend and backend frameworks.
+- Identify existing routes, components, APIs and data models.
+- Inspect authentication and authorisation.
+- Identify existing integrations.
+- Identify current deployment assumptions.
+- Identify existing database dependencies.
+- Identify existing tenant and organisation models.
+
+Do not assume a proposed component already exists.
+
+Do not replace working functionality unnecessarily.
+
+Do not introduce mock implementations as though they were production-ready.
+
+Do not weaken authentication, verification or tenant isolation.
+
+Do not invent credentials, administrator email addresses, GCP resource IDs or existing database records.
+
+Clearly distinguish:
+
+- Designed.
+- Implemented.
+- Simulated.
+- Tested.
+- Ready for external integration.
+- Actually deployed.
+- Operationally verified.
+
+5. Permanent architectural principles
+
+1. Curriculum Server and Curriculum Flow must have independently deployable frontend applications.
+2. Both applications must use one unified and securely governed backend ecosystem.
+3. PostgreSQL is the authoritative relational database.
+4. Customer infrastructure architecture must be determined by approved Instance Architecture Profiles.
+5. Sensitive infrastructure operations must require human authorisation.
+6. All application identities and permissions must follow least-privilege principles.
+7. Public application traffic is intended to use a Google Cloud global external Application Load Balancer.
+8. Customer data must remain isolated.
+9. Existing authentication and security controls must not be weakened.
+10. Infrastructure provisioning software must be auditable, repeatable and recoverable.
+11. Actual Google Cloud resource execution is outside the scope of AI Studio's authority.
+
+---
+
+PHASE 1 — SYSTEM AUDIT, APPLICATION ARCHITECTURE AND DATABASE FOUNDATION
+
+Objective
+
+Establish a reliable understanding of the existing Curriculum Server application and prepare the application architecture for the intended unified platform.
+
+Do not perform infrastructure provisioning.
+
+1. Existing application audit
+
+Inspect the complete existing project.
+
+Identify:
+
+- Repository structure.
+- Frontend applications and entry points.
+- Backend/API implementation.
+- Authentication and authorisation.
+- Database dependencies.
+- Existing user and organisation models.
+- Tenant architecture.
+- Application Registry.
+- Feature Registry.
+- Instance management.
+- Provisioning functionality.
+- Existing integrations.
+- Environment variables.
+- Existing deployment configuration.
+- CI/CD configuration.
+- Existing domain and DNS functionality.
+- Existing infrastructure automation.
+
+Classify each finding as:
+
+- Implemented and operational.
+- Implemented but not deployed.
+- Partially implemented.
+- Proposed.
+- Missing.
+- Requires verification.
+
+Do not mistake a frontend demonstration for a functioning backend capability.
+
+2. Application separation
+
+Establish two independently deployable frontend applications.
+
+Curriculum Server — Control Plane
+
+Responsible for:
+
+- Customer management.
+- Organisation management.
+- Application Registry.
+- Feature Registry.
+- IIAPE.
+- Instance Architecture Profiles.
+- Provisioning management.
+- Infrastructure authorisation.
+- Domain management.
+- Billing and subscriptions.
+- Monitoring and audit.
+
+Curriculum Flow — Education Application
+
+Responsible for:
+
+- Admissions.
+- Student records.
+- Teachers.
+- Academic sessions.
+- Classes and subjects.
+- Lesson notes.
+- Question banks.
+- Assessments.
+- Examinations.
+- Results.
+- Attendance.
+- Finance and bursary.
+- Parent and student portals.
+- Other enabled school capabilities.
+
+Both frontends must communicate through the unified backend.
+
+Do not create competing backends or disconnected databases.
+
+Shared frontend packages may contain generic UI components, design tokens, common types and API contracts. Product-specific business logic must remain appropriately separated.
+
+3. Unified backend architecture
+
+Establish or refactor the backend as an application-independent service.
+
+It must provide:
+
+- Authentication integration.
+- User and organisation management.
+- Tenant resolution.
+- Instance resolution.
+- Feature entitlement validation.
+- Database access.
+- Storage access.
+- Audit logging.
+- Notifications.
+- Provisioning request management.
+- Infrastructure authorisation.
+- Domain and hostname resolution.
+- Health checks.
+- Versioned APIs.
+
+All sensitive business operations must be enforced server-side.
+
+Never trust browser-supplied tenant IDs, instance IDs or role headers without server-side verification.
+
+4. Fresh PostgreSQL database design
+
+Design the application for a fresh Cloud SQL PostgreSQL environment.
+
+Proposed database:
+
+"curriculum_platform"
+
+Proposed schemas:
+
+- "control_plane"
+- "curriculum_flow"
+
+The database will be created separately outside AI Studio.
+
+Your responsibility in this phase is to design the logical database structure, generate the required SQL migrations and prepare the application for secure database connectivity.
+
+The "control_plane" schema should accommodate:
+
+- Customers.
+- Organisations.
+- Users and memberships.
+- Instance Registry.
+- Application Registry.
+- Feature Registry.
+- Application composition.
+- Instance Architecture Profiles.
+- IIAPE recommendations.
+- Architecture approvals.
+- Provisioning jobs.
+- GCP project and resource references.
+- Storage configuration.
+- Domain records.
+- Billing and subscription records.
+- Privileged infrastructure authorisation.
+- Audit records.
+
+The "curriculum_flow" schema should accommodate school operational data.
+
+Inspect actual application requirements before defining tables.
+
+Do not fabricate existing business data or replace working models without a documented migration plan.
+
+5. Database security design
+
+Define and implement the application-side requirements for:
+
+- Separate database runtime identity.
+- Migration identity.
+- Administrative database identity.
+- Database permissions.
+- Tenant isolation.
+- Row-Level Security.
+- Secret Manager integration.
+- Connection pooling.
+- Database migrations.
+- Backup and recovery expectations.
+
+Do not use PostgreSQL superuser credentials for ordinary application operations.
+
+Do not place database credentials in frontend code, public environment variables or source control.
+
+6. Phase 1 documentation
+
+Create:
+
+1. "docs/architecture/CURRICULUM_SERVER_TARGET_ARCHITECTURE.md"
+2. "docs/architecture/UNIFIED_BACKEND_ARCHITECTURE.md"
+3. "docs/architecture/CLOUD_SQL_POSTGRESQL_DESIGN.md"
+4. "docs/architecture/DATABASE_SECURITY_AND_RECOVERY.md"
+5. "docs/architecture/PHASE_IMPLEMENTATION_ROADMAP.md"
+
+Include application architecture diagrams and database relationship diagrams.
+
+Phase 1 acceptance criteria
+
+- Existing application audited.
+- Frontend separation documented.
+- Unified backend architecture documented.
+- Fresh PostgreSQL design completed.
+- Database migrations prepared.
+- Database security architecture defined.
+- Existing and missing capabilities identified.
+- No live GCP infrastructure modified.
+- Phase 2 implementation plan prepared.
+
+Provide a factual completion report and wait for approval before Phase 2.
+
+---
+
+PHASE 2 — UNIFIED BACKEND, DATABASE INTEGRATION AND APPLICATION SERVICE ARCHITECTURE
+
+Objective
+
+Implement the unified backend, application database integration, independent frontend architecture and secure application-side service identity configuration.
+
+The actual Cloud SQL instance and Cloud Run services will be prepared separately outside AI Studio.
+
+1. PostgreSQL application integration
+
+Implement the application database layer for:
+
+"curriculum_platform"
+
+Schemas:
+
+- "control_plane"
+- "curriculum_flow"
+
+Requirements:
+
+- Version-controlled migrations.
+- Database connection configuration.
+- Separate runtime and migration identities.
+- Connection pooling.
+- Connection timeouts.
+- Error handling.
+- Transaction management.
+- Tenant isolation.
+- RLS policies where appropriate.
+- Health checks.
+- Database access logging.
+
+Prepare the application for a fresh Cloud SQL PostgreSQL connection.
+
+Do not attempt to create or configure the Cloud SQL instance.
+
+2. Database connection security
+
+Implement support for secure database credentials supplied through the approved runtime environment.
+
+Prepare the application for Cloud SQL Auth Proxy/Connector connectivity.
+
+Support the selected connection approach without assuming that the infrastructure has already been configured.
+
+Do not expose database credentials in:
+
+- React frontend code.
+- Browser storage.
+- Public environment variables.
+- GitHub repositories.
+- Application logs.
+
+Calculate and document appropriate connection pool limits based on expected application scaling.
+
+3. Independent frontend applications
+
+Implement or refactor:
+
+A. Curriculum Server
+
+A separately buildable and deployable frontend.
+
+B. Curriculum Flow
+
+A separately buildable and deployable frontend.
+
+Both must use the same unified backend API ecosystem.
+
+Preserve existing routes, authentication and functionality.
+
+Do not duplicate core business logic across the frontends.
+
+4. Unified backend
+
+Implement the backend using the repository's established production stack unless there is a documented reason to change it.
+
+The backend must support:
+
+- Authenticated APIs.
+- Organisation management.
+- Tenant resolution.
+- Instance resolution.
+- Feature entitlement validation.
+- Database operations.
+- Audit logging.
+- Secure error handling.
+- Health checks.
+- Versioned APIs.
+- Provisioning request management.
+- Infrastructure authorisation.
+
+Do not allow frontend users to bypass backend authorisation.
+
+5. Application service identity configuration
+
+Define the required service identities and their intended responsibilities.
+
+Include:
+
+- "cs-frontend-runtime"
+- "cf-frontend-runtime"
+- "backend-runtime"
+- "project-factory"
+- "infrastructure-deployer"
+- "domain-manager"
+- "provisioning-orchestrator"
+- "curriculum-ci-deployer"
+
+These names describe the intended architecture. Do not create the actual Google service accounts or assign IAM permissions.
+
+Prepare a permission matrix documenting:
+
+- Identity.
+- Purpose.
+- Required permission.
+- Intended resource scope.
+- Whether the permission is permanent or temporary.
+- Whether human approval is required.
+
+Frontend identities must not have database administration or infrastructure administration privileges.
+
+The backend identity must be designed around least privilege.
+
+6. External deployment readiness
+
+Prepare application configuration and deployment documentation for the three intended central services:
+
+- "curriculum-server"
+- "curriculum-flow"
+- "curriculum-backend"
+
+Do not create, deploy or modify these Cloud Run services.
+
+Clearly identify the build artifacts, environment variables, ports, runtime requirements, health endpoints and external configuration needed for a later deployment.
+
+7. CI/CD readiness
+
+Prepare the repository for secure CI/CD.
+
+Document the intended use of GitHub Actions Workload Identity Federation.
+
+Do not create GCP deployment identities or modify GitHub secrets.
+
+Do not introduce permanent service-account JSON keys.
+
+8. Database recovery documentation
+
+Prepare the application-side backup and recovery requirements.
+
+Document:
+
+- Automated backup expectations.
+- Point-in-time recovery expectations.
+- Retention.
+- Regional HA expectations.
+- Deletion protection.
+- Restore testing.
+- Disaster recovery procedures.
+
+These infrastructure settings will be configured separately.
+
+Phase 2 acceptance criteria
+
+- Unified backend implemented.
+- Both frontends independently buildable.
+- Database integration implemented.
+- Migrations prepared and tested in an available local/test environment.
+- Tenant isolation tested.
+- Runtime identity requirements documented.
+- Secret handling implemented.
+- Health checks implemented.
+- External deployment specifications prepared.
+- No live GCP resources created or modified.
+
+Provide a completion report and wait for approval before Phase 3.
+
+---
+
+PHASE 3 — GLOBAL LOAD BALANCER ARCHITECTURE, DOMAIN MANAGEMENT AND TENANT ROUTING SOFTWARE
+
+Objective
+
+Implement the application-side domain management, hostname resolution, tenant routing and load-balancer integration architecture.
+
+The actual Google Cloud Load Balancer, SSL certificates, DNS records and networking resources will be configured separately outside AI Studio.
+
+1. Target traffic-routing architecture
+
+Prepare the application to operate behind a Google Cloud global external Application Load Balancer using serverless NEGs for Cloud Run.
+
+Intended public hostnames:
+
+- "curriculumserver.com.ng"
+- "www.curriculumserver.com.ng"
+- "curriculumflow.com.ng"
+- "www.curriculumflow.com.ng"
+- "{tenant}.curriculumflow.com.ng"
+
+Future customer-owned custom domains must also be supported.
+
+These are intended hostnames, not proof of domain ownership or DNS configuration.
+
+2. Hostname and application routing
+
+Implement backend routing logic that can identify:
+
+- Curriculum Server hostnames.
+- Curriculum Flow hostnames.
+- API hostnames.
+- Tenant subdomains.
+- Customer-owned custom domains.
+
+Use an authoritative domain-to-instance registry.
+
+Do not allow users to select arbitrary backends through browser-supplied headers or parameters.
+
+Tenant resolution must be validated server-side.
+
+3. Tenant routing service
+
+Implement a secure hostname resolution service.
+
+It should:
+
+1. Receive the incoming hostname.
+2. Normalise and validate it.
+3. Look up the hostname in the authoritative domain registry.
+4. Identify the owning organisation and instance.
+5. Verify domain ownership and activation state.
+6. Resolve the approved application family.
+7. Resolve the appropriate shared or dedicated instance configuration.
+8. Apply tenant access validation.
+9. Reject unknown, suspended, unverified or incorrectly mapped domains.
+
+Do not treat possession of a hostname as proof of tenant membership.
+
+4. Provider-independent domain management
+
+Implement a provider-independent domain management module.
+
+Prepare adapter interfaces for:
+
+- GO54/WhoGoHost.
+- Go45.
+- Other supported providers in the future.
+
+Verify provider API capabilities before implementing any specific integration.
+
+The architecture should support, where available:
+
+- Domain availability.
+- Registration.
+- Renewal.
+- Nameserver changes.
+- A records.
+- AAAA records.
+- CNAME records.
+- TXT records.
+- MX records.
+- CAA records.
+- DNS verification.
+- Domain ownership verification.
+- Expiry monitoring.
+- Hostname-to-instance mapping.
+
+Do not make Cloudflare a mandatory dependency.
+
+Do not assume that every registrar supports every operation.
+
+5. Registrar security
+
+Implement secure credential-reference handling.
+
+Registrar credentials must never be exposed to the frontend.
+
+Prepare integration with the approved secret-management environment.
+
+Implement:
+
+- Credential reference validation.
+- Permission checks.
+- Provider-specific error handling.
+- Audit records.
+- Credential rotation support.
+- Revocation handling.
+
+Do not create Secret Manager secrets or access policies.
+
+6. SSL and certificate lifecycle software
+
+Implement application-side domain readiness tracking.
+
+Support statuses such as:
+
+- Pending ownership verification.
+- DNS configuration pending.
+- DNS verified.
+- Certificate pending.
+- Certificate active.
+- Operational.
+- Renewal required.
+- Expired.
+- Suspended.
+
+A domain must not be marked operational merely because a DNS record has been entered.
+
+Require confirmation of ownership, DNS, routing and certificate readiness from the external infrastructure environment.
+
+Do not create or modify certificates.
+
+7. Load balancer integration contract
+
+Document the intended routing relationship:
+
+- Curriculum Server hosts → "curriculum-server".
+- Curriculum Flow hosts → "curriculum-flow".
+- API hostname or API path → "curriculum-backend".
+- Tenant hosts → verified tenant application backend.
+
+Prepare the hostname and health-check contracts required by the external load balancer configuration.
+
+Do not create or modify:
+
+- Load balancers.
+- Serverless NEGs.
+- Backend services.
+- URL maps.
+- Static IPs.
+- Forwarding rules.
+- HTTPS proxies.
+- SSL certificates.
+- Cloud Armor policies.
+
+8. Domain administration interface
+
+Create or refine the Curriculum Server domain management interface.
+
+Include:
+
+- Customer.
+- Organisation.
+- Instance.
+- Domain.
+- Domain provider.
+- Verification status.
+- DNS status.
+- Certificate status.
+- Application mapping.
+- Renewal date.
+- Operational status.
+- Audit history.
+
+All changes must be authenticated and authorised through the backend.
+
+Phase 3 acceptance criteria
+
+- Domain management software implemented.
+- Provider-independent adapter architecture implemented.
+- Tenant hostname resolution implemented.
+- Domain-to-instance registry implemented.
+- Domain verification lifecycle implemented.
+- Certificate readiness tracking implemented.
+- Load balancer integration contract documented.
+- Security and routing tests passed.
+- No live GCP networking, DNS or certificate resources created or modified.
+
+Provide a completion report and wait for approval before Phase 4.
+
+---
+
+PHASE 4 — IIAPE, PIAM, PROVISIONING ENGINE, HUMAN AUTHORISATION AND PLATFORM OPERATIONS
+
+Objective
+
+Implement the intelligent infrastructure control-plane software that will eventually allow Curriculum Server to manage multiple customer application architectures through a separately authorised infrastructure execution environment.
+
+This phase develops the application and its control logic. It does not execute Google Cloud operations.
+
+1. Implement IIAPE
+
+Implement:
+
+Intelligent Instance Architecture & Provisioning Engine (IIAPE).
+
+IIAPE must analyse:
+
+- Application requirements.
+- Instance type.
+- Number of users.
+- Workload.
+- Storage requirements.
+- Database requirements.
+- Availability.
+- Security and isolation.
+- Networking.
+- Integrations.
+- Cost estimates.
+- Customer preferences.
+- Growth projections.
+
+It must recommend suitable architectures and explain their trade-offs.
+
+Support:
+
+1. Shared application infrastructure.
+2. Dedicated Cloud Run service.
+3. Dedicated GCP project.
+4. Multiple Cloud Run services.
+5. Dedicated database infrastructure.
+6. Hybrid architecture.
+
+Subscription entitlements must not automatically dictate infrastructure architecture.
+
+IIAPE must distinguish between a recommendation and an approved deployment decision.
+
+2. Instance Architecture Profile
+
+Implement a versioned authoritative architecture profile.
+
+It must include:
+
+- Customer ID.
+- Organisation ID.
+- Instance ID.
+- Instance type.
+- Application family.
+- Enabled applications and features.
+- Deployment architecture.
+- GCP project and resource references.
+- Database strategy.
+- Storage strategy.
+- Authentication model.
+- Domain strategy.
+- Resource allocation.
+- Security profile.
+- Billing model.
+- Networking requirements.
+- Lifecycle state.
+- Version history.
+- Approval history.
+
+Keep separate:
+
+- Customer request.
+- IIAPE recommendation.
+- Human-approved architecture.
+- Actual infrastructure state reported by an authorised external execution environment.
+
+Do not mark infrastructure as provisioned merely because an architecture profile has been approved.
+
+3. Implement the provisioning control plane
+
+Implement the software components that manage provisioning requests.
+
+The control plane must support the following logical execution components:
+
+A. Project Factory interface
+
+Represents the future execution capability for:
+
+- Customer GCP project creation.
+- Approved folder assignment.
+- Billing association.
+- API enablement.
+- Security baseline application.
+- Initial identity configuration.
+- Resource labels.
+- Budgets and quotas.
+- Resource reference registration.
+
+B. Infrastructure Deployer interface
+
+Represents the future execution capability for:
+
+- Cloud Run service deployment.
+- Cloud Run Job deployment.
+- Service identity configuration.
+- Approved image deployment.
+- Secret references.
+- Storage configuration.
+- Networking.
+- Database configuration.
+- Monitoring.
+- Health verification.
+
+C. Domain Manager interface
+
+Represents the future execution capability for:
+
+- Domain registration where authorised.
+- DNS configuration.
+- Nameserver management.
+- Domain verification.
+- Hostname-to-instance mapping.
+- SSL verification.
+- Renewal and expiry monitoring.
+
+Implement the application-side request contracts, job states, input validation, execution records, security checks and error handling.
+
+Do not create or deploy the actual Cloud Run Jobs.
+
+Do not connect these interfaces to an execution environment that can make live GCP changes during the AI Studio exercise.
+
+4. Provisioning state management
+
+Implement a robust provisioning lifecycle.
+
+Suggested states:
+
+- Draft.
+- Submitted.
+- Architecture review.
+- Awaiting approval.
+- Approved.
+- Rejected.
+- Ready for external execution.
+- Execution submitted.
+- Executing.
+- Awaiting verification.
+- Completed.
+- Failed.
+- Suspended.
+- Cancelled.
+- Rollback required.
+- Rolled back.
+
+The application must distinguish between:
+
+- Approval to provision.
+- Submission to an external execution environment.
+- Actual execution.
+- Verified completion.
+
+Implement:
+
+- Idempotency keys.
+- Retry policies.
+- Execution identifiers.
+- Failure records.
+- Reconciliation.
+- Cancellation.
+- Rollback planning.
+- Audit history.
+
+5. Orchestration architecture
+
+Implement the application-side orchestration logic for:
+
+"curriculum-provisioning-orchestrator"
+
+Its intended responsibilities are:
+
+1. Receive approved provisioning requests.
+2. Retrieve the authoritative Instance Architecture Profile.
+3. Validate profile version and approval state.
+4. Determine deployment requirements.
+5. Verify required PIAM authorisations.
+6. Prepare the execution plan.
+7. Submit work to the authorised external execution interface.
+8. Track execution status.
+9. Receive execution results.
+10. Verify the reported infrastructure state.
+11. Update the central backend.
+12. Activate the instance only after all required verification succeeds.
+
+Prepare the integration contract for a future Google Cloud Workflows implementation.
+
+Do not create or modify Google Cloud Workflows.
+
+Do not claim that a simulated workflow is a live Google Cloud execution.
+
+6. Implement PIAM
+
+Implement:
+
+Privileged Infrastructure Authorisation Manager (PIAM).
+
+PIAM must control sensitive infrastructure operations through human authorisation.
+
+Integrate it with:
+
+- Curriculum Server administrator interface.
+- IIAPE.
+- Instance Architecture Profiles.
+- Provisioning control plane.
+- Project Factory interface.
+- Infrastructure Deployer interface.
+- Domain Manager interface.
+- External Google Cloud IAM/PAM integration contracts.
+
+7. Human approval requirements
+
+Require human approval for:
+
+- Customer GCP project creation.
+- Billing account association.
+- Project movement between folders.
+- Production project deletion.
+- Organisation-wide IAM modifications.
+- Central security-policy changes.
+- Other sensitive or destructive operations.
+
+Routine actions within an already approved architecture may proceed through the appropriate controlled workflow.
+
+8. Scope-aware IAM permission model
+
+Implement a permission model that recognises the different scopes of Google Cloud permissions.
+
+Examples:
+
+- Project Creator: organisation or designated folder scope.
+- Billing Account User: specific billing account.
+- Project Mover: required source/destination and project scopes.
+- Project IAM Admin: project scope.
+- Cloud Run Admin: appropriate project scope.
+
+Do not assume that every role is assignable at project scope.
+
+Prepare a complete permission matrix with:
+
+- Identity.
+- Role.
+- Purpose.
+- Resource scope.
+- Permanent or temporary status.
+- Required approval.
+- Intended revocation procedure.
+- External execution dependency.
+
+Do not assign any real IAM roles.
+
+9. Google Privileged Access Manager integration design
+
+Prepare the integration architecture for Google Privileged Access Manager (PAM).
+
+Investigate current support for relevant resource types and permissions.
+
+Where supported, design for:
+
+- Temporary privilege grants.
+- Human approval.
+- Justification.
+- Grant duration.
+- Expiry.
+- Audit records.
+- Revocation.
+- Expiry verification.
+
+Do not assume PAM supports every role or billing-account resource.
+
+For unsupported operations, design a separate secure human-authorised process.
+
+A PostgreSQL approval record must never be treated as proof that Google IAM has granted a permission.
+
+Do not create PAM entitlements or grants.
+
+10. Administrator identity and approval interface
+
+Support designated human administrator/approver identities.
+
+The actual administrator email must be configured by an authorised platform owner. Never invent or hardcode an email address.
+
+Requirements:
+
+- Verified administrator identity.
+- MFA-compatible authentication.
+- Role-based approval permissions.
+- Requester and approver separation.
+- No self-approval for sensitive operations.
+- Approval history.
+- Rejection history.
+- Session security.
+- Explicit approval expiry.
+- Emergency-access audit.
+
+Create the Curriculum Server Infrastructure Authorisation Centre.
+
+Include:
+
+- Pending requests.
+- Approved requests.
+- Rejected requests.
+- Expired grants.
+- Completed operations.
+- Requester identity.
+- Customer and instance.
+- Requested operation.
+- IAM role.
+- Permission scope.
+- Target resource.
+- Business justification.
+- Risk classification.
+- Cost implications.
+- Requested privilege duration.
+- Approver identity.
+- Execution status.
+- External execution reference.
+
+Approve and Reject must invoke authenticated backend actions, not merely change frontend status.
+
+Support configurable one-person and two-person approval policies where appropriate.
+
+11. Special privileged operations
+
+Project Creator
+
+Account for the possibility that the creating principal receives Owner permissions on a newly created project.
+
+The future bootstrap workflow must establish the intended IAM policy and remove unnecessary Owner privileges.
+
+Billing Account User
+
+Support a separately authorised billing association workflow where PAM does not support the required operation.
+
+Project Mover
+
+Require source and destination validation, human approval, execution verification and review of inherited IAM and organisation policies.
+
+Implement the application-side controls and integration contracts only.
+
+12. Customer-specific runtime identity model
+
+Implement the ability to define customer-specific runtime identity requirements for dedicated environments.
+
+Examples:
+
+- "school-api-runtime"
+- "school-worker-runtime"
+- "school-storage-runtime"
+- "school-monitoring-runtime"
+
+Only identities required by the approved architecture should be requested.
+
+Customer workloads must never inherit central Project Factory, Infrastructure Deployer or Domain Manager privileges.
+
+Do not create actual service accounts or IAM bindings.
+
+13. Customer storage architecture
+
+Implement a provider-independent storage abstraction.
+
+Support:
+
+1. Private Drive integration.
+2. Platform-managed Google Cloud Storage.
+3. Hybrid storage.
+
+Private Drive providers may include Google Drive, OneDrive and Dropbox where supported.
+
+Use OAuth/delegated access, encrypted refresh tokens and revocable permissions.
+
+Do not store customer Drive passwords.
+
+Platform storage requirements:
+
+- Tenant isolation.
+- Quotas.
+- Retention.
+- Usage measurement.
+- File metadata.
+- Access control.
+- Export.
+- Recovery.
+- Migration.
+
+The backend must enforce tenant storage permissions.
+
+Prepare the integration contracts for the external storage environment.
+
+14. Monitoring and cost management software
+
+Implement central application-level monitoring and cost management interfaces.
+
+Track and present information about:
+
+- Cloud Run services.
+- Cloud Run Jobs.
+- Workflows.
+- Cloud SQL.
+- Database connections.
+- CPU and memory.
+- Request latency.
+- Error rates.
+- Provisioning failures.
+- Provisioning duration.
+- Load balancer traffic.
+- SSL status.
+- DNS verification.
+- IAM changes.
+- Privileged approvals.
+- Storage usage.
+
+Implement:
+
+- Resource ownership labels as metadata requirements.
+- Customer and instance cost attribution.
+- Budget monitoring interfaces.
+- Billing alerts.
+- Quota tracking.
+- Idle-resource detection.
+- Provisioning cost estimates.
+- Suspension and recovery workflows.
+
+Actual GCP metrics and billing information must be obtained later through an authorised external integration.
+
+Do not fabricate operational metrics.
+
+Do not automatically delete customer resources because of a budget threshold.
+
+15. Security and acceptance testing
+
+Implement tests for:
+
+- Tenant isolation.
+- RLS.
+- Backend authentication.
+- Permission enforcement.
+- Database connection limits.
+- Provisioning idempotency.
+- Retry handling.
+- Workflow recovery.
+- Approval enforcement.
+- PAM integration contracts.
+- Billing approval.
+- Project movement approval.
+- Self-approval prevention.
+- Privilege expiry.
+- Revocation tracking.
+- Audit integrity.
+- Customer-specific identity boundaries.
+- Domain ownership.
+- Tenant routing.
+- External execution result validation.
+
+A frontend user must never be able to trigger a privileged operation by manipulating an API request.
+
+An approval record alone must never be sufficient to execute a privileged GCP operation.
+
+Phase 4 acceptance criteria
+
+- IIAPE implemented.
+- Versioned Instance Architecture Profiles implemented.
+- Provisioning control plane implemented.
+- Project Factory interface implemented.
+- Infrastructure Deployer interface implemented.
+- Domain Manager interface implemented.
+- Orchestration logic implemented.
+- PIAM operational at application level.
+- Human approval workflows tested.
+- PAM integration contract prepared.
+- Billing approval workflow implemented.
+- Customer-specific identity model implemented.
+- Monitoring and cost management interfaces implemented.
+- Security tests passed.
+- No live GCP infrastructure created or modified.
+
+---
+
+FINAL DELIVERY REQUIREMENTS
+
+After completing the four phases, produce:
+
+1. Consolidated application architecture documentation.
+2. Verified source-code implementation inventory.
+3. Database schema and migration documentation.
+4. Unified backend API documentation.
+5. Application service identity and IAM permission matrix.
+6. Domain and tenant routing documentation.
+7. Provisioning control-plane documentation.
+8. PIAM and administrator approval documentation.
+9. IIAPE and Instance Architecture Profile documentation.
+10. External infrastructure integration specifications.
+11. Monitoring and cost management documentation.
+12. Security and production-readiness assessment.
+
+For every feature, clearly state whether it is:
+
+- Designed.
+- Implemented in source code.
+- Simulated.
+- Tested locally.
+- Tested against an external integration.
+- Ready for external infrastructure deployment.
+- Actually deployed.
+- Operationally verified.
+
+Do not claim that an infrastructure resource exists because its name appears in the application code.
+
+Do not claim that a provisioning operation succeeded because an application workflow returned a successful response.
+
+Do not claim that an external integration is operational until it has been independently tested.
+
+Permanent platform vision
+
+ONE CONTROL PLANE.
+
+MULTIPLE APPLICATION FAMILIES.
+
+MULTIPLE CUSTOMER INSTANCE TYPES.
+
+INTELLIGENT, ARCHITECTURE-DRIVEN PROVISIONING.
+
+HUMAN-GOVERNED PRIVILEGED INFRASTRUCTURE.
+
+ONE SECURE AND EXTENSIBLE PLATFORM ECOSYSTEM.
+
+Final execution instruction
+
+Begin with Phase 1.
+
+Inspect the existing application before making changes.
+
+Implement only the approved phase.
+
+Preserve existing functionality and security.
+
+Do not perform any Google Cloud resource creation, modification, deployment or deletion.
+
+At the end of each phase, provide a factual completion report, identify outstanding work and wait for explicit approval before proceeding to the next phase.
