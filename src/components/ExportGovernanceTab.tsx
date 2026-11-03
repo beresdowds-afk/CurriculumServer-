@@ -60,10 +60,22 @@ export interface ExportAuditLogEntry {
 }
 
 interface ExportGovernanceTabProps {
-  currentUser: UserProfile;
+  currentUser?: UserProfile;
 }
 
-export const ExportGovernanceTab: React.FC<ExportGovernanceTabProps> = ({ currentUser }) => {
+const DEFAULT_SUPER_ADMIN_USER: UserProfile = {
+  id: 'usr_superadmin',
+  name: 'Curriculum Server Root Administrator',
+  title: 'Platform Infrastructure Super Admin',
+  role: 'super_admin',
+  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80',
+  email: 'admin@curriculumserver.ng',
+  isSystemRoot: true
+};
+
+export const ExportGovernanceTab: React.FC<ExportGovernanceTabProps> = ({ 
+  currentUser = DEFAULT_SUPER_ADMIN_USER
+}) => {
   const [activeSubTab, setActiveSubTab] = useState<'documents' | 'web_publishing' | 'backups' | 'permissions' | 'audit_logs'>('documents');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');

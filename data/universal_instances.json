@@ -1,0 +1,234 @@
+[
+  {
+    "requestId": "req_inst_001",
+    "instanceId": "inst_greenwood_002",
+    "tenantId": "cust_greenwood_abuja",
+    "instanceType": "full_school_management",
+    "schoolCategory": "secondary_school",
+    "organization": {
+      "organizationName": "Greenwood High School, Abuja",
+      "registrationNumber": "RC-99882211",
+      "organizationType": "educational_institution",
+      "contactPersonName": "Alhaji Bashir Mohammed",
+      "contactEmail": "principal@greenwood.sch.ng",
+      "contactPhone": "+234 802 333 4455",
+      "address": "Plot 12 Ahmadu Bello Way, Maitama, Abuja",
+      "state": "FCT Abuja",
+      "lga": "Abuja Municipal",
+      "country": "Nigeria",
+      "website": "https://greenwood.sch.ng"
+    },
+    "applicationFamily": "curriculum_flow_erp",
+    "selectedModules": [
+      "teaching",
+      "assessment",
+      "student_records",
+      "timetable",
+      "bursary"
+    ],
+    "databaseStrategy": "shared_schema_isolated",
+    "storageStrategy": "platform_storage",
+    "storageProvider": "google_cloud_storage",
+    "subdomain": "greenwood.curriculumflow.com.ng",
+    "customDomain": "portal.greenwood.sch.ng",
+    "billingModel": "yearly",
+    "monthlyPriceNGN": 180000,
+    "payment": {
+      "provider": "paystack",
+      "transactionReference": "PSTK_LIVE_REF_8829103",
+      "amountNGN": 2160000,
+      "paymentStatus": "verified",
+      "verifiedAt": "2026-11-03T06:40:12.519Z",
+      "billingModel": "yearly",
+      "gatewayResponse": "Approved by PAYSTACK Gateway API. Charge ID: chg_PSTK_LIVE_REF_8829103"
+    },
+    "provisioningStatus": "active",
+    "verification": {
+      "databaseConnected": true,
+      "storageReady": true,
+      "securityProfileApplied": true,
+      "dnsProvisioned": true,
+      "healthPingPassed": true,
+      "allPassed": true
+    },
+    "activationToken": "eyJ0ZW5hbnRJZCI6ImN1c3RfZ3JlZW53b29kX2FidWphIiwiYXBwSWQiOiJDRi1jdXN0X2dyZWVud29vZF9hYnVqYSIsInNjaG9vbE5hbWUiOiJHcmVlbndvb2QgSGlnaCBTY2hvb2wsIEFidWphIiwic3RhdHVzIjoiUEVORElORyIsImRhdGFiYXNlTmFtZSI6ImRiX2N1c3RfZ3JlZW53b29kX2FidWphIiwic3RvcmFnZU5hbWVzcGFjZSI6Ii9zdG9yYWdlL3RlbmFudHMvY3VzdF9ncmVlbndvb2RfYWJ1amEiLCJpc3N1ZXIiOiJDdXJyaWN1bHVtU2VydmVyLUNvbnRyb2xQbGFuZSIsImF1ZGllbmNlIjoiY3VzdF9ncmVlbndvb2RfYWJ1amEiLCJyb2xlIjoicHJpbmNpcGFsIiwiZW1haWwiOiJwcmluY2lwYWxAZ3JlZW53b29kLnNjaC5uZyIsImlzc3VlZEF0IjoxNzkzNjg4MDEyLCJleHBpcmVzQXQiOjE3OTM5NDcyMTJ9.1093f2117c27ad1d24742fe148a6b33f18941ea3585cd33216c556730629a833",
+    "activationUrl": "https://greenwood.curriculumflow.com.ng/activate?token=eyJ0ZW5hbnRJZCI6ImN1c3RfZ3JlZW53b29kX2FidWphIiwiYXBwSWQiOiJDRi1jdXN0X2dyZWVud29vZF9hYnVqYSIsInNjaG9vbE5hbWUiOiJHcmVlbndvb2QgSGlnaCBTY2hvb2wsIEFidWphIiwic3RhdHVzIjoiUEVORElORyIsImRhdGFiYXNlTmFtZSI6ImRiX2N1c3RfZ3JlZW53b29kX2FidWphIiwic3RvcmFnZU5hbWVzcGFjZSI6Ii9zdG9yYWdlL3RlbmFudHMvY3VzdF9ncmVlbndvb2RfYWJ1amEiLCJpc3N1ZXIiOiJDdXJyaWN1bHVtU2VydmVyLUNvbnRyb2xQbGFuZSIsImF1ZGllbmNlIjoiY3VzdF9ncmVlbndvb2RfYWJ1amEiLCJyb2xlIjoicHJpbmNpcGFsIiwiZW1haWwiOiJwcmluY2lwYWxAZ3JlZW53b29kLnNjaC5uZyIsImlzc3VlZEF0IjoxNzkzNjg4MDEyLCJleHBpcmVzQXQiOjE3OTM5NDcyMTJ9.1093f2117c27ad1d24742fe148a6b33f18941ea3585cd33216c556730629a833&ref=inst_greenwood_002",
+    "activationExpiresAt": "2026-11-06T06:40:12.542Z",
+    "activatedAt": "2026-11-03T06:40:12.542Z",
+    "createdAt": "2025-03-01T09:00:00Z",
+    "updatedAt": "2026-11-03T06:40:12.542Z"
+  },
+  {
+    "requestId": "req_inst_002",
+    "instanceId": "inst_leadway_enterprise_001",
+    "tenantId": "cust_leadway_consortium",
+    "instanceType": "custom_architecture",
+    "organization": {
+      "organizationName": "Leadway Education Consortium Nigeria",
+      "registrationNumber": "RC-1049281",
+      "organizationType": "enterprise_consortium",
+      "contactPersonName": "Dr. Chidi Okafor",
+      "contactEmail": "technology@leadwayeducation.org.ng",
+      "contactPhone": "+234 803 888 9900",
+      "address": "Leadway House, 121 Herbert Macaulay Way, Yaba, Lagos",
+      "state": "Lagos State",
+      "lga": "Lagos Mainland",
+      "country": "Nigeria",
+      "website": "https://leadwayeducation.org.ng"
+    },
+    "applicationFamily": "custom_curriculum_stack",
+    "customArchitecture": {
+      "applicationComponents": [
+        "Curriculum Core API",
+        "Custom LMS Shard",
+        "Parent Portal Gateway",
+        "Corporate Reporting Data Lake"
+      ],
+      "existingSystems": [
+        "SAP Financials ERP",
+        "Active Directory LDAP",
+        "Canvas LMS"
+      ],
+      "apiRequirements": {
+        "restEnabled": true,
+        "graphqlEnabled": true,
+        "webhooksEnabled": true,
+        "rateLimitTier": "high_throughput"
+      },
+      "databaseRequirements": {
+        "isolation": "dedicated_customer_gcp_project",
+        "engine": "Cloud SQL Enterprise",
+        "cmekRequired": true,
+        "pointInTimeRecovery": true
+      },
+      "authenticationRequirements": {
+        "authProvider": "google_workspace_sso",
+        "mfaEnforced": true
+      },
+      "storageRequirements": {
+        "strategy": "hybrid",
+        "primaryProvider": "google_drive",
+        "retentionDays": 3650,
+        "encryptionAtRest": true
+      },
+      "networkingRequirements": {
+        "vpcPeering": true,
+        "staticEgressIp": true,
+        "cloudArmourDDoS": true
+      },
+      "domainRequirements": {
+        "domainType": "custom_sovereign_tld",
+        "requestedDomain": "portal.leadwayschools.com.ng",
+        "sslManagedByPlatform": true
+      },
+      "integrationNotes": "Requires dedicated VPC connector with high-concurrency Cloud SQL proxy and SAP webhook endpoint.",
+      "requiresAdminReview": true,
+      "reviewStatus": "approved",
+      "reviewNotes": "Architecture approved by Principal Solutions Architect on 2025-02-20. Dedicated project budget allocated."
+    },
+    "selectedModules": [
+      "curriculum_catalog",
+      "cbt_examination",
+      "broadsheet_analytics",
+      "bursary_finance"
+    ],
+    "databaseStrategy": "dedicated_customer_gcp_project",
+    "storageStrategy": "hybrid",
+    "storageProvider": "google_drive",
+    "subdomain": "leadway.curriculumserver.com.ng",
+    "customDomain": "portal.leadwayschools.com.ng",
+    "billingModel": "lease_to_own",
+    "monthlyPriceNGN": 650000,
+    "payment": {
+      "provider": "opay",
+      "transactionReference": "opay_txn_leadway_2026_01",
+      "amountNGN": 650000,
+      "paymentStatus": "verified",
+      "verifiedAt": "2025-02-22T14:20:00Z",
+      "billingModel": "lease_to_own"
+    },
+    "provisioningStatus": "active",
+    "verification": {
+      "databaseConnected": true,
+      "storageReady": true,
+      "securityProfileApplied": true,
+      "dnsProvisioned": true,
+      "healthPingPassed": true,
+      "allPassed": true
+    },
+    "activationToken": "act_leadway_sovereign_998102",
+    "activationUrl": "https://curriculumserver.com.ng/activate?token=act_leadway_sovereign_998102",
+    "activationExpiresAt": "2027-02-22T14:20:00Z",
+    "activatedAt": "2025-02-22T15:00:00Z",
+    "createdAt": "2025-02-18T11:00:00Z",
+    "updatedAt": "2025-02-22T15:00:00Z"
+  },
+  {
+    "requestId": "req_inst_003",
+    "instanceId": "inst_cbt_tutorial_centre_002",
+    "tenantId": "cust_apex_cbt_center",
+    "instanceType": "feature_collection",
+    "organization": {
+      "organizationName": "Apex JAMB & WAEC CBT Testing Centre",
+      "registrationNumber": "BN-44881122",
+      "organizationType": "exam_body",
+      "contactPersonName": "Engr. Tunde Adeleke",
+      "contactEmail": "admin@apexcbt.com.ng",
+      "contactPhone": "+234 805 222 1100",
+      "address": "22 Allen Avenue, Ikeja, Lagos",
+      "state": "Lagos State",
+      "lga": "Ikeja",
+      "country": "Nigeria",
+      "website": "https://apexcbt.com.ng"
+    },
+    "applicationFamily": "standalone_cbt_assessment",
+    "featureCollection": {
+      "primaryUseCase": "examination_center",
+      "selectedFeatures": [
+        "question_bank",
+        "cbt_examination",
+        "remedial_hub",
+        "broadsheet_analytics"
+      ],
+      "dependencyValidation": {
+        "valid": true,
+        "missingDependencies": []
+      }
+    },
+    "selectedModules": [
+      "question_bank",
+      "cbt_examination",
+      "remedial_hub",
+      "broadsheet_analytics"
+    ],
+    "databaseStrategy": "shared_schema_isolated",
+    "storageStrategy": "platform_storage",
+    "storageProvider": "google_cloud_storage",
+    "subdomain": "apexcbt.curriculumflow.com.ng",
+    "billingModel": "monthly",
+    "monthlyPriceNGN": 95000,
+    "payment": {
+      "provider": "paystack",
+      "transactionReference": "pstk_ref_apex_cbt_0981",
+      "amountNGN": 95000,
+      "paymentStatus": "verified",
+      "verifiedAt": "2025-03-05T09:12:00Z",
+      "billingModel": "monthly"
+    },
+    "provisioningStatus": "active",
+    "verification": {
+      "databaseConnected": true,
+      "storageReady": true,
+      "securityProfileApplied": true,
+      "dnsProvisioned": true,
+      "healthPingPassed": true,
+      "allPassed": true
+    },
+    "activationToken": "act_token_apexcbt_88301",
+    "activationUrl": "https://curriculumflow.com.ng/activate?token=act_token_apexcbt_88301",
+    "activationExpiresAt": "2027-03-05T09:12:00Z",
+    "activatedAt": "2025-03-05T09:30:00Z",
+    "createdAt": "2025-03-05T08:30:00Z",
+    "updatedAt": "2025-03-05T09:30:00Z"
+  }
+]

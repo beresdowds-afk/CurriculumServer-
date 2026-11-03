@@ -9,6 +9,12 @@ import {
   IAMPermissionMatrix,
   AuthProviderType
 } from '../types';
+import {
+  INITIAL_AUTH_ACCOUNTS,
+  INITIAL_ADMIN_ROLES,
+  INITIAL_SECURITY_POLICY,
+  INITIAL_IAM_AUDIT_LOGS
+} from '../data/iamAuthData';
 import { 
   ShieldCheck, 
   Users, 
@@ -43,38 +49,50 @@ import {
 } from 'lucide-react';
 
 interface IAMGovernanceTabProps {
-  currentUser: UserProfile;
-  currentAccount: UserAuthAccount;
-  allAccounts: UserAuthAccount[];
-  adminRoles: AdminRoleDefinition[];
-  securityPolicy: IAMSecurityPolicy;
-  auditLogs: IAMSecurityAuditLog[];
-  onAssignRole: (userId: string, roleType: SystemAdminRoleType, isActing?: boolean, expiryDate?: string) => void;
-  onRevokeRole: (userId: string, roleType: SystemAdminRoleType) => void;
-  onCreateCustomRole: (newRole: AdminRoleDefinition) => void;
-  onUpdatePolicy: (newPolicy: IAMSecurityPolicy) => void;
-  onToggleMFA: (userId: string) => void;
-  onRevokeSession: (userId: string) => void;
-  onTriggerPhoneVerification: (account: UserAuthAccount) => void;
-  onOpenAuthModal: () => void;
+  currentUser?: UserProfile;
+  currentAccount?: UserAuthAccount;
+  allAccounts?: UserAuthAccount[];
+  adminRoles?: AdminRoleDefinition[];
+  securityPolicy?: IAMSecurityPolicy;
+  auditLogs?: IAMSecurityAuditLog[];
+  onAssignRole?: (userId: string, roleType: SystemAdminRoleType, isActing?: boolean, expiryDate?: string) => void;
+  onRevokeRole?: (userId: string, roleType: SystemAdminRoleType) => void;
+  onCreateCustomRole?: (newRole: AdminRoleDefinition) => void;
+  onUpdatePolicy?: (newPolicy: IAMSecurityPolicy) => void;
+  onToggleMFA?: (userId: string) => void;
+  onRevokeSession?: (userId: string) => void;
+  onTriggerPhoneVerification?: (account: UserAuthAccount) => void;
+  onOpenAuthModal?: () => void;
 }
 
 export const IAMGovernanceTab: React.FC<IAMGovernanceTabProps> = ({
-  currentUser,
-  currentAccount,
-  allAccounts,
-  adminRoles,
-  securityPolicy,
-  auditLogs,
-  onAssignRole,
-  onRevokeRole,
-  onCreateCustomRole,
-  onUpdatePolicy,
-  onToggleMFA,
-  onRevokeSession,
-  onTriggerPhoneVerification,
-  onOpenAuthModal
+  currentUser = {
+    id: 'usr_superadmin',
+    name: 'Curriculum Server Root Administrator',
+    title: 'Platform Infrastructure Super Admin',
+    role: 'super_admin',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80',
+    email: 'admin@curriculumserver.ng'
+  },
+  currentAccount = INITIAL_AUTH_ACCOUNTS[0],
+  allAccounts = INITIAL_AUTH_ACCOUNTS,
+  adminRoles = INITIAL_ADMIN_ROLES,
+  securityPolicy = INITIAL_SECURITY_POLICY,
+  auditLogs = INITIAL_IAM_AUDIT_LOGS,
+  onAssignRole = (_userId, _roleType, _isActing, _expiryDate) => {},
+  onRevokeRole = (_userId, _roleType) => {},
+  onCreateCustomRole = (_newRole) => {},
+  onUpdatePolicy = (_newPolicy) => {},
+  onToggleMFA = (_userId) => {},
+  onRevokeSession = (_userId) => {},
+  onTriggerPhoneVerification = (_account) => {},
+  onOpenAuthModal = () => {}
 }) => {
+  const safeAccounts = allAccounts && allAccounts.length > 0 ? allAccounts : INITIAL_AUTH_ACCOUNTS;
+  const safeAdminRoles = adminRoles && adminRoles.length > 0 ? adminRoles : INITIAL_ADMIN_ROLES;
+  const safeSecurityPolicy = securityPolicy || INITIAL_SECURITY_POLICY;
+  const safeAuditLogs = auditLogs && auditLogs.length > 0 ? auditLogs : INITIAL_IAM_AUDIT_LOGS;
+
   // Navigation Sub-tab
   const [activeSubTab, setActiveSubTab] = useState<'directory' | 'roles' | 'policies' | 'audit_logs'>('directory');
   
@@ -124,14 +142,16 @@ export const IAMGovernanceTab: React.FC<IAMGovernanceTabProps> = ({
   });
 
   // Policy Form State
-  const [policyForm, setPolicyForm] = useState<IAMSecurityPolicy>(securityPolicy);
+  const [policyForm, setPolicyForm] = useState<IAMSecurityPolicy>(securityPolicy || INITIAL_SECURITY_POLICY);
   const [policySavedFeedback, setPolicySavedFeedback] = useState(false);
 
   // Permission Inspector Modal
   const [inspectingRole, setInspectingRole] = useState<AdminRoleDefinition | null>(null);
 
+  const safeAccountsList = allAccounts && allAccounts.length > 0 ? allAccounts : INITIAL_AUTH_ACCOUNTS;
+
   // Filtered Accounts
-  const filteredAccounts = allAccounts.filter(acc => {
+  const filteredAccounts = safeAccountsList.filter(acc => {
     const matchesSearch = 
       acc.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       acc.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -150,14 +170,14 @@ export const IAMGovernanceTab: React.FC<IAMGovernanceTabProps> = ({
   });
 
   // Calculate Metrics
-  const totalStaff = allAccounts.length;
-  const totalAssignedAdmins = allAccounts.filter(a => a.assignedAdminRoles.length > 0).length;
-  const verifiedPhoneCount = allAccounts.filter(a => a.isPhoneVerified).length;
-  const phoneVerifiedRate = Math.round((verifiedPhoneCount / totalStaff) * 100);
-  const googleLinkedCount = allAccounts.filter(a => a.isGoogleLinked).length;
-  const googleLinkedRate = Math.round((googleLinkedCount / totalStaff) * 100);
-  const mfaCount = allAccounts.filter(a => a.mfaEnabled).length;
-  const mfaRate = Math.round((mfaCount / totalStaff) * 100);
+  const totalStaff = safeAccountsList.length;
+  const totalAssignedAdmins = safeAccountsList.filter(a => a.assignedAdminRoles.length > 0).length;
+  const verifiedPhoneCount = safeAccountsList.filter(a => a.isPhoneVerified).length;
+  const phoneVerifiedRate = totalStaff > 0 ? Math.round((verifiedPhoneCount / totalStaff) * 100) : 0;
+  const googleLinkedCount = safeAccountsList.filter(a => a.isGoogleLinked).length;
+  const googleLinkedRate = totalStaff > 0 ? Math.round((googleLinkedCount / totalStaff) * 100) : 0;
+  const mfaCount = safeAccountsList.filter(a => a.mfaEnabled).length;
+  const mfaRate = totalStaff > 0 ? Math.round((mfaCount / totalStaff) * 100) : 0;
 
   // Handlers
   const handleOpenAssignModal = (account: UserAuthAccount) => {

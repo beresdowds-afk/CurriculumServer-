@@ -1,0 +1,122 @@
+[
+  {
+    "id": "aud_1793688012560_vmv1",
+    "instanceId": "tenant-apex-01",
+    "action": "rolled_back",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-03T06:40:12.560Z",
+    "versionNumber": 9,
+    "notes": "Restored state of version v1"
+  },
+  {
+    "id": "aud_1793688012558_lnbg",
+    "instanceId": "tenant-apex-01",
+    "action": "published",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-03T06:40:12.558Z",
+    "versionNumber": 8,
+    "notes": "Verified automated publication test"
+  },
+  {
+    "id": "aud_1793688012556_cqmm",
+    "instanceId": "tenant-apex-01",
+    "action": "draft_updated",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-03T06:40:12.556Z",
+    "versionNumber": 7,
+    "notes": "Draft updated in visual editor"
+  },
+  {
+    "id": "aud_1793687160831_orkq",
+    "instanceId": "tenant-apex-01",
+    "action": "rolled_back",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-03T06:26:00.831Z",
+    "versionNumber": 7,
+    "notes": "Restored state of version v1"
+  },
+  {
+    "id": "aud_1793687160830_80ap",
+    "instanceId": "tenant-apex-01",
+    "action": "published",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-03T06:26:00.830Z",
+    "versionNumber": 6,
+    "notes": "Verified automated publication test"
+  },
+  {
+    "id": "aud_1793687160828_jwos",
+    "instanceId": "tenant-apex-01",
+    "action": "draft_updated",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-03T06:26:00.828Z",
+    "versionNumber": 5,
+    "notes": "Draft updated in visual editor"
+  },
+  {
+    "id": "aud_1793686703227_gk53",
+    "instanceId": "tenant-apex-01",
+    "action": "rolled_back",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-03T06:18:23.227Z",
+    "versionNumber": 5,
+    "notes": "Restored state of version v1"
+  },
+  {
+    "id": "aud_1793686703226_mjql",
+    "instanceId": "tenant-apex-01",
+    "action": "published",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-03T06:18:23.226Z",
+    "versionNumber": 4,
+    "notes": "Verified automated publication test"
+  },
+  {
+    "id": "aud_1793686703221_6o49",
+    "instanceId": "tenant-apex-01",
+    "action": "draft_updated",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-03T06:18:23.221Z",
+    "versionNumber": 3,
+    "notes": "Draft updated in visual editor"
+  },
+  {
+    "id": "aud_1793681260413_hjr6",
+    "instanceId": "tenant-apex-01",
+    "action": "rolled_back",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-03T04:47:40.413Z",
+    "versionNumber": 3,
+    "notes": "Restored state of version v1"
+  },
+  {
+    "id": "aud_1793681260412_nhg4",
+    "instanceId": "tenant-apex-01",
+    "action": "published",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-03T04:47:40.412Z",
+    "versionNumber": 2,
+    "notes": "Verified automated publication test"
+  },
+  {
+    "id": "aud_1793681260410_qpun",
+    "instanceId": "tenant-apex-01",
+    "action": "draft_updated",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-03T04:47:40.410Z",
+    "versionNumber": 1,
+    "notes": "Draft updated in visual editor"
+  }
+]

@@ -6,6 +6,7 @@ import {
   UserProfile 
 } from '../types';
 import { DockerTenantOrchestrationService } from '../services/dockerTenantOrchestrationService';
+import { INITIAL_PROVISIONED_TENANTS } from '../mockCurriculumServerData';
 import { 
   Cpu, 
   HardDrive, 
@@ -28,17 +29,18 @@ import {
 } from 'lucide-react';
 
 interface DockerOrchestrationConsoleProps {
-  tenants: TenantSchoolApp[];
+  tenants?: TenantSchoolApp[];
   currentUser?: UserProfile;
   onBackToCockpit?: () => void;
 }
 
 export const DockerOrchestrationConsole: React.FC<DockerOrchestrationConsoleProps> = ({
-  tenants,
+  tenants = INITIAL_PROVISIONED_TENANTS,
   currentUser,
   onBackToCockpit
 }) => {
-  const [orchestrator] = useState(() => new DockerTenantOrchestrationService(tenants));
+  const safeTenants = (tenants && tenants.length > 0) ? tenants : INITIAL_PROVISIONED_TENANTS;
+  const [orchestrator] = useState(() => new DockerTenantOrchestrationService(safeTenants));
   const [containers, setContainers] = useState<DockerTenantContainer[]>([]);
   const [migrationJobs, setMigrationJobs] = useState<ShardMigrationJob[]>([]);
   const [selectedTenantId, setSelectedTenantId] = useState<string>('');

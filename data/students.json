@@ -1,0 +1,38 @@
+[
+  {
+    "id": "usr-student-01",
+    "tenantId": "tenant-greenfield-01",
+    "admissionNumber": "ADM-2026-1000",
+    "fullName": "Chinedu Eze",
+    "classGrade": "SS 2",
+    "gender": "Female",
+    "parentName": "Alhaji & Mrs. Mustapha",
+    "parentPhone": "+234 803 123 4567",
+    "status": "Active",
+    "feeStatus": "Pending"
+  },
+  {
+    "id": "usr-student-02",
+    "tenantId": "tenant-greenfield-01",
+    "admissionNumber": "ADM-2026-1001",
+    "fullName": "Fatima Garba",
+    "classGrade": "SS 2",
+    "gender": "Male",
+    "parentName": "Alhaji & Mrs. Mustapha",
+    "parentPhone": "+234 803 123 4567",
+    "status": "Active",
+    "feeStatus": "Pending"
+  },
+  {
+    "id": "usr-student-03",
+    "tenantId": "tenant-greenfield-01",
+    "admissionNumber": "ADM-2026-1002",
+    "fullName": "Emeka Nwosu",
+    "classGrade": "SS 2",
+    "gender": "Female",
+    "parentName": "Alhaji & Mrs. Mustapha",
+    "parentPhone": "+234 803 123 4567",
+    "status": "Active",
+    "feeStatus": "Pending"
+  }
+]

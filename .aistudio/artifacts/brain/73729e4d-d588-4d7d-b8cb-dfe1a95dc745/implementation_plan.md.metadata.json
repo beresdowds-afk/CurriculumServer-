@@ -1,0 +1,6 @@
+{
+  "summary":  "Phase 1 Implementation Plan for separating Curriculum Server (SaaS Control Plane & Customer Provisioning) and Curriculum Flow (School-facing Academic & Administrative ERP) into independent frontend applications within a monorepo workspace structure, preserving all existing working functionality, routes, and security boundaries.",
+  "updatedAt":  "2026-11-01T13:14:39.054421869Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

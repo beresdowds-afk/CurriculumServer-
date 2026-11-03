@@ -11,6 +11,15 @@ import {
   CurriculumFlowBundleKey
 } from '../types';
 import { 
+  INITIAL_SUBSCRIPTION_PLANS, 
+  INITIAL_PROMO_OFFERS, 
+  INITIAL_PRICING_AUDIT_LOGS, 
+  OPTIONAL_FEATURE_DEFINITIONS, 
+  INITIAL_PROVISIONED_TENANTS 
+} from '../mockCurriculumServerData';
+import { CURRICULUM_FLOW_BUNDLES } from '../data/bundleArchitectureData';
+import { TLD_PRICING_CATALOG } from '../mockDomainRegistrarData';
+import { 
   Tag, 
   BadgePercent, 
   Plus, 
@@ -60,40 +69,63 @@ export type PricingManagementTab =
   | 'audit_simulator';
 
 interface PricingOffersManagementPortalProps {
-  currentUser: UserProfile;
-  tenants: TenantSchoolApp[];
-  subscriptionPlans: SubscriptionPlanOffer[];
-  optionalFeatures: OptionalFeatureDefinition[];
-  flowBundles: CurriculumFlowBundle[];
-  tldPlans: TldPricingPlan[];
-  promoOffers: PromoDiscountOffer[];
-  auditLogs: PricingChangeAuditLog[];
-  onUpdateSubscriptionPlans: (plans: SubscriptionPlanOffer[]) => void;
-  onUpdateOptionalFeatures: (features: OptionalFeatureDefinition[]) => void;
-  onUpdateFlowBundles: (bundles: CurriculumFlowBundle[]) => void;
-  onUpdateTldPlans: (plans: TldPricingPlan[]) => void;
-  onUpdatePromoOffers: (offers: PromoDiscountOffer[]) => void;
-  onAddAuditLog: (log: Omit<PricingChangeAuditLog, 'id' | 'timestamp'>) => void;
+  currentUser?: UserProfile;
+  tenants?: TenantSchoolApp[];
+  subscriptionPlans?: SubscriptionPlanOffer[];
+  optionalFeatures?: OptionalFeatureDefinition[];
+  featureDefinitions?: OptionalFeatureDefinition[];
+  flowBundles?: CurriculumFlowBundle[];
+  tldPlans?: TldPricingPlan[];
+  tldPricing?: TldPricingPlan[];
+  promoOffers?: PromoDiscountOffer[];
+  auditLogs?: PricingChangeAuditLog[];
+  onUpdateSubscriptionPlans?: (plans: SubscriptionPlanOffer[]) => void;
+  onUpdatePlans?: (plans: SubscriptionPlanOffer[]) => void;
+  onUpdateOptionalFeatures?: (features: OptionalFeatureDefinition[]) => void;
+  onUpdateFlowBundles?: (bundles: CurriculumFlowBundle[]) => void;
+  onUpdateTldPlans?: (plans: TldPricingPlan[]) => void;
+  onUpdatePromoOffers?: (offers: PromoDiscountOffer[]) => void;
+  onUpdatePromos?: (offers: PromoDiscountOffer[]) => void;
+  onAddAuditLog?: (log: Omit<PricingChangeAuditLog, 'id' | 'timestamp'>) => void;
   onNavigateToTab?: (tab: string) => void;
 }
 
 export const PricingOffersManagementPortal: React.FC<PricingOffersManagementPortalProps> = ({
-  currentUser,
-  tenants,
-  subscriptionPlans,
-  optionalFeatures,
-  flowBundles,
-  tldPlans,
-  promoOffers,
-  auditLogs,
-  onUpdateSubscriptionPlans,
-  onUpdateOptionalFeatures,
-  onUpdateFlowBundles,
-  onUpdateTldPlans,
-  onUpdatePromoOffers,
-  onAddAuditLog,
+  currentUser = {
+    id: 'usr_superadmin',
+    name: 'Curriculum Server Root Administrator',
+    title: 'Platform Infrastructure Super Admin',
+    role: 'super_admin',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80',
+    email: 'admin@curriculumserver.ng'
+  },
+  tenants = INITIAL_PROVISIONED_TENANTS,
+  subscriptionPlans = INITIAL_SUBSCRIPTION_PLANS,
+  optionalFeatures = OPTIONAL_FEATURE_DEFINITIONS,
+  featureDefinitions,
+  flowBundles = CURRICULUM_FLOW_BUNDLES,
+  tldPlans = TLD_PRICING_CATALOG,
+  tldPricing,
+  promoOffers = INITIAL_PROMO_OFFERS,
+  auditLogs = INITIAL_PRICING_AUDIT_LOGS,
+  onUpdateSubscriptionPlans = (_plans) => {},
+  onUpdatePlans,
+  onUpdateOptionalFeatures = (_features) => {},
+  onUpdateFlowBundles = (_bundles) => {},
+  onUpdateTldPlans = (_plans) => {},
+  onUpdatePromoOffers = (_offers) => {},
+  onUpdatePromos,
+  onAddAuditLog = (_log) => {},
   onNavigateToTab
 }) => {
+  const activeTenants = tenants && tenants.length > 0 ? tenants : INITIAL_PROVISIONED_TENANTS;
+  const activeSubscriptionPlans = subscriptionPlans && subscriptionPlans.length > 0 ? subscriptionPlans : INITIAL_SUBSCRIPTION_PLANS;
+  const activeOptionalFeatures = optionalFeatures || featureDefinitions || OPTIONAL_FEATURE_DEFINITIONS;
+  const activeFlowBundles = flowBundles && flowBundles.length > 0 ? flowBundles : CURRICULUM_FLOW_BUNDLES;
+  const activeTldPlans = tldPlans || tldPricing || TLD_PRICING_CATALOG;
+  const activePromoOffers = promoOffers && promoOffers.length > 0 ? promoOffers : INITIAL_PROMO_OFFERS;
+  const activeAuditLogs = auditLogs && auditLogs.length > 0 ? auditLogs : INITIAL_PRICING_AUDIT_LOGS;
+
   const [activeTab, setActiveTab] = useState<PricingManagementTab>('plans');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('all');
@@ -133,9 +165,9 @@ export const PricingOffersManagementPortal: React.FC<PricingOffersManagementPort
     let projectedMRR_NGN = 0;
     let projectedARR_NGN = 0;
 
-    tenants.forEach(tenant => {
+    (activeTenants || []).forEach(tenant => {
       // Find matching plan
-      const plan = subscriptionPlans.find(p => p.name.toLowerCase() === tenant.subscriptionTier.toLowerCase());
+      const plan = (activeSubscriptionPlans || []).find(p => p.name.toLowerCase() === (tenant.subscriptionTier || '').toLowerCase());
       if (plan) {
         if (tenant.businessModel === 'monthly') {
           projectedMRR_NGN += plan.monthlyPriceNGN;
@@ -154,12 +186,12 @@ export const PricingOffersManagementPortal: React.FC<PricingOffersManagementPort
     });
 
     return {
-      activeTenantsCount: tenants.length,
+      activeTenantsCount: (activeTenants || []).length,
       projectedMRR_NGN,
       projectedARR_NGN,
-      avgRevenuePerSchool: tenants.length > 0 ? Math.round(projectedARR_NGN / tenants.length) : 0
+      avgRevenuePerSchool: (activeTenants || []).length > 0 ? Math.round(projectedARR_NGN / activeTenants.length) : 0
     };
-  }, [tenants, subscriptionPlans]);
+  }, [activeTenants, activeSubscriptionPlans]);
 
   // Format currency helpers
   const formatPrice = (amountNgn: number) => {

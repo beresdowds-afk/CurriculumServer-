@@ -53,8 +53,11 @@ import {
   QrCode,
   Shield,
   Smartphone,
-  BookOpen
+  BookOpen,
+  Server
 } from 'lucide-react';
+import { instanceLifecycleClient } from '../services/instanceLifecycleClient';
+import { CustomerSelfServiceRequest } from '../types/instanceLifecycle';
 
 const FALLBACK_DEFAULT_TENANT: TenantSchoolApp = INITIAL_PROVISIONED_TENANTS[0];
 
@@ -71,6 +74,7 @@ export type ProprietorPortalTab =
   | 'overview'
   | 'bundles'
   | 'plan'
+  | 'architecture_requests'
   | 'lease_to_own'
   | 'features'
   | 'branding'
@@ -105,7 +109,42 @@ export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps>
   }>({ isOpen: false });
   const [isEquityCertModalOpen, setIsEquityCertModalOpen] = useState(false);
 
+  // Phase 9 Self-service requests state
+  const [customerRequests, setCustomerRequests] = useState<CustomerSelfServiceRequest[]>([]);
+  const [reqType, setReqType] = useState<CustomerSelfServiceRequest['requestType']>('architecture_migration');
+  const [reqTitle, setReqTitle] = useState('');
+  const [reqDesc, setReqDesc] = useState('');
+  const [isSubmittingReq, setIsSubmittingReq] = useState(false);
+
   const currentTenant: TenantSchoolApp = safeTenants.find(t => t.id === selectedTenantId) || safeTenants[0] || FALLBACK_DEFAULT_TENANT;
+
+  useEffect(() => {
+    instanceLifecycleClient.getCustomerRequests(currentTenant.id)
+      .then(reqs => setCustomerRequests(reqs))
+      .catch(() => {});
+  }, [currentTenant.id]);
+
+  const handleSubmitSelfServiceRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reqTitle.trim() || !reqDesc.trim()) return;
+    setIsSubmittingReq(true);
+    try {
+      const newReq = await instanceLifecycleClient.submitCustomerRequest({
+        instanceId: currentTenant.id,
+        requestType: reqType,
+        title: reqTitle,
+        description: reqDesc
+      });
+      setCustomerRequests(prev => [newReq, ...prev]);
+      setReqTitle('');
+      setReqDesc('');
+      showToast('Self-service request submitted for technical review!');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to submit request');
+    } finally {
+      setIsSubmittingReq(false);
+    }
+  };
 
   // Keep selectedTenantId in sync if safeTenants changes
   useEffect(() => {
@@ -421,6 +460,7 @@ export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps>
           { id: 'overview', label: 'Executive Overview', icon: BarChart3 },
           { id: 'bundles', label: '4-Bundle Architecture', icon: Layers, badge: `${licensedBundlesCount}/4 Active` },
           { id: 'plan', label: 'Subscription & Tier', icon: CreditCard },
+          { id: 'architecture_requests', label: 'Architecture & Self-Service', icon: Server, badge: 'Phase 9' },
           { id: 'lease_to_own', label: 'Lease-to-Own Equity', icon: Award, highlight: true },
           { id: 'features', label: 'Supplementary Add-ons', icon: Sliders },
           { id: 'branding', label: 'Whitelabel & Domain', icon: Globe },
@@ -921,6 +961,216 @@ export const CustomerSelfServicePortal: React.FC<CustomerSelfServicePortalProps>
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* TAB: ARCHITECTURE & CUSTOMER SELF-SERVICE REQUESTS (PHASE 9) */}
+      {activeTab === 'architecture_requests' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Section 1: Current Architecture & Resource Allocations */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+            <div>
+              <span className="text-xs text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <Server className="w-4 h-4" />
+                Phase 9: Sovereign Customer Self-Service & Architecture Governance
+              </span>
+              <h3 className="text-2xl font-black text-white mt-1">
+                Allocated Infrastructure & Storage Topology
+              </h3>
+              <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                Inspect dedicated cloud resources, manage approved storage connections, or request architecture tier changes and third-party integrations.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+              <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                <span className="text-[10px] uppercase font-bold text-slate-500">Deployment Tier</span>
+                <p className="text-base font-bold text-white capitalize">Dedicated Cloud Run</p>
+                <span className="text-[10px] text-emerald-400 font-mono block">Zero Cold-Start SLA</span>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                <span className="text-[10px] uppercase font-bold text-slate-500">Database Engine</span>
+                <p className="text-base font-bold text-sky-400 font-mono">PostgreSQL 16 LTS</p>
+                <span className="text-[10px] text-slate-400 block">Schema Isolated Shard</span>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                <span className="text-[10px] uppercase font-bold text-slate-500">Approved Storage Provider</span>
+                <p className="text-base font-bold text-amber-400">Google Cloud Storage</p>
+                <span className="text-[10px] text-slate-400 block">AES-256 At-Rest Encryption</span>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                <span className="text-[10px] uppercase font-bold text-slate-500">Whitelabel Custom Domain</span>
+                <p className="text-base font-bold text-indigo-300 truncate">{currentTenant.customDomain || currentTenant.subdomain}</p>
+                <span className="text-[10px] text-emerald-400 block">TLS 1.3 Active</span>
+              </div>
+            </div>
+
+            {/* Storage Connections Management */}
+            <div className="pt-4 border-t border-slate-800 space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Approved Storage Connections
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/40 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <HardDrive className="w-4 h-4 text-emerald-400" />
+                    <div>
+                      <strong className="text-white block">Platform Vault GCS</strong>
+                      <span className="text-[10px] text-slate-400">Primary sovereign storage</span>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400">Connected</span>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <Globe className="w-4 h-4 text-sky-400" />
+                    <div>
+                      <strong className="text-white block">School Google Drive</strong>
+                      <span className="text-[10px] text-slate-400">Direct student portfolio sync</span>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => showToast('OAuth storage connection request submitted!')}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] font-bold cursor-pointer"
+                  >
+                    Connect
+                  </button>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <Database className="w-4 h-4 text-indigo-400" />
+                    <div>
+                      <strong className="text-white block">Microsoft OneDrive</strong>
+                      <span className="text-[10px] text-slate-400">Staff document backup</span>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => showToast('OneDrive connection request submitted!')}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] font-bold cursor-pointer"
+                  >
+                    Connect
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: Submit Customer Self-Service Request */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-xl">
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-emerald-400" />
+                <span>Submit Technical Self-Service Request</span>
+              </h4>
+              <p className="text-xs text-slate-400">
+                Formally request architecture tier upgrades, enterprise software integrations, domain changes, or certified data exports.
+              </p>
+
+              <form onSubmit={handleSubmitSelfServiceRequest} className="space-y-4 text-xs">
+                <div>
+                  <label className="text-slate-400 block mb-1">Request Category:</label>
+                  <select
+                    value={reqType}
+                    onChange={e => setReqType(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-200 font-bold focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="architecture_migration">Architecture Tier Upgrade (Dedicated Pod / Project)</option>
+                    <option value="feature_upgrade">Feature Module Upgrade</option>
+                    <option value="integration_addition">Third-Party Integration (SAP, Canvas, SMS)</option>
+                    <option value="storage_connection_change">Storage Connection Modification</option>
+                    <option value="domain_change">Permitted Custom Domain Update</option>
+                    <option value="data_export_backup">Encrypted Master Data Backup Export</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-slate-400 block mb-1">Request Title:</label>
+                  <input
+                    type="text"
+                    value={reqTitle}
+                    onChange={e => setReqTitle(e.target.value)}
+                    placeholder="e.g. Upgrade to Dedicated Cloud Run cluster for WAEC Mock exam"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-emerald-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-400 block mb-1">Detailed Operational Rationale:</label>
+                  <textarea
+                    value={reqDesc}
+                    onChange={e => setReqDesc(e.target.value)}
+                    placeholder="Provide context, required capacity, or specific timeline..."
+                    rows={3}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-emerald-500"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingReq || !reqTitle.trim() || !reqDesc.trim()}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition-all shadow-md cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmittingReq ? 'Submitting...' : 'Submit Self-Service Request'}
+                </button>
+              </form>
+            </div>
+
+            {/* Section 3: Request History */}
+            <div className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-xl">
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <Clock className="w-4 h-4 text-sky-400" />
+                <span>Submitted Requests & Review Status</span>
+              </h4>
+
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {customerRequests.length === 0 ? (
+                  <div className="p-8 text-center text-slate-500 text-xs">No prior self-service requests found.</div>
+                ) : (
+                  customerRequests.map(req => (
+                    <div key={req.requestId} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-xs space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-white">{req.title}</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          req.status === 'fulfilled' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                          req.status === 'rejected' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                          'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        }`}>
+                          {req.status}
+                        </span>
+                      </div>
+                      <p className="text-slate-400 text-[11px]">{req.description}</p>
+                      
+                      {req.reviewerNotes && (
+                        <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-[11px] text-slate-300">
+                          <span className="text-slate-500 font-bold block text-[10px]">Reviewer Feedback:</span>
+                          {req.reviewerNotes}
+                        </div>
+                      )}
+
+                      {req.resultPayload?.exportBundleUrl && (
+                        <a 
+                          href={req.resultPayload.exportBundleUrl} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 text-emerald-400 text-[11px] font-mono underline mt-1"
+                        >
+                          <Download className="w-3 h-3" />
+                          <span>Download Verified Export Archive</span>
+                        </a>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -1881,4 +1881,10 @@ export function generateLicenseHash(): string {
   return result;
 }
 
-export const INITIAL_CLONED_TENANTS = INITIAL_PROVISIONED_TENANTS;
+export const INITIAL_CLONED_TENANTS: TenantSchoolApp[] = INITIAL_PROVISIONED_TENANTS.map(t => ({
+  ...t,
+  id: `clone-${t.id}`,
+  appId: `${t.appId}-CLONE`,
+  schoolName: `${t.schoolName} (Template Replica)`,
+  clonedFromTemplateVersion: 'NERDC-2026-V1'
+}));

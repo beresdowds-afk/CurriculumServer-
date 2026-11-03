@@ -1,0 +1,162 @@
+[
+  {
+    "eventId": "ev-1793535165011-xjf4",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-01",
+    "action": "AI_TOKEN_CONSUMPTION",
+    "quantity": 12500,
+    "timestamp": "2026-11-01T12:12:45.011Z"
+  },
+  {
+    "eventId": "ev-1793535165012-w0yk",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-02",
+    "action": "AI_TOKEN_CONSUMPTION",
+    "quantity": 8500,
+    "timestamp": "2026-11-01T12:12:45.012Z"
+  },
+  {
+    "eventId": "ev-1793535165012-u5ps",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-a",
+    "action": "TEXTBOOK_GENERATION",
+    "quantity": 3,
+    "timestamp": "2026-11-01T12:12:45.013Z"
+  },
+  {
+    "eventId": "ev-1793535165013-82oo",
+    "tenantId": "tenant-beta-02",
+    "userId": "usr-b",
+    "action": "TEXTBOOK_GENERATION",
+    "quantity": 1,
+    "timestamp": "2026-11-01T12:12:45.013Z"
+  },
+  {
+    "eventId": "ev-1793535194755-yim9",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-01",
+    "action": "AI_TOKEN_CONSUMPTION",
+    "quantity": 12500,
+    "timestamp": "2026-11-01T12:13:14.755Z"
+  },
+  {
+    "eventId": "ev-1793535194755-braz",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-02",
+    "action": "AI_TOKEN_CONSUMPTION",
+    "quantity": 8500,
+    "timestamp": "2026-11-01T12:13:14.755Z"
+  },
+  {
+    "eventId": "ev-1793535194755-d9gf",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-a",
+    "action": "TEXTBOOK_GENERATION",
+    "quantity": 3,
+    "timestamp": "2026-11-01T12:13:14.755Z"
+  },
+  {
+    "eventId": "ev-1793535194756-i9yt",
+    "tenantId": "tenant-beta-02",
+    "userId": "usr-b",
+    "action": "TEXTBOOK_GENERATION",
+    "quantity": 1,
+    "timestamp": "2026-11-01T12:13:14.756Z"
+  },
+  {
+    "eventId": "ev-1793535214674-fdqq",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-01",
+    "action": "AI_TOKEN_CONSUMPTION",
+    "quantity": 12500,
+    "timestamp": "2026-11-01T12:13:34.674Z"
+  },
+  {
+    "eventId": "ev-1793535214674-ttug",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-02",
+    "action": "AI_TOKEN_CONSUMPTION",
+    "quantity": 8500,
+    "timestamp": "2026-11-01T12:13:34.674Z"
+  },
+  {
+    "eventId": "ev-1793535214675-lgyn",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-a",
+    "action": "TEXTBOOK_GENERATION",
+    "quantity": 3,
+    "timestamp": "2026-11-01T12:13:34.675Z"
+  },
+  {
+    "eventId": "ev-1793535214675-83gk",
+    "tenantId": "tenant-beta-02",
+    "userId": "usr-b",
+    "action": "TEXTBOOK_GENERATION",
+    "quantity": 1,
+    "timestamp": "2026-11-01T12:13:34.675Z"
+  },
+  {
+    "eventId": "ev-1793535427976-7rh1",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-01",
+    "action": "AI_TOKEN_CONSUMPTION",
+    "quantity": 12500,
+    "timestamp": "2026-11-01T12:17:07.976Z"
+  },
+  {
+    "eventId": "ev-1793535427976-c8n0",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-02",
+    "action": "AI_TOKEN_CONSUMPTION",
+    "quantity": 8500,
+    "timestamp": "2026-11-01T12:17:07.976Z"
+  },
+  {
+    "eventId": "ev-1793535427977-t9tu",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-a",
+    "action": "TEXTBOOK_GENERATION",
+    "quantity": 3,
+    "timestamp": "2026-11-01T12:17:07.977Z"
+  },
+  {
+    "eventId": "ev-1793535427977-7sjb",
+    "tenantId": "tenant-beta-02",
+    "userId": "usr-b",
+    "action": "TEXTBOOK_GENERATION",
+    "quantity": 1,
+    "timestamp": "2026-11-01T12:17:07.977Z"
+  },
+  {
+    "eventId": "ev-1793535454500-5fan",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-01",
+    "action": "AI_TOKEN_CONSUMPTION",
+    "quantity": 12500,
+    "timestamp": "2026-11-01T12:17:34.500Z"
+  },
+  {
+    "eventId": "ev-1793535454501-9a9t",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-02",
+    "action": "AI_TOKEN_CONSUMPTION",
+    "quantity": 8500,
+    "timestamp": "2026-11-01T12:17:34.501Z"
+  },
+  {
+    "eventId": "ev-1793535454501-iejy",
+    "tenantId": "tenant-alpha-01",
+    "userId": "usr-a",
+    "action": "TEXTBOOK_GENERATION",
+    "quantity": 3,
+    "timestamp": "2026-11-01T12:17:34.501Z"
+  },
+  {
+    "eventId": "ev-1793535454502-al33",
+    "tenantId": "tenant-beta-02",
+    "userId": "usr-b",
+    "action": "TEXTBOOK_GENERATION",
+    "quantity": 1,
+    "timestamp": "2026-11-01T12:17:34.502Z"
+  }
+]

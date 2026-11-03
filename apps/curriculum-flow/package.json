@@ -1,0 +1,10 @@
+{
+  "name": "@curriculum/curriculum-flow-app",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./src/main.tsx",
+  "dependencies": {
+    "@curriculum/shared-types": "*",
+    "@curriculum/shared-ui": "*"
+  }
+}

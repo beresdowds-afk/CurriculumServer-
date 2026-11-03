@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build:server": "vite build --config vite.server.config.ts",
+    "build:flow": "vite build --config vite.flow.config.ts",
+    "build:all": "npm run build && npm run build:server && npm run build:flow",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",

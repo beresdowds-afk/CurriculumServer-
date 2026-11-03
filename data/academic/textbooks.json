@@ -1,0 +1,172 @@
+{
+  "test-tb-1793535165006": {
+    "id": "test-tb-1793535165006",
+    "subjectId": "sub-math-jss1",
+    "subjectName": "Mathematics",
+    "classGrade": "JSS 1",
+    "curriculumVersionId": "NERDC-CURR-2026.1-SSS-RELEASE",
+    "title": "Durable Test Textbook",
+    "author": "Test Suite",
+    "description": "Testing restart persistence",
+    "status": "published",
+    "version": "1.0.0",
+    "createdAt": "2026-11-01T12:12:45.006Z",
+    "updatedAt": "2026-11-01T12:12:45.006Z",
+    "chapters": [
+      {
+        "id": "ch-dup-1",
+        "textbookId": "test-tb-1793535165006",
+        "chapterNumber": 1,
+        "title": "Chapter One",
+        "summary": "Summary",
+        "learningObjectives": [],
+        "status": "published",
+        "sections": []
+      },
+      {
+        "id": "ch-dup-1",
+        "textbookId": "test-tb-1793535165006",
+        "chapterNumber": 1,
+        "title": "Chapter One",
+        "summary": "Summary",
+        "learningObjectives": [],
+        "status": "published",
+        "sections": []
+      },
+      {
+        "id": "ch-dup-1",
+        "textbookId": "test-tb-1793535165006",
+        "chapterNumber": 1,
+        "title": "Chapter One",
+        "summary": "Summary",
+        "learningObjectives": [],
+        "status": "published",
+        "sections": []
+      },
+      {
+        "id": "ch-dup-1",
+        "textbookId": "test-tb-1793535165006",
+        "chapterNumber": 1,
+        "title": "Chapter One",
+        "summary": "Summary",
+        "learningObjectives": [],
+        "status": "published",
+        "sections": []
+      }
+    ]
+  },
+  "test-tb-1793535194750": {
+    "id": "test-tb-1793535194750",
+    "subjectId": "sub-math-jss1",
+    "subjectName": "Mathematics",
+    "classGrade": "JSS 1",
+    "curriculumVersionId": "NERDC-CURR-2026.1-SSS-RELEASE",
+    "title": "Durable Test Textbook",
+    "author": "Test Suite",
+    "description": "Testing restart persistence",
+    "status": "published",
+    "version": "1.0.0",
+    "createdAt": "2026-11-01T12:13:14.750Z",
+    "updatedAt": "2026-11-01T12:13:14.750Z",
+    "chapters": [
+      {
+        "id": "ch-1",
+        "textbookId": "test-tb-1793535194750",
+        "chapterNumber": 1,
+        "title": "Algebra",
+        "summary": "Algebra intro",
+        "learningObjectives": [
+          "obj-1"
+        ],
+        "status": "published",
+        "sections": []
+      }
+    ]
+  },
+  "test-tb-1793535214664": {
+    "id": "test-tb-1793535214664",
+    "subjectId": "sub-math-jss1",
+    "subjectName": "Mathematics",
+    "classGrade": "JSS 1",
+    "curriculumVersionId": "NERDC-CURR-2026.1-SSS-RELEASE",
+    "title": "Durable Test Textbook",
+    "author": "Test Suite",
+    "description": "Testing restart persistence",
+    "status": "published",
+    "version": "1.0.0",
+    "createdAt": "2026-11-01T12:13:34.664Z",
+    "updatedAt": "2026-11-01T12:13:34.665Z",
+    "chapters": [
+      {
+        "id": "ch-1",
+        "textbookId": "test-tb-1793535214664",
+        "chapterNumber": 1,
+        "title": "Algebra",
+        "summary": "Algebra intro",
+        "learningObjectives": [
+          "obj-1"
+        ],
+        "status": "published",
+        "sections": []
+      }
+    ]
+  },
+  "test-tb-1793535427969": {
+    "id": "test-tb-1793535427969",
+    "subjectId": "sub-math-jss1",
+    "subjectName": "Mathematics",
+    "classGrade": "JSS 1",
+    "curriculumVersionId": "NERDC-CURR-2026.1-SSS-RELEASE",
+    "title": "Durable Test Textbook",
+    "author": "Test Suite",
+    "description": "Testing restart persistence",
+    "status": "published",
+    "version": "1.0.0",
+    "createdAt": "2026-11-01T12:17:07.970Z",
+    "updatedAt": "2026-11-01T12:17:07.970Z",
+    "chapters": [
+      {
+        "id": "ch-1",
+        "textbookId": "test-tb-1793535427969",
+        "chapterNumber": 1,
+        "title": "Algebra",
+        "summary": "Algebra intro",
+        "learningObjectives": [
+          "obj-1"
+        ],
+        "status": "published",
+        "sections": []
+      }
+    ],
+    "approvalHistory": []
+  },
+  "test-tb-1793535454493": {
+    "id": "test-tb-1793535454493",
+    "subjectId": "sub-math-jss1",
+    "subjectName": "Mathematics",
+    "classGrade": "JSS 1",
+    "curriculumVersionId": "NERDC-CURR-2026.1-SSS-RELEASE",
+    "title": "Durable Test Textbook",
+    "author": "Test Suite",
+    "description": "Testing restart persistence",
+    "status": "published",
+    "version": "1.0.0",
+    "createdAt": "2026-11-01T12:17:34.493Z",
+    "updatedAt": "2026-11-01T12:17:34.493Z",
+    "chapters": [
+      {
+        "id": "ch-1",
+        "textbookId": "test-tb-1793535454493",
+        "chapterNumber": 1,
+        "title": "Algebra",
+        "summary": "Algebra intro",
+        "learningObjectives": [
+          "obj-1"
+        ],
+        "status": "published",
+        "sections": []
+      }
+    ],
+    "approvalHistory": []
+  }
+}

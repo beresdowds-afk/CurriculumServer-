@@ -1,0 +1,173 @@
+{
+  "job-1793535165008-t3v55": {
+    "id": "job-1793535165008-t3v55",
+    "jobType": "textbook",
+    "subjectId": "sub-phy",
+    "subjectName": "Physics",
+    "classGrade": "JSS 1",
+    "curriculumVersionId": "NERDC-CURR-2026.1-SSS-RELEASE",
+    "status": "paused",
+    "progress": 40,
+    "currentStep": "chapter_1_generated",
+    "checkpoints": [
+      "job_queued",
+      "chapter_1_generated"
+    ],
+    "createdAt": "2026-11-01T12:12:45.008Z",
+    "updatedAt": "2026-11-01T12:12:45.008Z",
+    "failureReason": "Interrupted by server restart. Recovered for resumable execution."
+  },
+  "job-1793535165009-cb331": {
+    "id": "job-1793535165009-cb331",
+    "jobType": "textbook",
+    "subjectId": "sub-chem",
+    "subjectName": "Chemistry",
+    "classGrade": "JSS 1",
+    "curriculumVersionId": "NERDC-CURR-2026.1-SSS-RELEASE",
+    "status": "completed",
+    "progress": 100,
+    "currentStep": "completed",
+    "checkpoints": [
+      "job_queued",
+      "completed"
+    ],
+    "createdAt": "2026-11-01T12:12:45.009Z",
+    "updatedAt": "2026-11-01T12:12:45.010Z",
+    "resultId": "res-chem-1"
+  },
+  "job-1793535194752-8fdt7": {
+    "id": "job-1793535194752-8fdt7",
+    "jobType": "textbook",
+    "subjectId": "sub-phy",
+    "subjectName": "Physics",
+    "classGrade": "JSS 1",
+    "curriculumVersionId": "NERDC-CURR-2026.1-SSS-RELEASE",
+    "status": "paused",
+    "progress": 40,
+    "currentStep": "chapter_1_generated",
+    "checkpoints": [
+      "job_queued",
+      "chapter_1_generated"
+    ],
+    "createdAt": "2026-11-01T12:13:14.752Z",
+    "updatedAt": "2026-11-01T12:13:14.752Z",
+    "failureReason": "Interrupted by server restart. Recovered for resumable execution."
+  },
+  "job-1793535194752-ivv31": {
+    "id": "job-1793535194752-ivv31",
+    "jobType": "textbook",
+    "subjectId": "sub-chem",
+    "subjectName": "Chemistry",
+    "classGrade": "JSS 1",
+    "curriculumVersionId": "NERDC-CURR-2026.1-SSS-RELEASE",
+    "status": "completed",
+    "progress": 100,
+    "currentStep": "completed",
+    "checkpoints": [
+      "job_queued",
+      "completed"
+    ],
+    "createdAt": "2026-11-01T12:13:14.752Z",
+    "updatedAt": "2026-11-01T12:13:14.753Z",
+    "resultId": "res-chem-1"
+  },
+  "job-1793535214667-vtknx": {
+    "id": "job-1793535214667-vtknx",
+    "jobType": "textbook",
+    "subjectId": "sub-phy",
+    "subjectName": "Physics",
+    "classGrade": "JSS 1",
+    "curriculumVersionId": "NERDC-CURR-2026.1-SSS-RELEASE",
+    "status": "paused",
+    "progress": 40,
+    "currentStep": "chapter_1_generated",
+    "checkpoints": [
+      "job_queued",
+      "chapter_1_generated"
+    ],
+    "createdAt": "2026-11-01T12:13:34.667Z",
+    "updatedAt": "2026-11-01T12:13:34.668Z",
+    "errorDetails": "Interrupted by server restart. Recovered for resumable execution."
+  },
+  "job-1793535214669-q7zbs": {
+    "id": "job-1793535214669-q7zbs",
+    "jobType": "textbook",
+    "subjectId": "sub-chem",
+    "subjectName": "Chemistry",
+    "classGrade": "JSS 1",
+    "curriculumVersionId": "NERDC-CURR-2026.1-SSS-RELEASE",
+    "status": "completed",
+    "progress": 100,
+    "currentStep": "completed",
+    "checkpoints": [
+      "job_queued",
+      "completed"
+    ],
+    "createdAt": "2026-11-01T12:13:34.669Z",
+    "updatedAt": "2026-11-01T12:13:34.670Z",
+    "resultId": "res-chem-1"
+  },
+  "job-1793535427972-33hc8": {
+    "id": "job-1793535427972-33hc8",
+    "type": "textbook",
+    "targetId": "tb-1",
+    "title": "Physics Job",
+    "status": "paused",
+    "progressPercent": 40,
+    "currentStep": "chapter_1_generated",
+    "checkpoints": [
+      "job_queued",
+      "chapter_1_generated"
+    ],
+    "createdAt": "2026-11-01T12:17:07.972Z",
+    "updatedAt": "2026-11-01T12:17:07.972Z",
+    "errorDetails": "Interrupted by server restart. Recovered for resumable execution."
+  },
+  "job-1793535427973-qr8lb": {
+    "id": "job-1793535427973-qr8lb",
+    "type": "textbook",
+    "targetId": "tb-2",
+    "title": "Chemistry Job",
+    "status": "completed",
+    "progressPercent": 100,
+    "currentStep": "completed",
+    "checkpoints": [
+      "job_queued",
+      "completed"
+    ],
+    "resultId": "res-chem-1",
+    "createdAt": "2026-11-01T12:17:07.973Z",
+    "updatedAt": "2026-11-01T12:17:07.974Z"
+  },
+  "job-1793535454495-xhlm2": {
+    "id": "job-1793535454495-xhlm2",
+    "type": "textbook",
+    "targetId": "tb-1",
+    "title": "Physics Job",
+    "status": "running",
+    "progressPercent": 40,
+    "currentStep": "chapter_1_generated",
+    "checkpoints": [
+      "job_queued",
+      "chapter_1_generated"
+    ],
+    "createdAt": "2026-11-01T12:17:34.495Z",
+    "updatedAt": "2026-11-01T12:17:34.496Z"
+  },
+  "job-1793535454497-z5lf7": {
+    "id": "job-1793535454497-z5lf7",
+    "type": "textbook",
+    "targetId": "tb-2",
+    "title": "Chemistry Job",
+    "status": "completed",
+    "progressPercent": 100,
+    "currentStep": "completed",
+    "checkpoints": [
+      "job_queued",
+      "completed"
+    ],
+    "resultId": "res-chem-1",
+    "createdAt": "2026-11-01T12:17:34.497Z",
+    "updatedAt": "2026-11-01T12:17:34.498Z"
+  }
+}

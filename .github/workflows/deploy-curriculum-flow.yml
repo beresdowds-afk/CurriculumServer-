@@ -1,0 +1,83 @@
+name: Deploy Curriculum Flow (School Academic ERP)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/curriculum-flow/**'
+      - 'packages/**'
+      - 'src/**'
+      - 'vite.flow.config.ts'
+      - '.github/workflows/deploy-curriculum-flow.yml'
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: curriculum-server-prod
+  REGION: europe-west2
+  SERVICE_NAME: curriculum-flow-frontend
+  IMAGE_NAME: gcr.io/curriculum-server-prod/curriculum-flow-frontend
+
+jobs:
+  deploy:
+    name: Build & Deploy Curriculum Flow to Cloud Run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js 22
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+
+    - name: Install Dependencies
+      run: npm install
+
+    - name: Run TypeScript Linter & Type Check
+      run: npm run lint
+
+    - name: Build Curriculum Flow Application
+      run: npm run build:flow
+
+    - name: Authenticate to Google Cloud via OIDC Workload Identity
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: 'projects/1234567890/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+        service_account: 'github-deployer@curriculum-server-prod.iam.gserviceaccount.com'
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Configure Docker to use GCR
+      run: gcloud auth configure-docker --quiet
+
+    - name: Build and Push Container Image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: apps/curriculum-flow/Dockerfile
+        push: true
+        tags: |
+          ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          ${{ env.IMAGE_NAME }}:latest
+
+    - name: Deploy to Cloud Run
+      uses: google-github-actions/deploy-cloudrun@v2
+      with:
+        service: ${{ env.SERVICE_NAME }}
+        image: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+        region: ${{ env.REGION }}
+        flags: '--allow-unauthenticated --min-instances=1 --max-instances=50'
+
+    - name: Verify Deployment Health Check
+      run: |
+        SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')
+        echo "Verifying health check at $SERVICE_URL/healthz..."
+        curl -f "$SERVICE_URL/healthz" || exit 1
+        echo "Deployment successfully verified for revision associated with commit ${{ github.sha }}."

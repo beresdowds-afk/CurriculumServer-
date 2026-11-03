@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   TenantSchoolApp, 
   CurriculumServerSaaSMetrics, 
@@ -6,6 +6,8 @@ import {
   OptionalFeatureKey,
   BusinessModelType 
 } from '../types';
+import { customerOnboardingClient } from '../services/customerOnboardingClient';
+import { UniversalInstanceRecord, UniversalInstanceType } from '../types/customerOnboarding';
 import { 
   Server, 
   Building2, 
@@ -73,28 +75,34 @@ import {
   CartesianGrid,
   Legend
 } from 'recharts';
-import { OPTIONAL_FEATURE_DEFINITIONS } from '../mockCurriculumServerData';
+import { OPTIONAL_FEATURE_DEFINITIONS, INITIAL_SAAS_METRICS } from '../mockCurriculumServerData';
+import { InstanceLifecycleCenter } from './InstanceLifecycleCenter';
+import { ProductionHardeningDeck } from './ProductionHardeningDeck';
 
 interface CurriculumServerDashboardProps {
   tenants: TenantSchoolApp[];
-  metrics: CurriculumServerSaaSMetrics;
-  invoices: TenantBillingInvoice[];
-  onSelectTenantToLaunch: (tenant: TenantSchoolApp) => void;
+  metrics?: CurriculumServerSaaSMetrics;
+  invoices?: TenantBillingInvoice[];
+  onSelectTenantToLaunch?: (tenant: TenantSchoolApp) => void;
   onOpenProvisionModal?: () => void;
   onOpenCloneModal?: () => void;
-  onOpenConnectModal: () => void;
-  onOpenCredentialsModal: (tenant: TenantSchoolApp) => void;
-  onOpenFeaturesModal: (tenant: TenantSchoolApp) => void;
-  onOpenLeaseTrackerModal: (tenant: TenantSchoolApp) => void;
-  onToggleTenantStatus: (tenantId: string) => void;
+  onOpenConnectModal?: () => void;
+  onOpenCredentialsModal?: (tenant: TenantSchoolApp) => void;
+  onOpenFeaturesModal?: (tenant: TenantSchoolApp) => void;
+  onOpenLeaseTrackerModal?: (tenant: TenantSchoolApp) => void;
+  onToggleTenantStatus?: (tenantId: string) => void;
   onNavigateToLanding?: () => void;
   onNavigateToDomainPortal?: () => void;
+  onOpenUniversalWizard?: () => void;
 }
 
 export type SaaSActiveTab = 
   | 'master_overview'
   | 'provisioned_schools'
   | 'cloned_schools'
+  | 'universal_requests'
+  | 'instance_lifecycle'
+  | 'production_hardening'
   | 'invoicing_ledger'
   | 'lease_contracts'
   | 'features_matrix'
@@ -102,18 +110,19 @@ export type SaaSActiveTab =
 
 export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps> = ({
   tenants,
-  metrics,
-  invoices,
-  onSelectTenantToLaunch,
-  onOpenProvisionModal,
-  onOpenCloneModal,
-  onOpenConnectModal,
-  onOpenCredentialsModal,
-  onOpenFeaturesModal,
-  onOpenLeaseTrackerModal,
-  onToggleTenantStatus,
-  onNavigateToLanding,
-  onNavigateToDomainPortal
+  metrics = INITIAL_SAAS_METRICS,
+  invoices = [],
+  onSelectTenantToLaunch = (_t) => {},
+  onOpenProvisionModal = () => {},
+  onOpenCloneModal = () => {},
+  onOpenConnectModal = () => {},
+  onOpenCredentialsModal = (_t) => {},
+  onOpenFeaturesModal = (_t) => {},
+  onOpenLeaseTrackerModal = (_t) => {},
+  onToggleTenantStatus = (_id) => {},
+  onNavigateToLanding = () => {},
+  onNavigateToDomainPortal = () => {},
+  onOpenUniversalWizard
 }) => {
   const [activeTab, setActiveTab] = useState<SaaSActiveTab>('provisioned_schools');
   const [searchQuery, setSearchQuery] = useState('');
@@ -121,6 +130,41 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [selectedInvoiceForReceipt, setSelectedInvoiceForReceipt] = useState<TenantBillingInvoice | null>(null);
+
+  // Universal Onboarding State (Phase 8)
+  const [universalRequests, setUniversalRequests] = useState<UniversalInstanceRecord[]>([]);
+  const [universalTypeFilter, setUniversalTypeFilter] = useState<'all' | UniversalInstanceType>('all');
+  const [universalStatusFilter, setUniversalStatusFilter] = useState<string>('all');
+  const [reviewModalRequest, setReviewModalRequest] = useState<UniversalInstanceRecord | null>(null);
+  const [reviewDecisionNotes, setReviewDecisionNotes] = useState<string>('Approved based on standard architecture profile & cloud security baseline.');
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [actionFeedbackMsg, setActionFeedbackMsg] = useState<{ id: string; type: 'success' | 'error'; message: string } | null>(null);
+  const [activationModalData, setActivationModalData] = useState<{ url: string; token: string; expiresAt: string; instanceId: string } | null>(null);
+  const [copiedActivationLink, setCopiedActivationLink] = useState(false);
+
+  // Load universal onboarding requests on mount
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRequests = async () => {
+      try {
+        await customerOnboardingClient.syncFromBackend();
+        if (isMounted) {
+          setUniversalRequests([...customerOnboardingClient.getInstances()]);
+        }
+      } catch (err) {
+        console.warn('Failed to sync universal onboarding requests:', err);
+      }
+    };
+    fetchRequests();
+    return () => { isMounted = false; };
+  }, []);
+
+  const refreshUniversalRequests = async () => {
+    try {
+      await customerOnboardingClient.syncFromBackend();
+      setUniversalRequests([...customerOnboardingClient.getInstances()]);
+    } catch {}
+  };
 
   // Webhook Simulator State
   const [simWebhookTenantId, setSimWebhookTenantId] = useState<string>(tenants[0]?.id || '');
@@ -207,6 +251,144 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
     }, 600);
   };
 
+  // Phase 8: Universal Onboarding Action Handlers
+  const handleSimulatePayment = async (record: UniversalInstanceRecord) => {
+    setActionLoadingId(record.instanceId);
+    setActionFeedbackMsg(null);
+    try {
+      const pRef = `PSTK_LIVE_REF_${Date.now().toString(16).substring(2, 8)}`;
+      const res = await customerOnboardingClient.verifyPayment(
+        record.instanceId,
+        pRef,
+        record.payment?.provider || 'paystack',
+        record.payment?.amountNGN || 150000
+      );
+      if (res.verified) {
+        setActionFeedbackMsg({
+          id: record.instanceId,
+          type: 'success',
+          message: `Official ${record.payment?.provider?.toUpperCase() || 'PSP'} payment verified successfully (Ref: ${res.reference}). Status updated to verified. Ready for IIAPE provisioning.`
+        });
+        await refreshUniversalRequests();
+      } else {
+        setActionFeedbackMsg({
+          id: record.instanceId,
+          type: 'error',
+          message: (res as any).message || 'Payment verification failed at PSP gateway.'
+        });
+      }
+    } catch (err: any) {
+      setActionFeedbackMsg({
+        id: record.instanceId,
+        type: 'error',
+        message: err.message || 'Payment verification failed.'
+      });
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleExecuteProvisioning = async (record: UniversalInstanceRecord) => {
+    setActionLoadingId(record.instanceId);
+    setActionFeedbackMsg(null);
+    try {
+      await customerOnboardingClient.provisionInstance(record.instanceId);
+      setActionFeedbackMsg({
+        id: record.instanceId,
+        type: 'success',
+        message: `IIAPE Architecture Profile executed successfully for ${record.organization.organizationName}. Database schema and storage bucket provisioned. Ready for final activation checks.`
+      });
+      await refreshUniversalRequests();
+    } catch (err: any) {
+      setActionFeedbackMsg({
+        id: record.instanceId,
+        type: 'error',
+        message: err.message || 'Provisioning execution failed.'
+      });
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleActivateInstance = async (record: UniversalInstanceRecord) => {
+    setActionLoadingId(record.instanceId);
+    setActionFeedbackMsg(null);
+    try {
+      const res = await customerOnboardingClient.activateInstance(record.instanceId);
+      if (res.success && res.activationUrl && res.activationToken && res.expiresAt) {
+        setActivationModalData({
+          url: res.activationUrl,
+          token: res.activationToken,
+          expiresAt: res.expiresAt,
+          instanceId: record.instanceId
+        });
+        setActionFeedbackMsg({
+          id: record.instanceId,
+          type: 'success',
+          message: `Mandatory 5-point verification passed. Secure 72-hour expiring activation link issued.`
+        });
+        await refreshUniversalRequests();
+      } else {
+        setActionFeedbackMsg({
+          id: record.instanceId,
+          type: 'error',
+          message: (res as any).error || 'Mandatory verification checks failed. Ensure DB, storage, security and DNS are healthy.'
+        });
+      }
+    } catch (err: any) {
+      setActionFeedbackMsg({
+        id: record.instanceId,
+        type: 'error',
+        message: err.message || 'Activation failed.'
+      });
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleSubmitReviewDecision = async (approved: boolean) => {
+    if (!reviewModalRequest) return;
+    setActionLoadingId(reviewModalRequest.instanceId);
+    try {
+      await customerOnboardingClient.reviewInstanceRequest(
+        reviewModalRequest.requestId,
+        approved,
+        reviewDecisionNotes
+      );
+      setActionFeedbackMsg({
+        id: reviewModalRequest.instanceId,
+        type: approved ? 'success' : 'error',
+        message: approved 
+          ? `Technical architecture approved for ${reviewModalRequest.organization.organizationName}. Gated deployment authorized.`
+          : `Architecture request rejected with reviewer audit notes.`
+      });
+      setReviewModalRequest(null);
+      await refreshUniversalRequests();
+    } catch (err: any) {
+      setActionFeedbackMsg({
+        id: reviewModalRequest.instanceId,
+        type: 'error',
+        message: err.message || 'Review submission failed.'
+      });
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  // Filtered universal onboarding requests
+  const filteredUniversalRequests = universalRequests.filter(req => {
+    if (universalTypeFilter !== 'all' && req.instanceType !== universalTypeFilter) return false;
+    if (universalStatusFilter !== 'all' && req.provisioningStatus !== universalStatusFilter) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchOrg = req.organization?.organizationName?.toLowerCase().includes(q);
+      const matchContact = req.organization?.contactPersonName?.toLowerCase().includes(q) || req.organization?.contactEmail?.toLowerCase().includes(q);
+      const matchSub = req.subdomain?.toLowerCase().includes(q) || req.instanceId?.toLowerCase().includes(q);
+      if (!matchOrg && !matchContact && !matchSub) return false;
+    }
+    return true;
+  });
+
   return (
     <div className="space-y-8 animate-fadeIn">
       {/* SaaS Master Platform Hero & Control Bar */}
@@ -264,9 +446,19 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
               <span>Connect Provisioned App</span>
             </button>
 
+            {onOpenUniversalWizard && (
+              <button
+                onClick={onOpenUniversalWizard}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/60 flex items-center gap-2 transition-all hover:scale-[1.02]"
+              >
+                <Sparkles className="w-4 h-4 text-emerald-200" />
+                <span>Universal Onboarding (Phase 8)</span>
+              </button>
+            )}
+
             <button
               onClick={onOpenProvisionModal || onOpenCloneModal}
-              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/60 flex items-center gap-2 transition-all hover:scale-[1.02]"
+              className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-950/60 flex items-center gap-2 transition-all hover:scale-[1.02]"
             >
               <Plus className="w-4 h-4" />
               <span>Provision New School</span>
@@ -284,7 +476,7 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
             <DollarSign className="w-4 h-4 text-emerald-400" />
           </div>
           <p className="text-xl font-black text-white">
-            ₦{(metrics.monthlyRecurringRevenueNGN).toLocaleString()}
+            ₦{(metrics?.monthlyRecurringRevenueNGN ?? 0).toLocaleString()}
           </p>
           <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold mt-1">
             <TrendingUp className="w-3 h-3" />
@@ -299,7 +491,7 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
             <Calendar className="w-4 h-4 text-sky-400" />
           </div>
           <p className="text-xl font-black text-white">
-            ₦{(metrics.annualRecurringRevenueNGN).toLocaleString()}
+            ₦{(metrics?.annualRecurringRevenueNGN ?? 0).toLocaleString()}
           </p>
           <span className="text-[10px] text-slate-400 block mt-1">Contracted annual revenue</span>
         </div>
@@ -311,9 +503,9 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
             <Coins className="w-4 h-4 text-purple-400" />
           </div>
           <p className="text-xl font-black text-purple-200">
-            ₦{(metrics.totalLeaseEquityPoolNGN).toLocaleString()}
+            ₦{(metrics?.totalLeaseEquityPoolNGN ?? 0).toLocaleString()}
           </p>
-          <span className="text-[10px] text-purple-400/80 block mt-1">{metrics.leaseToOwnTenants} active buyout contracts</span>
+          <span className="text-[10px] text-purple-400/80 block mt-1">{metrics?.leaseToOwnTenants ?? 0} active buyout contracts</span>
         </div>
 
         {/* Provisioned Schools */}
@@ -323,7 +515,7 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
             <Building2 className="w-4 h-4 text-amber-400" />
           </div>
           <p className="text-xl font-black text-white">
-            {metrics.totalTenants}{' '}
+            {metrics?.totalTenants ?? tenants?.length ?? 0}{' '}
             <span className="text-xs font-normal text-slate-400">Schools</span>
           </p>
           <span className="text-[10px] text-emerald-400 block mt-1">100% Shard Health</span>
@@ -336,7 +528,7 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
             <Users className="w-4 h-4 text-indigo-400" />
           </div>
           <p className="text-xl font-black text-white">
-            {(metrics.totalManagedStudents).toLocaleString()}
+            {(metrics?.totalManagedStudents ?? (metrics as any)?.activeStudentsAcrossFleet ?? 0).toLocaleString()}
           </p>
           <span className="text-[10px] text-slate-400 block mt-1">Across 5 Isolated Schemas</span>
         </div>
@@ -348,6 +540,9 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
           {[
             { id: 'master_overview', label: 'Master SaaS Analytics', icon: TrendingUp },
             { id: 'provisioned_schools', label: 'Provisioned School Fleet', count: filteredTenants.length, icon: Building2 },
+            { id: 'universal_requests', label: 'Universal Onboarding (Phase 8)', count: universalRequests.length, icon: Sparkles },
+            { id: 'instance_lifecycle', label: 'Lifecycle & Migration (Phase 9)', icon: Server },
+            { id: 'production_hardening', label: 'Hardening & Cost (Phase 10)', icon: ShieldCheck },
             { id: 'invoicing_ledger', label: 'Billing Invoices Ledger', count: invoices.length, icon: CreditCard },
             { id: 'lease_contracts', label: 'Lease-to-Own Buyouts', count: metrics.leaseToOwnTenants, icon: Award },
             { id: 'features_matrix', label: 'Feature Flags Matrix', count: OPTIONAL_FEATURE_DEFINITIONS.length, icon: Sliders },
@@ -808,6 +1003,437 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
         </div>
       )}
 
+      {/* TAB: UNIVERSAL ONBOARDING & INSTANCE REQUESTS (PHASE 8) */}
+      {activeTab === 'universal_requests' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Universal Onboarding Banner & Control Bar */}
+          <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3 text-emerald-400" />
+                    PHASE 8 • UNIVERSAL ONBOARDING ENGINE
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono text-[10px]">
+                    Paystack & OPay Verified
+                  </span>
+                </div>
+                <h3 className="font-extrabold text-white text-xl tracking-tight">
+                  Customer Instance Requests & Provisioning Queue
+                </h3>
+                <p className="text-xs text-slate-400 max-w-3xl leading-relaxed mt-1">
+                  Generalised customer onboarding supporting <strong className="text-indigo-300 font-semibold">Full School Management</strong> (Secondary, Combined, Vocational), <strong className="text-amber-300 font-semibold">Custom Architecture</strong> (with strict technical review gates), and <strong className="text-purple-300 font-semibold">Feature Collections</strong> (with automated dependency validation).
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <button
+                  onClick={refreshUniversalRequests}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition-colors"
+                  title="Refresh instance requests from backend"
+                >
+                  <RotateCw className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Refresh</span>
+                </button>
+
+                {onOpenUniversalWizard && (
+                  <button
+                    onClick={onOpenUniversalWizard}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/50 flex items-center gap-2 transition-all hover:scale-[1.02]"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Launch 11-Stage Onboarding Wizard</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Sub-KPI Metrics Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-slate-800">
+              <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
+                <div className="text-[10px] font-mono text-slate-400 uppercase">Total Requests</div>
+                <div className="text-xl font-black text-white mt-0.5">{universalRequests.length}</div>
+                <div className="text-[10px] text-slate-500">Across 3 Archetypes</div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
+                <div className="text-[10px] font-mono text-indigo-400 uppercase">Full School ERP</div>
+                <div className="text-xl font-black text-white mt-0.5">
+                  {universalRequests.filter(r => r.instanceType === 'full_school_management').length}
+                </div>
+                <div className="text-[10px] text-indigo-400/80">Sec / Comb / Voc</div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
+                <div className="text-[10px] font-mono text-amber-400 uppercase">Custom Architecture</div>
+                <div className="text-xl font-black text-white mt-0.5">
+                  {universalRequests.filter(r => r.instanceType === 'custom_architecture').length}
+                </div>
+                <div className="text-[10px] text-amber-400/80">
+                  {universalRequests.filter(r => r.provisioningStatus === 'pending_review').length} Pending Review
+                </div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800/80">
+                <div className="text-[10px] font-mono text-emerald-400 uppercase">Active / Ready</div>
+                <div className="text-xl font-black text-white mt-0.5">
+                  {universalRequests.filter(r => r.provisioningStatus === 'active' || r.provisioningStatus === 'ready_for_activation').length}
+                </div>
+                <div className="text-[10px] text-emerald-400/80">5-Point Verified</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Feedback Banner */}
+          {actionFeedbackMsg && (
+            <div className={`p-4 rounded-2xl border flex items-start justify-between gap-3 animate-fadeIn ${
+              actionFeedbackMsg.type === 'success'
+                ? 'bg-emerald-950/80 border-emerald-800 text-emerald-200'
+                : 'bg-rose-950/80 border-rose-800 text-rose-200'
+            }`}>
+              <div className="flex items-center gap-2.5 text-xs">
+                {actionFeedbackMsg.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                )}
+                <span>{actionFeedbackMsg.message}</span>
+              </div>
+              <button
+                onClick={() => setActionFeedbackMsg(null)}
+                className="text-slate-400 hover:text-slate-200 text-xs shrink-0"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {/* Filter Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-400 font-medium mr-1">Archetype:</span>
+              {[
+                { id: 'all', label: 'All Archetypes' },
+                { id: 'full_school_management', label: 'Full School Management' },
+                { id: 'custom_architecture', label: 'Custom Architecture' },
+                { id: 'feature_collection', label: 'Feature Collection' }
+              ].map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => setUniversalTypeFilter(f.id as any)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
+                    universalTypeFilter === f.id
+                      ? 'bg-emerald-950 text-emerald-300 border-emerald-800 shadow-sm'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400 font-medium">Status:</span>
+              <select
+                value={universalStatusFilter}
+                onChange={(e) => setUniversalStatusFilter(e.target.value)}
+                className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-mono"
+              >
+                <option value="all">All Statuses</option>
+                <option value="pending_review">Pending Review (Custom Arch)</option>
+                <option value="payment_pending">Payment Pending</option>
+                <option value="payment_verified">Payment Verified</option>
+                <option value="provisioning">Provisioning / In Progress</option>
+                <option value="ready_for_activation">Ready for Activation</option>
+                <option value="active">Active & Verified</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Instance Requests List */}
+          {filteredUniversalRequests.length === 0 ? (
+            <div className="p-12 text-center rounded-3xl bg-slate-900/40 border border-slate-800/80 space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-slate-800 flex items-center justify-center text-slate-500 mx-auto">
+                <Layers className="w-7 h-7" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-white">No Instance Requests Found</h4>
+                <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
+                  No requests match the active archetype or status filters. Launch the 11-stage wizard to onboard a new customer instance.
+                </p>
+              </div>
+              {onOpenUniversalWizard && (
+                <button
+                  onClick={onOpenUniversalWizard}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md inline-flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Start New Customer Request</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4">
+              {filteredUniversalRequests.map(req => {
+                const isCustom = req.instanceType === 'custom_architecture';
+                const isFeature = req.instanceType === 'feature_collection';
+                const isSchool = req.instanceType === 'full_school_management';
+                const isLoading = actionLoadingId === req.instanceId;
+
+                return (
+                  <div
+                    key={req.requestId || req.instanceId}
+                    className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 hover:border-slate-700/80 transition-all shadow-xl space-y-5"
+                  >
+                    {/* Header Row */}
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase border ${
+                            isSchool
+                              ? 'bg-indigo-950 text-indigo-300 border-indigo-800'
+                              : isCustom
+                              ? 'bg-amber-950 text-amber-300 border-amber-800'
+                              : 'bg-purple-950 text-purple-300 border-purple-800'
+                          }`}>
+                            {isSchool ? 'Full School Management' : isCustom ? 'Custom Architecture' : 'Feature Collection'}
+                          </span>
+
+                          {req.schoolCategory && (
+                            <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-mono capitalize border border-slate-700">
+                              {req.schoolCategory.replace(/_/g, ' ')}
+                            </span>
+                          )}
+
+                          <span className="text-slate-500 font-mono text-[11px]">•</span>
+                          <span className="text-slate-400 font-mono text-[11px]">{req.organization.registrationNumber}</span>
+                        </div>
+
+                        <h4 className="text-lg font-bold text-white tracking-tight">
+                          {req.organization.organizationName}
+                        </h4>
+
+                        <div className="text-xs text-slate-400 flex items-center gap-2 flex-wrap">
+                          <span>Contact: <strong className="text-slate-200">{req.organization.contactPersonName}</strong></span>
+                          <span>•</span>
+                          <span className="font-mono text-slate-300">{req.organization.contactEmail}</span>
+                          <span>•</span>
+                          <span>{req.organization.contactPhone}</span>
+                        </div>
+                      </div>
+
+                      {/* Status & Subdomain Pills */}
+                      <div className="flex flex-col sm:items-end gap-1.5 shrink-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase border flex items-center gap-1 ${
+                            req.provisioningStatus === 'active'
+                              ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                              : req.provisioningStatus === 'ready_for_activation'
+                              ? 'bg-teal-950 text-teal-300 border-teal-800'
+                              : req.provisioningStatus === 'pending_review'
+                              ? 'bg-amber-950 text-amber-300 border-amber-800'
+                              : req.provisioningStatus === 'payment_pending'
+                              ? 'bg-rose-950 text-rose-300 border-rose-800'
+                              : 'bg-sky-950 text-sky-300 border-sky-800'
+                          }`}>
+                            {req.provisioningStatus === 'active' && <CheckCircle2 className="w-3 h-3" />}
+                            {req.provisioningStatus === 'pending_review' && <Clock className="w-3 h-3" />}
+                            {req.provisioningStatus.replace(/_/g, ' ')}
+                          </span>
+
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
+                            ₦{(req.payment?.amountNGN || req.monthlyPriceNGN || 0).toLocaleString()} ({req.billingModel})
+                          </span>
+                        </div>
+
+                        <div className="text-xs font-mono text-emerald-400">
+                          {req.subdomain}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Technical Specification Chips */}
+                    <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div>
+                        <span className="text-slate-500 text-[10px] font-mono uppercase block mb-1">Database & Shard</span>
+                        <div className="text-slate-200 font-mono font-medium flex items-center gap-1.5">
+                          <Database className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>{req.databaseStrategy?.replace(/_/g, ' ') || 'PostgreSQL Isolated'}</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-slate-500 text-[10px] font-mono uppercase block mb-1">Storage Provider</span>
+                        <div className="text-slate-200 font-mono font-medium flex items-center gap-1.5">
+                          <HardDrive className="w-3.5 h-3.5 text-teal-400" />
+                          <span>{req.storageStrategy?.replace(/_/g, ' ') || 'Platform Storage'}</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-slate-500 text-[10px] font-mono uppercase block mb-1">Payment Verification</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono uppercase border ${
+                            req.payment?.paymentStatus === 'verified'
+                              ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                              : 'bg-amber-950 text-amber-300 border-amber-800'
+                          }`}>
+                            {req.payment?.paymentStatus === 'verified' ? 'Verified Gateway' : 'Pending Gateway'}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400">({req.payment?.provider?.toUpperCase()})</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Selected Modules & Feature Badges */}
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">
+                        Selected Application Modules & Features ({req.selectedModules?.length || 0}):
+                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {req.selectedModules?.map(mod => (
+                          <span
+                            key={mod}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-[11px] font-mono border border-slate-700/80 flex items-center gap-1"
+                          >
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span>{mod.replace(/_/g, ' ')}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Custom Architecture Special Review Box */}
+                    {isCustom && req.customArchitecture && (
+                      <div className="p-3.5 rounded-2xl bg-amber-950/20 border border-amber-800/50 space-y-2 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-amber-300 flex items-center gap-1.5 text-xs">
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            <span>Technical Review Gate Specifications:</span>
+                          </span>
+                          <span className="text-[10px] font-mono text-amber-400">
+                            Components: {req.customArchitecture.applicationComponents?.length || 0}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-300 font-mono text-[11px]">
+                          <div><span className="text-slate-500">APIs:</span> {req.customArchitecture.apiRequirements || 'None specified'}</div>
+                          <div><span className="text-slate-500">Existing Systems:</span> {req.customArchitecture.existingSystems || 'Greenfield'}</div>
+                          <div><span className="text-slate-500">Authentication:</span> {req.customArchitecture.authenticationRequirements || 'Standard OAuth2'}</div>
+                          <div><span className="text-slate-500">Networking:</span> {req.customArchitecture.networkingRequirements || 'Cloud NAT / VPC'}</div>
+                        </div>
+                        {req.customArchitecture.adminReviewNotes && (
+                          <div className="p-2 rounded bg-amber-950/40 border border-amber-800/40 text-[11px] text-amber-200">
+                            <strong>Review Audit:</strong> {req.customArchitecture.adminReviewNotes}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 5-Point Verification Checklist Status */}
+                    <div className="pt-2 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 text-xs font-mono">
+                        <span className="text-slate-400 text-[11px]">5-Point Verification:</span>
+                        <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+                          <span className={`px-2 py-0.5 rounded border ${req.verification?.databaseConnected ? 'bg-emerald-950 text-emerald-300 border-emerald-800' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
+                            DB: {req.verification?.databaseConnected ? 'Passed' : 'Pending'}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded border ${req.verification?.storageReady ? 'bg-emerald-950 text-emerald-300 border-emerald-800' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
+                            Storage: {req.verification?.storageReady ? 'Passed' : 'Pending'}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded border ${req.verification?.securityProfileApplied ? 'bg-emerald-950 text-emerald-300 border-emerald-800' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
+                            Security: {req.verification?.securityProfileApplied ? 'Passed' : 'Pending'}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded border ${req.verification?.dnsProvisioned ? 'bg-emerald-950 text-emerald-300 border-emerald-800' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
+                            DNS: {req.verification?.dnsProvisioned ? 'Passed' : 'Pending'}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded border ${req.verification?.healthPingPassed ? 'bg-emerald-950 text-emerald-300 border-emerald-800' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
+                            Health: {req.verification?.healthPingPassed ? 'Passed' : 'Pending'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Action Triggers */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* 1. Review Trigger for Custom Architecture */}
+                        {isCustom && req.provisioningStatus === 'pending_review' && (
+                          <button
+                            onClick={() => setReviewModalRequest(req)}
+                            disabled={isLoading}
+                            className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-amber-950/40"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            <span>Technical Review</span>
+                          </button>
+                        )}
+
+                        {/* 2. Official PSP Payment Simulation */}
+                        {req.payment?.paymentStatus !== 'verified' && (
+                          <button
+                            onClick={() => handleSimulatePayment(req)}
+                            disabled={isLoading}
+                            className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-emerald-950/40"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" />
+                            <span>Verify {req.payment?.provider?.toUpperCase() || 'PSP'}</span>
+                          </button>
+                        )}
+
+                        {/* 3. Execute Provisioning */}
+                        {(req.provisioningStatus === 'payment_verified' || req.provisioningStatus === 'approved_awaiting_provisioning' || (req.payment?.paymentStatus === 'verified' && req.provisioningStatus !== 'active' && req.provisioningStatus !== 'ready_for_activation')) && (
+                          <button
+                            onClick={() => handleExecuteProvisioning(req)}
+                            disabled={isLoading}
+                            className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-purple-950/40"
+                          >
+                            <Cpu className="w-3.5 h-3.5" />
+                            <span>Run IIAPE Provisioning</span>
+                          </button>
+                        )}
+
+                        {/* 4. Subsystem Verification & Activation */}
+                        {req.provisioningStatus === 'ready_for_activation' && (
+                          <button
+                            onClick={() => handleActivateInstance(req)}
+                            disabled={isLoading}
+                            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-teal-950/40"
+                          >
+                            <Zap className="w-3.5 h-3.5" />
+                            <span>Verify & Activate (72h Link)</span>
+                          </button>
+                        )}
+
+                        {/* 5. Active Details */}
+                        {req.provisioningStatus === 'active' && (
+                          <button
+                            onClick={() => {
+                              if (req.activationUrl && req.activationToken && req.activationExpiresAt) {
+                                setActivationModalData({
+                                  url: req.activationUrl,
+                                  token: req.activationToken,
+                                  expiresAt: req.activationExpiresAt,
+                                  instanceId: req.instanceId
+                                });
+                              } else {
+                                handleActivateInstance(req);
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 font-bold text-xs flex items-center gap-1.5 transition-all border border-emerald-800/60"
+                          >
+                            <Key className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Activation Token</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* TAB 3: BILLING & INVOICING LEDGER */}
       {activeTab === 'invoicing_ledger' && (
         <div className="space-y-6 animate-fadeIn">
@@ -842,9 +1468,9 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
                       <td className="p-3.5 text-emerald-400 font-bold">{inv.invoiceNumber}</td>
                       <td className="p-3.5 font-sans font-semibold text-white">{inv.tenantSchoolName}</td>
                       <td className="p-3.5 text-slate-300 font-sans">{inv.billingPeriod}</td>
-                      <td className="p-3.5 text-slate-300">₦{inv.amount.toLocaleString()}</td>
-                      <td className="p-3.5 text-slate-400">₦{inv.taxVat.toLocaleString()}</td>
-                      <td className="p-3.5 text-emerald-400 font-bold">₦{inv.totalAmount.toLocaleString()}</td>
+                      <td className="p-3.5 text-slate-300">₦{(inv.amount ?? 0).toLocaleString()}</td>
+                      <td className="p-3.5 text-slate-400">₦{(inv.taxVat ?? 0).toLocaleString()}</td>
+                      <td className="p-3.5 text-emerald-400 font-bold">₦{(inv.totalAmount ?? 0).toLocaleString()}</td>
                       <td className="p-3.5">
                         <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-300 text-[10px]">
                           {inv.pspChannel}
@@ -902,15 +1528,15 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
                   <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-2 font-mono">
                     <div className="flex justify-between">
                       <span className="text-slate-400 font-sans">Base License Fee:</span>
-                      <span className="text-slate-200">₦{selectedInvoiceForReceipt.amount.toLocaleString()}</span>
+                      <span className="text-slate-200">₦{(selectedInvoiceForReceipt.amount ?? 0).toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-400 font-sans">FIRS VAT (7.5%):</span>
-                      <span className="text-slate-200">₦{selectedInvoiceForReceipt.taxVat.toLocaleString()}</span>
+                      <span className="text-slate-200">₦{(selectedInvoiceForReceipt.taxVat ?? 0).toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-sm font-bold pt-2 border-t border-slate-800">
                       <span className="text-emerald-400 font-sans">Total Paid:</span>
-                      <span className="text-emerald-400">₦{selectedInvoiceForReceipt.totalAmount.toLocaleString()}</span>
+                      <span className="text-emerald-400">₦{(selectedInvoiceForReceipt.totalAmount ?? 0).toLocaleString()}</span>
                     </div>
                   </div>
 
@@ -946,14 +1572,14 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
 
               <div className="p-4 rounded-2xl bg-purple-950/60 border border-purple-800/80 text-right">
                 <span className="text-xs text-purple-300 block">Total Accumulated Equity</span>
-                <span className="text-2xl font-black text-white font-mono">₦{metrics.totalLeaseEquityPoolNGN.toLocaleString()}</span>
+                <span className="text-2xl font-black text-white font-mono">₦{(metrics?.totalLeaseEquityPoolNGN ?? 0).toLocaleString()}</span>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {tenants.filter(t => t.businessModel === 'lease_to_own' && t.leaseToOwnContract).map(tenant => {
                 const contract = tenant.leaseToOwnContract!;
-                const equityPct = Math.min(100, Math.round((contract.totalEquityAccumulated / contract.totalBuyoutPrice) * 100));
+                const equityPct = Math.min(100, Math.round(((contract.totalEquityAccumulated ?? 0) / (contract.totalBuyoutPrice || 1)) * 100));
 
                 return (
                   <div 
@@ -974,7 +1600,7 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
                     <div className="space-y-1.5">
                       <div className="flex justify-between text-xs font-mono">
                         <span className="text-slate-400">Equity Accumulated:</span>
-                        <span className="text-purple-300 font-bold">{equityPct}% (₦{contract.totalEquityAccumulated.toLocaleString()})</span>
+                        <span className="text-purple-300 font-bold">{equityPct}% (₦{(contract.totalEquityAccumulated ?? 0).toLocaleString()})</span>
                       </div>
                       <div className="w-full h-3 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-800">
                         <div 
@@ -991,11 +1617,11 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
                     <div className="grid grid-cols-2 gap-3 text-xs font-mono p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800">
                       <div>
                         <span className="text-slate-500 block">Total Buyout Value:</span>
-                        <span className="text-white font-bold">₦{contract.totalBuyoutPrice.toLocaleString()}</span>
+                        <span className="text-white font-bold">₦{(contract.totalBuyoutPrice ?? 0).toLocaleString()}</span>
                       </div>
                       <div>
                         <span className="text-slate-500 block">Remaining Balance:</span>
-                        <span className="text-amber-400 font-bold">₦{contract.remainingBuyoutBalance.toLocaleString()}</span>
+                        <span className="text-amber-400 font-bold">₦{(contract.remainingBuyoutBalance ?? 0).toLocaleString()}</span>
                       </div>
                     </div>
 
@@ -1049,12 +1675,12 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
                           {feat.category}
                         </span>
                       </td>
-                      <td className="p-3.5 font-mono text-slate-300">₦{feat.monthlyPrice.toLocaleString()}/mo</td>
+                      <td className="p-3.5 font-mono text-slate-300">₦{(feat.monthlyPrice ?? 0).toLocaleString()}/mo</td>
                       {tenants.map(t => {
                         const isEnabled = tenantFeatureStates[t.id]?.[feat.key] ?? t.enabledFeatures[feat.key];
 
                         return (
-                          <td key={t.id} className="p-3.5 text-center">
+                          <td key={`${t.id}-${feat.key}`} className="p-3.5 text-center">
                             <button
                               onClick={() => handleToggleMatrixFeature(t.id, feat.key)}
                               className={`w-7 h-7 rounded-lg inline-flex items-center justify-center transition-all ${
@@ -1186,6 +1812,226 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
                   All biometric facial markers, CBT questions, and student grade ledgers are encrypted at rest with AES-256 and localized within Nigerian sovereign data partitions.
                 </p>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: INSTANCE LIFECYCLE & ARCHITECTURE MIGRATION (PHASE 9) */}
+      {activeTab === 'instance_lifecycle' && (
+        <InstanceLifecycleCenter />
+      )}
+
+      {/* TAB: PRODUCTION HARDENING, SECURITY & COST GOVERNANCE (PHASE 10) */}
+      {activeTab === 'production_hardening' && (
+        <ProductionHardeningDeck />
+      )}
+
+      {/* MODAL 1: TECHNICAL ARCHITECTURE REVIEW GATE */}
+      {reviewModalRequest && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#0F172A] border border-slate-800 rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-5 animate-scaleUp">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-800 font-mono text-[10px] font-bold uppercase">
+                    TECHNICAL REVIEW GATE
+                  </span>
+                  <span className="text-slate-400 font-mono text-xs">{reviewModalRequest.requestId}</span>
+                </div>
+                <h3 className="text-lg font-bold text-white tracking-tight">
+                  {reviewModalRequest.organization.organizationName}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Contact: {reviewModalRequest.organization.contactPersonName} ({reviewModalRequest.organization.contactEmail})
+                </p>
+              </div>
+              <button
+                onClick={() => setReviewModalRequest(null)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Architecture Non-Negotiable Notice */}
+            <div className="p-3.5 rounded-2xl bg-amber-950/30 border border-amber-800/60 text-xs text-amber-200 flex items-start gap-2.5">
+              <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <strong>Architectural Governance Directive:</strong> Complex custom requests must be formally reviewed. Arbitrary customer-supplied binary or container code must never be deployed automatically.
+              </div>
+            </div>
+
+            {/* Specification breakdown */}
+            <div className="space-y-3 font-mono text-xs">
+              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-2">
+                <div className="text-slate-400 text-[10px] uppercase font-bold">Application Components</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {reviewModalRequest.customArchitecture?.applicationComponents?.map(c => (
+                    <span key={c} className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700">
+                      {c}
+                    </span>
+                  )) || <span className="text-slate-500">None specified</span>}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800/80">
+                  <div className="text-slate-400 text-[10px] uppercase font-bold">API Requirements</div>
+                  <div className="text-slate-200 mt-1">{reviewModalRequest.customArchitecture?.apiRequirements || 'Standard REST APIs'}</div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800/80">
+                  <div className="text-slate-400 text-[10px] uppercase font-bold">Existing Systems</div>
+                  <div className="text-slate-200 mt-1">{reviewModalRequest.customArchitecture?.existingSystems || 'Greenfield'}</div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800/80">
+                  <div className="text-slate-400 text-[10px] uppercase font-bold">Authentication</div>
+                  <div className="text-slate-200 mt-1">{reviewModalRequest.customArchitecture?.authenticationRequirements || 'OAuth2 / SAML'}</div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800/80">
+                  <div className="text-slate-400 text-[10px] uppercase font-bold">Networking & VPC</div>
+                  <div className="text-slate-200 mt-1">{reviewModalRequest.customArchitecture?.networkingRequirements || 'Cloud NAT / VPC Peering'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Review Decision Notes */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 block">
+                Lead Architect Review Audit Notes:
+              </label>
+              <textarea
+                value={reviewDecisionNotes}
+                onChange={(e) => setReviewDecisionNotes(e.target.value)}
+                rows={3}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 font-mono focus:outline-none focus:border-amber-500 resize-none"
+                placeholder="Enter audit rationale for approval or rejection..."
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setReviewModalRequest(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSubmitReviewDecision(false)}
+                disabled={actionLoadingId === reviewModalRequest.instanceId}
+                className="px-4 py-2 rounded-xl bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800 text-xs font-bold transition-colors"
+              >
+                Reject Request
+              </button>
+              <button
+                onClick={() => handleSubmitReviewDecision(true)}
+                disabled={actionLoadingId === reviewModalRequest.instanceId}
+                className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>Approve Architecture Profile</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: 72-HOUR ACTIVATION LINK MODAL */}
+      {activationModalData && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F172A] border border-slate-800 rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-5 animate-scaleUp">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  <Zap className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white tracking-tight">
+                    Instance Verified & Activated
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Mandatory 5-point subsystem checks passed
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActivationModalData(null)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Checklist summary */}
+            <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 text-xs font-mono space-y-1.5">
+              <div className="flex items-center justify-between text-emerald-400">
+                <span>Database Connection (PostgreSQL Shard):</span>
+                <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Passed</span>
+              </div>
+              <div className="flex items-center justify-between text-emerald-400">
+                <span>Storage Bucket & Permissions:</span>
+                <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Passed</span>
+              </div>
+              <div className="flex items-center justify-between text-emerald-400">
+                <span>Security Profile & HMAC Cryptographic Keys:</span>
+                <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Passed</span>
+              </div>
+              <div className="flex items-center justify-between text-emerald-400">
+                <span>Subdomain Routing & DNS:</span>
+                <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Passed</span>
+              </div>
+              <div className="flex items-center justify-between text-emerald-400">
+                <span>Subsystem Health Ping:</span>
+                <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Passed</span>
+              </div>
+            </div>
+
+            {/* Expiring activation URL display */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-300 block">
+                Secure 72-Hour Expiring Activation Link:
+              </label>
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 font-mono text-xs text-emerald-300 break-all select-all flex items-center justify-between gap-2">
+                <span>{activationModalData.url}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                <span>Expires: {new Date(activationModalData.expiresAt).toLocaleString()}</span>
+                <span>Role: administrator_invitee</span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(activationModalData.url);
+                  setCopiedActivationLink(true);
+                  setTimeout(() => setCopiedActivationLink(false), 2500);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 flex items-center gap-2 transition-colors"
+              >
+                {copiedActivationLink ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span>Copied to Clipboard!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4 text-slate-400" />
+                    <span>Copy Activation Link</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => setActivationModalData(null)}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md"
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>

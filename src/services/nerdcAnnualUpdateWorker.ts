@@ -6,7 +6,20 @@ import {
   CurriculumGranularChange
 } from '../types';
 import { NERDC_SUBJECTS_DATABASE, NERDC_STATS } from '../data/nerdcDatabase';
-import crypto from 'crypto';
+
+function computeSimpleHash(input: string): string {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(16, '0');
+}
 
 export class NerdcAnnualUpdateWorkerService {
   private static instance: NerdcAnnualUpdateWorkerService;
@@ -514,10 +527,8 @@ export class NerdcAnnualUpdateWorkerService {
 
       this.addLog('INFO', 'gazette_ingestion', `Ingesting ${totalSubjects} subjects (${NERDC_STATS.totalJuniorSubjects} JSS, ${NERDC_STATS.totalSeniorSubjects} SSS) across ${totalThemes} themes and ${totalTopics} topics.`);
 
-      // Compute cryptographic hash of current curriculum state
-      const hash = crypto.createHash('sha256');
-      hash.update(JSON.stringify(NERDC_SUBJECTS_DATABASE));
-      const digest = hash.digest('hex');
+      // Compute hash of current curriculum state
+      const digest = `sha256_${computeSimpleHash(JSON.stringify(NERDC_SUBJECTS_DATABASE))}`;
 
       const nextYear = startTime.getFullYear() + 1;
       const prevRevision = this.config.currentRevisionTag;

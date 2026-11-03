@@ -1,0 +1,13 @@
+[
+  {
+    "id": "att_001",
+    "tenantId": "tenant-greenfield-01",
+    "studentId": "usr-student-01",
+    "studentName": "Chinedu Eze",
+    "classGrade": "SS 2",
+    "date": "2026-11-03",
+    "status": "Present",
+    "method": "RFID_GATE",
+    "timestamp": "2026-11-03T06:11:24.755Z"
+  }
+]

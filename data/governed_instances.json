@@ -1,0 +1,513 @@
+[
+  {
+    "instanceId": "inst_greenwood_002",
+    "tenantId": "cust_greenwood_abuja",
+    "organizationName": "Greenwood High School, Abuja",
+    "subdomain": "greenwood.curriculumflow.com.ng",
+    "customDomain": "portal.greenwood.sch.ng",
+    "lifecycleState": "active",
+    "deploymentTier": "dedicated_cloud_run_service",
+    "versionManifest": {
+      "applicationVersion": "v3.2.0",
+      "deploymentVersion": "dep_rollback_1793688012549",
+      "databaseSchemaVersion": "pg_schema_v14_2",
+      "architectureProfileVersion": 2,
+      "featureVersion": "feat_v2.4",
+      "releaseDate": "2026-11-03T06:40:12.549Z",
+      "changelogNotes": "Rolled back to snapshot snap_rollback_inst_greenwood_002_1793688012548 (v3.2.0) by Automated Test Runner"
+    },
+    "resources": {
+      "cpuCores": 2,
+      "memoryGiB": 4,
+      "minInstances": 1,
+      "maxInstances": 8,
+      "cloudRunServiceUrl": "https://cf-greenwood-abuja-qgnm52ow7ssvvowbf2375u.a.run.app",
+      "cloudRunRegion": "europe-west2",
+      "databaseConnectionsLimit": 100,
+      "storageQuotaGb": 200,
+      "currentStorageUsedGb": 42.8
+    },
+    "monitoring": {
+      "instanceId": "inst_greenwood_002",
+      "timestamp": "2026-11-03T04:08:29.938Z",
+      "applicationHealth": "healthy",
+      "uptimePercentage": 99.98,
+      "averageLatencyMs": 42,
+      "cloudRunHealth": {
+        "status": "healthy",
+        "cpuUtilizationPercent": 28.4,
+        "memoryUtilizationPercent": 41.2,
+        "activeContainerCount": 2
+      },
+      "databaseAvailability": {
+        "engine": "PostgreSQL 16 LTS",
+        "status": "online",
+        "connectionPoolUtilizationPercent": 24,
+        "activeConnections": 24,
+        "queryLatencyMs": 6.8
+      },
+      "storageConnectivity": {
+        "provider": "Google Cloud Storage (Platform)",
+        "status": "connected",
+        "bandwidthUsageMbps": 18.2,
+        "readLatencyMs": 14.2
+      },
+      "apiAvailability": {
+        "httpSuccessRatePercent": 99.94,
+        "requestsPerMinute": 1420,
+        "p95ResponseTimeMs": 88,
+        "active5xxErrors": 0
+      },
+      "recentSecurityEventsCount": 0,
+      "provisioningFailuresCount": 0
+    },
+    "databaseShardId": "pg_shard_cluster_01",
+    "storageStrategy": "platform_storage",
+    "storageProvider": "google_cloud_storage",
+    "billingModel": "yearly",
+    "monthlyPriceNGN": 180000,
+    "activeStudents": 1200,
+    "createdAt": "2025-03-01T09:00:00Z",
+    "updatedAt": "2026-11-03T06:40:12.552Z",
+    "lastStateTransitionAt": "2026-11-03T06:40:12.552Z",
+    "history": [
+      {
+        "timestamp": "2026-11-03T06:40:12.552Z",
+        "fromState": "migration_pending",
+        "toState": "active",
+        "actor": "Test Runner",
+        "reason": "Cleaned up migration test state"
+      },
+      {
+        "timestamp": "2026-11-03T06:40:12.550Z",
+        "fromState": "active",
+        "toState": "migration_pending",
+        "actor": "Solutions Architect Test Runner",
+        "reason": "Architecture migration scheduled to dedicated_gcp_project"
+      },
+      {
+        "timestamp": "2026-11-03T06:40:12.546Z",
+        "fromState": "degraded",
+        "toState": "active",
+        "actor": "Automated Test Runner",
+        "reason": "Reverted after test"
+      },
+      {
+        "timestamp": "2026-11-03T06:40:12.545Z",
+        "fromState": "active",
+        "toState": "degraded",
+        "actor": "Automated Test Runner",
+        "reason": "Test degradation"
+      },
+      {
+        "timestamp": "2026-11-03T06:26:00.823Z",
+        "fromState": "migration_pending",
+        "toState": "active",
+        "actor": "Test Runner",
+        "reason": "Cleaned up migration test state"
+      },
+      {
+        "timestamp": "2026-11-03T06:26:00.822Z",
+        "fromState": "active",
+        "toState": "migration_pending",
+        "actor": "Solutions Architect Test Runner",
+        "reason": "Architecture migration scheduled to dedicated_gcp_project"
+      },
+      {
+        "timestamp": "2026-11-03T06:26:00.817Z",
+        "fromState": "degraded",
+        "toState": "active",
+        "actor": "Automated Test Runner",
+        "reason": "Reverted after test"
+      },
+      {
+        "timestamp": "2026-11-03T06:26:00.816Z",
+        "fromState": "active",
+        "toState": "degraded",
+        "actor": "Automated Test Runner",
+        "reason": "Test degradation"
+      },
+      {
+        "timestamp": "2026-11-03T06:18:23.217Z",
+        "fromState": "migration_pending",
+        "toState": "active",
+        "actor": "Test Runner",
+        "reason": "Cleaned up migration test state"
+      },
+      {
+        "timestamp": "2026-11-03T06:18:23.215Z",
+        "fromState": "active",
+        "toState": "migration_pending",
+        "actor": "Solutions Architect Test Runner",
+        "reason": "Architecture migration scheduled to dedicated_gcp_project"
+      },
+      {
+        "timestamp": "2026-11-03T06:18:23.209Z",
+        "fromState": "degraded",
+        "toState": "active",
+        "actor": "Automated Test Runner",
+        "reason": "Reverted after test"
+      },
+      {
+        "timestamp": "2026-11-03T06:18:23.208Z",
+        "fromState": "active",
+        "toState": "degraded",
+        "actor": "Automated Test Runner",
+        "reason": "Test degradation"
+      },
+      {
+        "timestamp": "2026-11-03T04:47:40.405Z",
+        "fromState": "migration_pending",
+        "toState": "active",
+        "actor": "Test Runner",
+        "reason": "Cleaned up migration test state"
+      },
+      {
+        "timestamp": "2026-11-03T04:47:40.403Z",
+        "fromState": "active",
+        "toState": "migration_pending",
+        "actor": "Solutions Architect Test Runner",
+        "reason": "Architecture migration scheduled to dedicated_gcp_project"
+      },
+      {
+        "timestamp": "2026-11-03T04:47:40.398Z",
+        "fromState": "degraded",
+        "toState": "active",
+        "actor": "Automated Test Runner",
+        "reason": "Reverted after test"
+      },
+      {
+        "timestamp": "2026-11-03T04:47:40.397Z",
+        "fromState": "active",
+        "toState": "degraded",
+        "actor": "Automated Test Runner",
+        "reason": "Test degradation"
+      },
+      {
+        "timestamp": "2026-11-03T04:22:11.286Z",
+        "fromState": "migration_pending",
+        "toState": "active",
+        "actor": "Test Runner",
+        "reason": "Cleaned up migration test state"
+      },
+      {
+        "timestamp": "2026-11-03T04:22:11.285Z",
+        "fromState": "active",
+        "toState": "migration_pending",
+        "actor": "Solutions Architect Test Runner",
+        "reason": "Architecture migration scheduled to dedicated_gcp_project"
+      },
+      {
+        "timestamp": "2026-11-03T04:22:11.280Z",
+        "fromState": "degraded",
+        "toState": "active",
+        "actor": "Automated Test Runner",
+        "reason": "Reverted after test"
+      },
+      {
+        "timestamp": "2026-11-03T04:22:11.277Z",
+        "fromState": "active",
+        "toState": "degraded",
+        "actor": "Automated Test Runner",
+        "reason": "Test degradation"
+      },
+      {
+        "timestamp": "2026-11-03T04:22:02.990Z",
+        "fromState": "migration_pending",
+        "toState": "active",
+        "actor": "Test Runner",
+        "reason": "Cleaned up migration test state"
+      },
+      {
+        "timestamp": "2026-11-03T04:22:02.986Z",
+        "fromState": "active",
+        "toState": "migration_pending",
+        "actor": "Solutions Architect Test Runner",
+        "reason": "Architecture migration scheduled to dedicated_gcp_project"
+      },
+      {
+        "timestamp": "2026-11-03T04:22:02.979Z",
+        "fromState": "degraded",
+        "toState": "active",
+        "actor": "Automated Test Runner",
+        "reason": "Reverted after test"
+      },
+      {
+        "timestamp": "2026-11-03T04:22:02.976Z",
+        "fromState": "active",
+        "toState": "degraded",
+        "actor": "Automated Test Runner",
+        "reason": "Test degradation"
+      },
+      {
+        "timestamp": "2026-11-03T04:21:56.649Z",
+        "fromState": "migration_pending",
+        "toState": "active",
+        "actor": "Test Runner",
+        "reason": "Cleaned up migration test state"
+      },
+      {
+        "timestamp": "2026-11-03T04:21:56.648Z",
+        "fromState": "active",
+        "toState": "migration_pending",
+        "actor": "Solutions Architect Test Runner",
+        "reason": "Architecture migration scheduled to dedicated_gcp_project"
+      },
+      {
+        "timestamp": "2026-11-03T04:21:56.643Z",
+        "fromState": "degraded",
+        "toState": "active",
+        "actor": "Automated Test Runner",
+        "reason": "Reverted after test"
+      },
+      {
+        "timestamp": "2026-11-03T04:21:56.640Z",
+        "fromState": "active",
+        "toState": "degraded",
+        "actor": "Automated Test Runner",
+        "reason": "Test degradation"
+      },
+      {
+        "timestamp": "2026-11-03T04:19:53.196Z",
+        "fromState": "migration_pending",
+        "toState": "active",
+        "actor": "Test Runner",
+        "reason": "Cleaned up migration test state"
+      },
+      {
+        "timestamp": "2026-11-03T04:19:53.194Z",
+        "fromState": "active",
+        "toState": "migration_pending",
+        "actor": "Solutions Architect Test Runner",
+        "reason": "Architecture migration scheduled to dedicated_gcp_project"
+      },
+      {
+        "timestamp": "2026-11-03T04:19:53.188Z",
+        "fromState": "degraded",
+        "toState": "active",
+        "actor": "Automated Test Runner",
+        "reason": "Reverted after test"
+      },
+      {
+        "timestamp": "2026-11-03T04:19:53.186Z",
+        "fromState": "active",
+        "toState": "degraded",
+        "actor": "Automated Test Runner",
+        "reason": "Test degradation"
+      },
+      {
+        "timestamp": "2026-11-03T04:08:29.986Z",
+        "fromState": "migration_pending",
+        "toState": "active",
+        "actor": "Test Runner",
+        "reason": "Cleaned up migration test state"
+      },
+      {
+        "timestamp": "2026-11-03T04:08:29.985Z",
+        "fromState": "active",
+        "toState": "migration_pending",
+        "actor": "Solutions Architect Test Runner",
+        "reason": "Architecture migration scheduled to dedicated_gcp_project"
+      },
+      {
+        "timestamp": "2026-11-03T04:08:29.979Z",
+        "fromState": "degraded",
+        "toState": "active",
+        "actor": "Automated Test Runner",
+        "reason": "Reverted after test"
+      },
+      {
+        "timestamp": "2026-11-03T04:08:29.977Z",
+        "fromState": "active",
+        "toState": "degraded",
+        "actor": "Automated Test Runner",
+        "reason": "Test degradation"
+      },
+      {
+        "timestamp": "2026-03-01T09:00:00Z",
+        "fromState": "approved",
+        "toState": "provisioning",
+        "actor": "platform_orchestration_engine",
+        "reason": "Automated IIAPE provisioning pipeline started"
+      },
+      {
+        "timestamp": "2026-03-01T09:30:00Z",
+        "fromState": "provisioning",
+        "toState": "active",
+        "actor": "platform_activation_engine",
+        "reason": "5-point subsystem verification passed. Production activation complete."
+      }
+    ],
+    "previousLifecycleState": "migration_pending",
+    "stateTransitionReason": "Cleaned up migration test state",
+    "activeMigrationId": "mig_inst_greenwood_002_1793688012550"
+  },
+  {
+    "instanceId": "inst_leadway_enterprise_001",
+    "tenantId": "cust_leadway_consortium",
+    "organizationName": "Leadway Education Consortium Nigeria",
+    "subdomain": "leadway.curriculumserver.com.ng",
+    "customDomain": "portal.leadwayschools.com.ng",
+    "lifecycleState": "active",
+    "deploymentTier": "dedicated_gcp_project",
+    "versionManifest": {
+      "applicationVersion": "v3.2.0",
+      "deploymentVersion": "dep_2026_02_22_01",
+      "databaseSchemaVersion": "pg_schema_v14_2",
+      "architectureProfileVersion": 3,
+      "featureVersion": "feat_v2.4",
+      "releaseDate": "2026-02-22T10:00:00Z",
+      "changelogNotes": "Enterprise sovereign cluster with Cloud SQL Enterprise and SAP integration"
+    },
+    "resources": {
+      "cpuCores": 8,
+      "memoryGiB": 32,
+      "minInstances": 2,
+      "maxInstances": 20,
+      "cloudRunServiceUrl": "https://leadway-sovereign-qgnm52ow7ssvvowbf2375u.a.run.app",
+      "cloudRunRegion": "europe-west2",
+      "databaseConnectionsLimit": 500,
+      "storageQuotaGb": 2000,
+      "currentStorageUsedGb": 318.5
+    },
+    "monitoring": {
+      "instanceId": "inst_leadway_enterprise_001",
+      "timestamp": "2026-11-03T04:08:29.938Z",
+      "applicationHealth": "healthy",
+      "uptimePercentage": 99.99,
+      "averageLatencyMs": 31,
+      "cloudRunHealth": {
+        "status": "healthy",
+        "cpuUtilizationPercent": 34.1,
+        "memoryUtilizationPercent": 48.7,
+        "activeContainerCount": 4
+      },
+      "databaseAvailability": {
+        "engine": "Cloud SQL PostgreSQL Enterprise (Dedicated Project)",
+        "status": "online",
+        "connectionPoolUtilizationPercent": 32,
+        "activeConnections": 68,
+        "queryLatencyMs": 4.1
+      },
+      "storageConnectivity": {
+        "provider": "Hybrid: Private Google Drive + Platform GCS",
+        "status": "connected",
+        "bandwidthUsageMbps": 64.5,
+        "readLatencyMs": 11.5
+      },
+      "apiAvailability": {
+        "httpSuccessRatePercent": 99.98,
+        "requestsPerMinute": 4820,
+        "p95ResponseTimeMs": 64,
+        "active5xxErrors": 0
+      },
+      "recentSecurityEventsCount": 0,
+      "provisioningFailuresCount": 0
+    },
+    "databaseShardId": "pg_shard_cluster_02",
+    "storageStrategy": "hybrid",
+    "storageProvider": "google_drive",
+    "billingModel": "lease_to_own",
+    "monthlyPriceNGN": 650000,
+    "activeStudents": 4500,
+    "createdAt": "2025-02-18T11:00:00Z",
+    "updatedAt": "2026-11-03T04:08:29.938Z",
+    "lastStateTransitionAt": "2026-02-22T15:00:00Z",
+    "history": [
+      {
+        "timestamp": "2026-02-22T14:30:00Z",
+        "fromState": "approved",
+        "toState": "provisioning",
+        "actor": "solutions_architect_chidi",
+        "reason": "Dedicated GCP project bootstrap"
+      },
+      {
+        "timestamp": "2026-02-22T15:00:00Z",
+        "fromState": "provisioning",
+        "toState": "active",
+        "actor": "platform_activation_engine",
+        "reason": "Enterprise sovereign cluster active"
+      }
+    ]
+  },
+  {
+    "instanceId": "inst_cbt_tutorial_centre_002",
+    "tenantId": "cust_apex_cbt_center",
+    "organizationName": "Apex JAMB & WAEC CBT Testing Centre",
+    "subdomain": "apexcbt.curriculumflow.com.ng",
+    "lifecycleState": "active",
+    "deploymentTier": "shared_infrastructure",
+    "versionManifest": {
+      "applicationVersion": "v3.1.5",
+      "deploymentVersion": "dep_2026_03_05_01",
+      "databaseSchemaVersion": "pg_schema_v14_1",
+      "architectureProfileVersion": 1,
+      "featureVersion": "feat_v2.3",
+      "releaseDate": "2026-03-05T08:00:00Z",
+      "changelogNotes": "CBT Examination Engine & Broadsheet processing package"
+    },
+    "resources": {
+      "cpuCores": 1,
+      "memoryGiB": 2,
+      "minInstances": 0,
+      "maxInstances": 4,
+      "cloudRunServiceUrl": "https://cf-shared-qgnm52ow7ssvvowbf2375u.a.run.app",
+      "cloudRunRegion": "europe-west2",
+      "databaseConnectionsLimit": 50,
+      "storageQuotaGb": 100,
+      "currentStorageUsedGb": 14.2
+    },
+    "monitoring": {
+      "instanceId": "inst_cbt_tutorial_centre_002",
+      "timestamp": "2026-11-03T04:08:29.938Z",
+      "applicationHealth": "healthy",
+      "uptimePercentage": 99.95,
+      "averageLatencyMs": 48,
+      "cloudRunHealth": {
+        "status": "healthy",
+        "cpuUtilizationPercent": 19.5,
+        "memoryUtilizationPercent": 32,
+        "activeContainerCount": 1
+      },
+      "databaseAvailability": {
+        "engine": "PostgreSQL 16 LTS (Schema Isolated)",
+        "status": "online",
+        "connectionPoolUtilizationPercent": 18,
+        "activeConnections": 9,
+        "queryLatencyMs": 8.2
+      },
+      "storageConnectivity": {
+        "provider": "Google Cloud Storage",
+        "status": "connected",
+        "bandwidthUsageMbps": 8.4,
+        "readLatencyMs": 16
+      },
+      "apiAvailability": {
+        "httpSuccessRatePercent": 99.92,
+        "requestsPerMinute": 620,
+        "p95ResponseTimeMs": 104,
+        "active5xxErrors": 0
+      },
+      "recentSecurityEventsCount": 0,
+      "provisioningFailuresCount": 0
+    },
+    "databaseShardId": "pg_shard_cluster_01",
+    "storageStrategy": "platform_storage",
+    "storageProvider": "google_cloud_storage",
+    "billingModel": "monthly",
+    "monthlyPriceNGN": 95000,
+    "activeStudents": 320,
+    "createdAt": "2025-03-05T08:30:00Z",
+    "updatedAt": "2026-11-03T04:08:29.938Z",
+    "lastStateTransitionAt": "2026-03-05T09:30:00Z",
+    "history": [
+      {
+        "timestamp": "2026-03-05T09:30:00Z",
+        "fromState": "provisioning",
+        "toState": "active",
+        "actor": "platform_activation_engine",
+        "reason": "Feature Collection deployment verified"
+      }
+    ]
+  }
+]

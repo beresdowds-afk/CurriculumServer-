@@ -12,6 +12,7 @@ import {
   INITIAL_WEBHOOK_LOGS,
   INITIAL_PSP_PAYMENT_WEBHOOKS
 } from '../services/webhookDispatcher';
+import { INITIAL_PROVISIONED_TENANTS } from '../mockCurriculumServerData';
 import { 
   Code, 
   Send, 
@@ -41,16 +42,17 @@ import {
 } from 'lucide-react';
 
 interface ApiWebhooksPortalProps {
-  tenants: TenantSchoolApp[];
+  tenants?: TenantSchoolApp[];
   onBack?: () => void;
 }
 
 export const ApiWebhooksPortal: React.FC<ApiWebhooksPortalProps> = ({
-  tenants,
+  tenants = INITIAL_PROVISIONED_TENANTS,
   onBack
 }) => {
+  const safeTenants: TenantSchoolApp[] = (tenants && tenants.length > 0) ? tenants : INITIAL_PROVISIONED_TENANTS;
   const [activeSubTab, setActiveSubTab] = useState<'api_docs' | 'payment_webhooks' | 'webhooks' | 'widgets'>('payment_webhooks');
-  const [selectedTenantId, setSelectedTenantId] = useState(tenants[0]?.id || '');
+  const [selectedTenantId, setSelectedTenantId] = useState<string>(() => safeTenants[0]?.id || 'school_01');
   const [testEndpointUrl, setTestEndpointUrl] = useState('');
   const [isDispatchingTest, setIsDispatchingTest] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -59,7 +61,7 @@ export const ApiWebhooksPortal: React.FC<ApiWebhooksPortalProps> = ({
   const [pspProviderFilter, setPspProviderFilter] = useState<'all' | 'paystack' | 'opay'>('all');
   const [pspStatusFilter, setPspStatusFilter] = useState<'all' | 'paid' | 'pending' | 'failed'>('all');
   const [pspSearchQuery, setPspSearchQuery] = useState('');
-  const [selectedPspEvent, setSelectedPspEvent] = useState<PspPaymentWebhookEvent | null>(INITIAL_PSP_PAYMENT_WEBHOOKS[0]);
+  const [selectedPspEvent, setSelectedPspEvent] = useState<PspPaymentWebhookEvent | null>(INITIAL_PSP_PAYMENT_WEBHOOKS[0] || null);
   const [paymentEvents, setPaymentEvents] = useState<PspPaymentWebhookEvent[]>(() => globalWebhookDispatcher.getPspPaymentWebhooks());
   const [retryingEventId, setRetryingEventId] = useState<string | null>(null);
   const [retryToast, setRetryToast] = useState<{ message: string; type: 'success' | 'info' | 'failed' } | null>(null);
@@ -71,7 +73,18 @@ export const ApiWebhooksPortal: React.FC<ApiWebhooksPortalProps> = ({
   const [simAmountNgn, setSimAmountNgn] = useState<number>(120000);
   const [simInvoiceNo, setSimInvoiceNo] = useState<string>('INV-CS-2026-0809');
 
-  const currentTenant = tenants.find(t => t.id === selectedTenantId) || tenants[0];
+  const currentTenant: TenantSchoolApp = safeTenants.find(t => t.id === selectedTenantId) || safeTenants[0] || {
+    id: 'school_demo',
+    schoolName: "King's College Lagos",
+    subdomain: 'kings',
+    domain: 'kings.curriculumflow.ng',
+    appId: 'cs_app_kings_2026',
+    publishableKey: 'cs_live_pub_kings_99214',
+    apiKey: 'cs_live_sec_kings_99214',
+    status: 'ACTIVE',
+    databaseTier: 'SHARED_MULTITENANT'
+  } as unknown as TenantSchoolApp;
+
   const subscriptions = globalWebhookDispatcher.getSubscriptions(currentTenant?.id);
   const webhookLogs = globalWebhookDispatcher.getLogs(currentTenant?.id);
 
@@ -198,7 +211,7 @@ export const ApiWebhooksPortal: React.FC<ApiWebhooksPortalProps> = ({
             onChange={e => setSelectedTenantId(e.target.value)}
             className="bg-slate-950 border border-slate-800 text-slate-200 text-xs px-3 py-2 rounded-xl focus:outline-none cursor-pointer"
           >
-            {tenants.map(t => (
+            {safeTenants.map(t => (
               <option key={t.id} value={t.id}>{t.schoolName}</option>
             ))}
           </select>
@@ -673,7 +686,7 @@ export const ApiWebhooksPortal: React.FC<ApiWebhooksPortalProps> = ({
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
             <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
               <Key className="w-4 h-4 text-emerald-400" />
-              <span>Authentication Headers for {currentTenant.schoolName}</span>
+              <span>Authentication Headers for {currentTenant?.schoolName || 'Instance'}</span>
             </h3>
             <p className="text-xs text-slate-400">
               All requests must include your public App ID and publishable token or bearer secret.
@@ -681,18 +694,18 @@ export const ApiWebhooksPortal: React.FC<ApiWebhooksPortalProps> = ({
 
             <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 font-mono text-xs text-slate-300 space-y-1.5">
               <div className="flex items-center justify-between">
-                <span>X-Curriculum-App-Id: <strong className="text-emerald-400">{currentTenant.appId}</strong></span>
+                <span>X-Curriculum-App-Id: <strong className="text-emerald-400">{currentTenant?.appId || currentTenant?.id || 'cs_app_demo'}</strong></span>
                 <button
-                  onClick={() => handleCopy(currentTenant.appId, 'app_id')}
+                  onClick={() => handleCopy(currentTenant?.appId || currentTenant?.id || 'cs_app_demo', 'app_id')}
                   className="text-slate-400 hover:text-slate-200 cursor-pointer"
                 >
                   {copiedKey === 'app_id' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
               </div>
               <div className="flex items-center justify-between">
-                <span>Authorization: Bearer <span className="text-slate-500">{currentTenant.publishableKey}</span></span>
+                <span>Authorization: Bearer <span className="text-slate-500">{currentTenant?.publishableKey || currentTenant?.appSecret || 'cf_pub_live_demo'}</span></span>
                 <button
-                  onClick={() => handleCopy(currentTenant.publishableKey, 'pub_key')}
+                  onClick={() => handleCopy(currentTenant?.publishableKey || currentTenant?.appSecret || 'cf_pub_live_demo', 'pub_key')}
                   className="text-slate-400 hover:text-slate-200 cursor-pointer"
                 >
                   {copiedKey === 'pub_key' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -707,25 +720,25 @@ export const ApiWebhooksPortal: React.FC<ApiWebhooksPortalProps> = ({
                 method: 'GET',
                 path: '/api/v1/curriculum',
                 desc: 'Query official NERDC subject standards, themes, topics, and performance objectives.',
-                sample: `curl -X GET "https://api.curriculumserver.ng/api/v1/curriculum?level=Senior%20Secondary&grade=SS%202" \\\n  -H "X-Curriculum-App-Id: ${currentTenant.appId}"`
+                sample: `curl -X GET "https://api.curriculumserver.ng/api/v1/curriculum?level=Senior%20Secondary&grade=SS%202" \\\n  -H "X-Curriculum-App-Id: ${currentTenant?.appId || currentTenant?.id || 'cs_app_demo'}"`
               },
               {
                 method: 'GET',
                 path: '/api/v1/lesson-notes',
                 desc: 'Retrieve standardized NERDC lesson notes approved by Academic Coordinators.',
-                sample: `curl -X GET "https://api.curriculumserver.ng/api/v1/lesson-notes" \\\n  -H "X-Curriculum-App-Id: ${currentTenant.appId}"`
+                sample: `curl -X GET "https://api.curriculumserver.ng/api/v1/lesson-notes" \\\n  -H "X-Curriculum-App-Id: ${currentTenant?.appId || currentTenant?.id || 'cs_app_demo'}"`
               },
               {
                 method: 'GET',
                 path: '/api/v1/examinations',
                 desc: 'Fetch authorized CBT and WAEC-styled examination papers for scheduled terms.',
-                sample: `curl -X GET "https://api.curriculumserver.ng/api/v1/examinations" \\\n  -H "X-Curriculum-App-Id: ${currentTenant.appId}"`
+                sample: `curl -X GET "https://api.curriculumserver.ng/api/v1/examinations" \\\n  -H "X-Curriculum-App-Id: ${currentTenant?.appId || currentTenant?.id || 'cs_app_demo'}"`
               },
               {
                 method: 'GET',
                 path: '/api/v1/students',
                 desc: 'Access tenant-isolated student roster with academic broadsheets and GPAs.',
-                sample: `curl -X GET "https://api.curriculumserver.ng/api/v1/students" \\\n  -H "X-Curriculum-App-Id: ${currentTenant.appId}"`
+                sample: `curl -X GET "https://api.curriculumserver.ng/api/v1/students" \\\n  -H "X-Curriculum-App-Id: ${currentTenant?.appId || currentTenant?.id || 'cs_app_demo'}"`
               }
             ].map(ep => (
               <div key={ep.path} className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-3">
@@ -755,7 +768,7 @@ export const ApiWebhooksPortal: React.FC<ApiWebhooksPortalProps> = ({
               <div>
                 <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
                   <Radio className="w-4 h-4 text-emerald-400" />
-                  <span>Configured Webhook Endpoints for {currentTenant.schoolName}</span>
+                  <span>Configured Webhook Endpoints for {currentTenant?.schoolName || 'Instance'}</span>
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Real-time events signed with HMAC-SHA256 headers (<code className="text-emerald-400">X-Curriculum-Signature</code>).
@@ -829,7 +842,7 @@ export const ApiWebhooksPortal: React.FC<ApiWebhooksPortalProps> = ({
           <div className="p-5 bg-slate-950 border border-slate-800 rounded-2xl space-y-3 text-xs">
             <span className="text-slate-300 font-semibold">1. Standard Embedded Login Button (iFrame / Direct Gateway)</span>
             <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 font-mono text-[11px] text-emerald-300 overflow-x-auto">
-              <code>{`<a href="https://${currentTenant.customDomain || currentTenant.subdomain}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#10b981;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">
+              <code>{`<a href="https://${currentTenant?.customDomain || currentTenant?.subdomain || 'demo.curriculumflow.ng'}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#10b981;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">
   <span>🎓 CurriculumFlow Academic Portal</span>
 </a>`}</code>
             </div>
@@ -838,7 +851,7 @@ export const ApiWebhooksPortal: React.FC<ApiWebhooksPortalProps> = ({
           <div className="p-5 bg-slate-950 border border-slate-800 rounded-2xl space-y-3 text-xs">
             <span className="text-slate-300 font-semibold">2. Live Verification Badge (Trust Seal)</span>
             <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 font-mono text-[11px] text-teal-300 overflow-x-auto">
-              <code>{`<iframe src="https://api.curriculumserver.ng/api/v1/embed/portal-widget?tenantId=${currentTenant.id}" width="320" height="70" frameborder="0"></iframe>`}</code>
+              <code>{`<iframe src="https://api.curriculumserver.ng/api/v1/embed/portal-widget?tenantId=${currentTenant?.id || 'school_demo'}" width="320" height="70" frameborder="0"></iframe>`}</code>
             </div>
           </div>
         </div>

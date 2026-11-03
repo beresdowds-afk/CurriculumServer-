@@ -18,6 +18,12 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@shared-ui": [
+        "./packages/shared-ui/src/index.tsx"
+      ],
+      "@shared-types": [
+        "./packages/shared-types/src/index.ts"
       ]
     },
     "allowImportingTsExtensions": true,

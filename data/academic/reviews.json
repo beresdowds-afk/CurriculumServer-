@@ -1,0 +1,57 @@
+[
+  {
+    "recordId": "rev-1793535165010-70si",
+    "timestamp": "2026-11-01T12:12:45.010Z",
+    "targetType": "textbook",
+    "targetId": "tb-jss1-math-v1",
+    "reviewerId": "usr-admin-01",
+    "reviewerName": "Dr. Folashade Adeyemi",
+    "reviewerRole": "editorial_director",
+    "status": "approved",
+    "notes": "Passed rigorous editorial review."
+  },
+  {
+    "recordId": "rev-1793535194754-yx2v",
+    "timestamp": "2026-11-01T12:13:14.754Z",
+    "targetType": "textbook",
+    "targetId": "tb-jss1-math-v1",
+    "reviewerId": "usr-admin-01",
+    "reviewerName": "Dr. Folashade Adeyemi",
+    "reviewerRole": "editorial_director",
+    "status": "approved",
+    "notes": "Passed rigorous editorial review."
+  },
+  {
+    "recordId": "rev-1793535214673-8moy",
+    "timestamp": "2026-11-01T12:13:34.673Z",
+    "targetType": "textbook",
+    "targetId": "tb-jss1-math-v1",
+    "reviewerId": "usr-admin-01",
+    "reviewerName": "Dr. Folashade Adeyemi",
+    "reviewerRole": "editorial_director",
+    "status": "approved",
+    "notes": "Passed rigorous editorial review."
+  },
+  {
+    "recordId": "rev-1793535427975-b8kd",
+    "timestamp": "2026-11-01T12:17:07.975Z",
+    "targetType": "textbook",
+    "targetId": "tb-jss1-math-v1",
+    "reviewerId": "usr-admin-01",
+    "reviewerName": "Dr. Folashade Adeyemi",
+    "reviewerRole": "editorial_director",
+    "status": "approved",
+    "notes": "Passed rigorous editorial review."
+  },
+  {
+    "recordId": "rev-1793535454499-3s5z",
+    "timestamp": "2026-11-01T12:17:34.499Z",
+    "targetType": "textbook",
+    "targetId": "tb-jss1-math-v1",
+    "reviewerId": "usr-admin-01",
+    "reviewerName": "Dr. Folashade Adeyemi",
+    "reviewerRole": "editorial_director",
+    "status": "approved",
+    "notes": "Passed rigorous editorial review."
+  }
+]

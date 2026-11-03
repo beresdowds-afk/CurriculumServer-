@@ -188,7 +188,7 @@ function decodeBase64(str: string): string {
 }
 
 export class TenantSecurityContextManager {
-  static issueTenantToken(tenant: TenantSchoolApp, role: string = 'tenant_admin', ttlSeconds: number = 86400): string {
+  static issueTenantToken(tenant: TenantSchoolApp, role: string = 'tenant_admin', ttlSeconds: number = 86400, email?: string): string {
     const now = Math.floor(Date.now() / 1000);
     const payload = {
       tenantId: tenant.id,
@@ -201,6 +201,7 @@ export class TenantSecurityContextManager {
       issuer: 'CurriculumServer-ControlPlane',
       audience: tenant.id,
       role,
+      email: email || (tenant as any).adminEmail || (tenant as any).principalEmail || 'admin@school.internal',
       issuedAt: now,
       expiresAt: now + ttlSeconds
     };
