@@ -36,7 +36,8 @@ import {
   EyeOff,
   Trash2,
   Video,
-  Image as ImageIcon
+  Image as ImageIcon,
+  GripVertical
 } from 'lucide-react';
 import { unifiedApiClient } from '../services/unifiedApiClient';
 
@@ -113,6 +114,15 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
     const temp = newSecs[index];
     newSecs[index] = newSecs[targetIndex];
     newSecs[targetIndex] = temp;
+    newSecs.forEach((s, idx) => { s.order = idx + 1; });
+    handleUpdateSections(newSecs);
+  };
+
+  const handleReorderSections = (sourceIndex: number, targetIndex: number) => {
+    if (sourceIndex === targetIndex || sourceIndex < 0 || targetIndex < 0 || sourceIndex >= mutableConfig.sections.length || targetIndex >= mutableConfig.sections.length) return;
+    const newSecs = [...mutableConfig.sections];
+    const [movedItem] = newSecs.splice(sourceIndex, 1);
+    newSecs.splice(targetIndex, 0, movedItem);
     newSecs.forEach((s, idx) => { s.order = idx + 1; });
     handleUpdateSections(newSecs);
   };
@@ -684,10 +694,34 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
             </div>
 
             <div className="space-y-3">
-              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Current Sections</span>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Current Sections</span>
+                <span className="text-[11px] text-slate-400">Drag & drop rows or use up/down arrows to reorder</span>
+              </div>
               {mutableConfig.sections.map((sec, idx) => (
-                <div key={sec.id} className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between gap-3">
+                <div 
+                  key={sec.id}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', idx.toString());
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const sourceIdxStr = e.dataTransfer.getData('text/plain');
+                    if (sourceIdxStr !== '') {
+                      const sourceIdx = parseInt(sourceIdxStr, 10);
+                      handleReorderSections(sourceIdx, idx);
+                    }
+                  }}
+                  className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between gap-3 cursor-grab active:cursor-grabbing hover:border-emerald-500/50 transition-colors"
+                >
                   <div className="flex items-center gap-3">
+                    <div className="text-slate-500 hover:text-slate-300">
+                      <GripVertical className="w-4 h-4" />
+                    </div>
                     <span className="w-6 h-6 rounded-lg bg-slate-900 flex items-center justify-center text-xs font-mono text-slate-400">{sec.order}</span>
                     <div>
                       <span className="text-xs font-bold text-white">{sec.title}</span>

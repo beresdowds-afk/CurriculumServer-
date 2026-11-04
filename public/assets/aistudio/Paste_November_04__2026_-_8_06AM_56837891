@@ -1,0 +1,982 @@
+CURRICULUM SERVER — GOOGLE CLOUD INFRASTRUCTURE IMPLEMENTATION PROGRAMME
+
+MASTER INSTRUCTIONS — APPLY TO ALL FOUR PHASES
+
+You are the lead Google Cloud infrastructure architect and implementation engineer for Curriculum Server.
+
+Your assignment is to provision and configure the Google Cloud infrastructure required by the Curriculum Server ecosystem, following the four sequential phases below.
+
+This assignment concerns Google Cloud infrastructure resources and their configuration only. Do not undertake unrelated application redevelopment or modify existing application source code unless a specific infrastructure integration requires a minimal change and that change is separately reported.
+
+1. VERIFIED GOOGLE CLOUD ENVIRONMENT
+
+Use the following environment:
+
+- GCP Project ID: "curious-subject-477114-e4"
+- Region: "europe-west1"
+- Existing Cloud Run service: "curriculum-server"
+- Existing deployment URL: "https://curriculum-server-797788066041.europe-west1.run.app"
+- Database technology: Cloud SQL for PostgreSQL.
+- Firebase: prohibited; do not introduce Firebase.
+
+The existing "curriculum-server" service must be preserved.
+
+Before creating resources, inspect the project and establish which resources already exist.
+
+Do not create duplicates of compatible existing resources.
+
+2. SERVICE IDENTITIES HAVE ALREADY BEEN CREATED
+
+The administrator has manually created the requested Cloud Run service identities and assigned their IAM roles.
+
+These include the identities intended for:
+
+- "cs-frontend-runtime"
+- "cf-frontend-runtime"
+- "backend-runtime"
+- "project-factory"
+- "infrastructure-deployer"
+- "domain-manager"
+- "provisioning-orchestrator"
+- "curriculum-ci-deployer"
+
+The names above are logical identifiers. Discover and verify the actual service-account emails in the GCP project.
+
+Mandatory instructions
+
+1. Inspect the existing service accounts.
+2. Verify their assigned IAM roles and resource scopes.
+3. Identify which identity belongs to each service or workload.
+4. Use the existing identities when configuring Cloud Run services, Jobs and Workflows.
+5. Do not recreate these identities.
+6. Do not delete, rename or replace them.
+7. Do not modify their IAM permissions or grant additional roles.
+8. Do not assume that a role assigned at project level is equivalent to one assigned at organisation, folder, billing-account or resource level.
+9. If an identity is missing a required permission, report the exact permission, role, resource scope and intended purpose. Wait for the administrator to resolve it.
+10. Do not bypass missing permissions by using a more privileged identity.
+
+The infrastructure must be configured to use the existing identities wherever their permissions permit.
+
+3. CRITICAL SECRETS AND CONFIGURATION RESTRICTION
+
+Do not install, populate, configure or expose secrets and application environment variables during this assignment.
+
+This restriction applies throughout all four phases.
+
+Do not:
+
+- Create or populate Secret Manager secrets.
+- Upload passwords, API keys, tokens, private keys or certificates containing private key material.
+- Install database passwords.
+- Install registrar credentials.
+- Install payment-provider credentials.
+- Install communication-provider credentials.
+- Install OAuth client secrets.
+- Install webhook signing secrets.
+- Install third-party integration credentials.
+- Configure Cloud Run environment variables containing application configuration.
+- Configure Cloud Run secret environment variables or secret volume mounts.
+- Insert credentials into Cloud Run Jobs.
+- Insert credentials into Workflows.
+- Put credentials in Terraform variables, scripts, source files, command history or logs.
+- Invent placeholder credentials that could be mistaken for working credentials.
+
+You may create infrastructure that will eventually consume Secret Manager references, but do not create or populate the secrets themselves.
+
+You may configure non-secret infrastructure properties required for resource creation, such as region, CPU, memory, networking, service identity and scaling limits.
+
+However, do not install application-specific environment variables.
+
+Required credential and configuration report
+
+At the end of each phase, produce a structured report identifying:
+
+- Required credential or configuration item.
+- Intended service or resource.
+- Purpose.
+- Whether it is a secret or non-secret variable.
+- Whether it must be entered in Secret Manager.
+- Whether it must be configured as a Cloud Run environment variable.
+- Whether it must be configured in a Workflow or another resource.
+- Required format, where known.
+- Exact configuration location.
+- Whether it is mandatory or optional.
+- Whether the value has been supplied.
+- Whether configuration is pending.
+
+Never display an existing secret value.
+
+The final report must contain a consolidated Credentials and Environment Configuration Register.
+
+The infrastructure may be reported as provisioned while credential-dependent integrations remain unconfigured. Do not describe those integrations as operational until they have been configured and tested.
+
+4. INFRASTRUCTURE EXECUTION RULES
+
+You are authorised to create and configure the Google Cloud resources expressly required by this programme.
+
+Before creating or changing a resource:
+
+1. Inspect the existing project.
+2. Check whether the resource already exists.
+3. Determine whether it can be safely reused.
+4. Check dependencies.
+5. Identify potential costs.
+6. Check the permissions of the execution identity.
+7. Record the intended change.
+
+Use Google Cloud-supported deployment methods and Infrastructure as Code where appropriate.
+
+Prefer repeatable, idempotent operations.
+
+Do not delete existing resources simply because their names differ from the proposed names.
+
+Do not change existing production routing until the replacement routing has been successfully tested.
+
+Do not disable existing services or remove existing IAM bindings.
+
+If a required action is destructive, could cause significant additional cost, or could interrupt an existing production service, stop and request explicit administrator approval.
+
+Do not claim that a resource has been created merely because a command or deployment script was generated.
+
+Verify the actual resource in Google Cloud after every creation or configuration operation.
+
+---
+
+PHASE 1 — CLOUD SQL, DATABASE INFRASTRUCTURE AND CENTRAL CLOUD RUN SERVICES
+
+Objective
+
+Establish the central database infrastructure and the three primary Cloud Run services for the Curriculum Server ecosystem.
+
+1. Initial GCP inspection
+
+Inspect:
+
+- Enabled Google Cloud APIs.
+- Existing Cloud Run services.
+- Existing service accounts.
+- IAM assignments and scopes.
+- Existing Cloud SQL instances.
+- Existing VPC networks.
+- Existing subnetworks.
+- Existing VPC connectors.
+- Existing Direct VPC egress configuration.
+- Existing Artifact Registry repositories.
+- Existing load balancers.
+- Existing DNS and networking resources.
+- Existing Secret Manager configuration, without reading or displaying secret values.
+
+Produce a resource inventory before making changes.
+
+2. Cloud SQL PostgreSQL
+
+Create or verify:
+
+Resource name:
+
+"curriculum-postgres-primary"
+
+Configuration:
+
+- Project: "curious-subject-477114-e4"
+- Region: "europe-west1"
+- Database engine: PostgreSQL.
+- Edition: Cloud SQL Enterprise, subject to current availability.
+- Initial allocation: 2 vCPU, 8 GB RAM.
+- Initial storage: 100 GB SSD.
+- Automatic storage increase: enabled.
+- Automated backups: enabled.
+- Point-in-time recovery: enabled.
+- Deletion protection: enabled.
+- Initial development availability: single zone.
+- Production availability: regional high availability.
+
+Verify supported configurations and current pricing before provisioning.
+
+Do not silently create an unexpectedly expensive configuration.
+
+3. Database and schemas
+
+Create:
+
+Database:
+
+"curriculum_platform"
+
+Schemas:
+
+- "control_plane"
+- "curriculum_flow"
+
+Create the database and schemas only.
+
+Do not invent or populate database credentials.
+
+Do not create application database passwords.
+
+Do not install application environment variables.
+
+Report the database connection information that the application team will eventually need, excluding passwords and other secrets.
+
+4. Secure Cloud SQL connectivity
+
+Prepare Cloud SQL connectivity for the central Cloud Run services.
+
+Evaluate:
+
+- Cloud SQL Auth Proxy/Connector support.
+- Private IP.
+- Direct VPC egress.
+- Serverless VPC Access, where appropriate.
+- Connection pooling.
+- Network restrictions.
+- Maximum database connections.
+
+Do not expose PostgreSQL through unrestricted public IP access.
+
+Configure the infrastructure components required for the approved connectivity model.
+
+Do not install database credentials or application variables.
+
+5. Central Cloud Run services
+
+Create or verify the following services.
+
+A. "curriculum-server"
+
+Purpose: Curriculum Server frontend.
+
+Initial configuration:
+
+- Region: "europe-west1"
+- CPU: 1 vCPU.
+- Memory: 1 GiB.
+- Port: 8080.
+- Maximum instances: 10.
+- Concurrency: 80.
+- Timeout: 60 seconds.
+- Runtime identity: existing "cs-frontend-runtime".
+
+Preserve the existing service and its deployment.
+
+If an updated infrastructure configuration is required, make changes only after inspecting the existing service and confirming compatibility.
+
+B. "curriculum-flow"
+
+Purpose: Curriculum Flow frontend.
+
+Initial configuration:
+
+- Region: "europe-west1"
+- CPU: 1 vCPU.
+- Memory: 1 GiB.
+- Port: 8080.
+- Maximum instances: 30.
+- Concurrency: 80.
+- Timeout: 60 seconds.
+- Runtime identity: existing "cf-frontend-runtime".
+
+C. "curriculum-backend"
+
+Purpose: Unified application API.
+
+Initial configuration:
+
+- Region: "europe-west1"
+- CPU: 2 vCPU.
+- Memory: 2 GiB.
+- Port: 8080.
+- Maximum instances: 30.
+- Concurrency: 40.
+- Timeout: 60–120 seconds for ordinary requests.
+- Runtime identity: existing "backend-runtime".
+
+If a deployable backend container image is not available, do not invent a production image or deploy an empty service and report it as operational.
+
+Instead, prepare the infrastructure resource specification and report the required container image.
+
+6. Cloud Run configuration
+
+For each service:
+
+- Assign the correct existing service identity.
+- Configure CPU and memory.
+- Configure scaling limits.
+- Configure concurrency.
+- Configure timeout.
+- Configure ingress according to the approved architecture.
+- Configure health-check behaviour where supported.
+- Configure logging and monitoring.
+- Configure appropriate execution settings.
+
+Do not install application environment variables or secrets.
+
+Do not change IAM permissions.
+
+7. CI/CD infrastructure readiness
+
+Verify the existing:
+
+"curriculum-ci-deployer"
+
+Prepare or verify the infrastructure required for GitHub Actions Workload Identity Federation.
+
+Do not create permanent service-account JSON keys.
+
+Do not modify the service account's IAM permissions.
+
+If required IAM bindings or permissions are missing, report them for administrator action.
+
+Phase 1 acceptance criteria
+
+- Cloud SQL instance created or verified.
+- Database created.
+- Schemas created.
+- Secure connectivity infrastructure prepared.
+- Three central Cloud Run services created or verified.
+- Correct existing runtime identities attached.
+- Existing "curriculum-server" preserved.
+- No credentials or application environment variables installed.
+- Required configuration values documented.
+- Resource inventory and cost implications reported.
+
+Stop and wait for administrator approval before Phase 2.
+
+---
+
+PHASE 2 — GLOBAL LOAD BALANCER, NETWORKING, HTTPS AND DOMAIN ROUTING INFRASTRUCTURE
+
+Objective
+
+Establish the global traffic-routing infrastructure for Curriculum Server, Curriculum Flow, the unified backend and future customer instances.
+
+1. Inspect existing networking
+
+Inspect:
+
+- Global external Application Load Balancers.
+- Static IP addresses.
+- Serverless NEGs.
+- Backend services.
+- URL maps.
+- HTTPS target proxies.
+- HTTP target proxies.
+- Forwarding rules.
+- SSL certificates.
+- Cloud Armor policies.
+- VPC networks.
+- DNS resources.
+
+Reuse compatible existing resources.
+
+Avoid creating duplicate load balancers, IP addresses or certificates.
+
+2. Global external Application Load Balancer
+
+Create or configure the appropriate Google Cloud global external Application Load Balancer.
+
+Required components:
+
+- Global external static IP address.
+- Serverless Network Endpoint Groups.
+- Backend services.
+- URL map.
+- HTTPS target proxy.
+- SSL certificate configuration.
+- HTTP target proxy, where required.
+- HTTP-to-HTTPS redirect.
+- Forwarding rules.
+- Logging and monitoring.
+
+Use the supported serverless NEG architecture for Cloud Run.
+
+3. Backend routing
+
+Create or configure routing for:
+
+- Curriculum Server frontend.
+- Curriculum Flow frontend.
+- Unified backend.
+
+Proposed hostname architecture:
+
+- "curriculumserver.com.ng"
+- "www.curriculumserver.com.ng"
+- "curriculumflow.com.ng"
+- "www.curriculumflow.com.ng"
+- "api.curriculumserver.com.ng"
+- "{tenant}.curriculumflow.com.ng"
+
+Routing requirements:
+
+- Curriculum Server domains → "curriculum-server".
+- Curriculum Flow domains → "curriculum-flow".
+- API hostname → "curriculum-backend".
+- Tenant domains → their verified tenant application backend.
+
+Do not create a tenant backend that does not exist.
+
+Do not configure a route to a nonexistent service.
+
+4. Cloud Run ingress
+
+Configure Cloud Run ingress to support the selected load-balancer architecture.
+
+Restrict direct public access where appropriate.
+
+Ensure approved internal service-to-service communication remains possible.
+
+Do not weaken application authentication or backend authorisation.
+
+Verify the load balancer can reach the Cloud Run services after ingress restrictions are applied.
+
+5. HTTPS and certificates
+
+Configure:
+
+- SSL certificates.
+- Domain ownership verification.
+- HTTPS enforcement.
+- HTTP-to-HTTPS redirection.
+- Certificate status monitoring.
+- Certificate renewal monitoring.
+- Expiry monitoring.
+
+Use Google-managed certificates where appropriate.
+
+Do not upload private keys or install certificate secrets.
+
+A domain must not be marked operational until DNS, routing and certificate verification have succeeded.
+
+6. Domain and DNS infrastructure
+
+Prepare domain management for:
+
+- GO54/WhoGoHost.
+- Go45.
+- Other providers through future adapters.
+
+Do not assume Cloudflare is mandatory.
+
+Distinguish domain registration from DNS hosting.
+
+Configure Google Cloud DNS only if it is part of the approved DNS architecture and the administrator has authorised its use.
+
+Do not change authoritative nameservers or existing production DNS records without approval.
+
+Do not install registrar API credentials.
+
+7. Tenant routing readiness
+
+Prepare the load-balancer architecture to support:
+
+"{tenant}.curriculumflow.com.ng"
+
+Support future custom domains belonging to individual schools and organisations.
+
+The application-level hostname-to-instance registry remains authoritative.
+
+Infrastructure routing must not allow arbitrary tenant selection or bypass application-level tenant validation.
+
+Phase 2 acceptance criteria
+
+- Global external load balancer created or verified.
+- Static IP allocated and recorded.
+- Serverless NEGs configured.
+- Backend services configured.
+- URL map configured.
+- HTTPS proxy configured.
+- Forwarding rules configured.
+- HTTP redirection configured.
+- Cloud Run ingress tested.
+- Domain routing prepared.
+- No registrar credentials installed.
+- No application environment variables installed.
+- DNS and certificate dependencies documented.
+
+Report all required DNS changes separately.
+
+Stop and wait for administrator approval before Phase 3.
+
+---
+
+PHASE 3 — CUSTOMER PROVISIONING INFRASTRUCTURE, CLOUD RUN JOBS AND WORKFLOWS
+
+Objective
+
+Establish the Google Cloud infrastructure needed to support automated provisioning of customer applications and school instances.
+
+This phase creates the infrastructure resources and execution environment. It does not implement or replace the application-side provisioning logic.
+
+1. Cloud Run Jobs
+
+Create or verify the following Cloud Run Jobs.
+
+A. "curriculum-project-factory"
+
+Purpose:
+
+Provide the execution environment for authorised customer GCP project creation and initial project configuration.
+
+Initial configuration:
+
+- Region: "europe-west1"
+- CPU: 2 vCPU.
+- Memory: 2 GiB.
+- Task count: 1.
+- Parallelism: 1.
+- Timeout: 60 minutes.
+- Runtime identity: existing "project-factory".
+
+B. "curriculum-infrastructure-deployer"
+
+Purpose:
+
+Provide the execution environment for approved customer infrastructure deployment.
+
+Initial configuration:
+
+- Region: "europe-west1"
+- CPU: 4 vCPU.
+- Memory: 4 GiB.
+- Task count: 1.
+- Parallelism: 1.
+- Timeout: 120 minutes.
+- Runtime identity: existing "infrastructure-deployer".
+
+C. "curriculum-domain-manager"
+
+Purpose:
+
+Provide the execution environment for approved domain and DNS management operations.
+
+Initial configuration:
+
+- Region: "europe-west1"
+- CPU: 1 vCPU.
+- Memory: 1 GiB.
+- Task count: 1.
+- Parallelism: 1.
+- Timeout: 30 minutes.
+- Runtime identity: existing "domain-manager".
+
+2. Job execution requirements
+
+Each Job must:
+
+- Use an approved container image.
+- Use its designated existing service identity.
+- Have appropriate execution settings.
+- Be configured for controlled retries.
+- Produce execution logs.
+- Support execution tracking.
+- Avoid overlapping executions where that would cause conflicts.
+
+If the required container image does not exist, report the missing image.
+
+Do not deploy an invented or empty image.
+
+Do not install environment variables or credentials.
+
+3. Cloud Workflows
+
+Create or verify:
+
+"curriculum-provisioning-orchestrator"
+
+Region:
+
+"europe-west1"
+
+Use the existing:
+
+"provisioning-orchestrator"
+
+service identity.
+
+The infrastructure must support orchestration of:
+
+1. Provisioning request validation.
+2. Architecture profile retrieval.
+3. Approval verification.
+4. Project Factory execution.
+5. Infrastructure Deployer execution.
+6. Domain Manager execution.
+7. Execution monitoring.
+8. Health verification.
+9. Completion reporting.
+
+Do not embed secrets or credentials in Workflow definitions.
+
+Use secure references for future credential integration, without creating or populating the secrets.
+
+If the application-side APIs or Job container images are unavailable, create only the infrastructure components that can be safely completed and report the missing dependencies.
+
+4. Supporting infrastructure
+
+Inspect and provision, where required:
+
+- Artifact Registry repositories.
+- Cloud Run Job execution infrastructure.
+- Workflow execution permissions, subject to existing IAM.
+- Logging.
+- Monitoring.
+- Resource labels.
+- Required networking components.
+- Execution logs and audit visibility.
+
+Do not change service-account IAM permissions.
+
+5. Infrastructure-as-Code
+
+Where appropriate, create and maintain infrastructure definitions for:
+
+- Cloud SQL.
+- Cloud Run services.
+- Load balancer.
+- Serverless NEGs.
+- Backend services.
+- URL maps.
+- Static IP.
+- Certificates.
+- Cloud Run Jobs.
+- Workflows.
+- Supporting networking.
+
+Use a repeatable and idempotent structure.
+
+Do not execute destructive changes without explicit approval.
+
+Phase 3 acceptance criteria
+
+- Three Cloud Run Jobs created or verified.
+- Correct existing identities attached.
+- Workflow created or verified.
+- Workflow execution environment configured.
+- Artifact Registry readiness established.
+- Required networking and logging configured.
+- Missing container images reported.
+- No secrets installed.
+- No application variables installed.
+- All resource identifiers recorded.
+
+Stop and wait for administrator approval before Phase 4.
+
+---
+
+PHASE 4 — CUSTOMER INFRASTRUCTURE FOUNDATIONS, MONITORING, SECURITY AND OPERATIONAL READINESS
+
+Objective
+
+Complete the supporting Google Cloud infrastructure required for a scalable multi-customer platform.
+
+1. Customer project provisioning readiness
+
+Prepare the infrastructure architecture to support customer projects with:
+
+- Project creation.
+- Folder assignment.
+- Billing association.
+- API enablement.
+- Resource labelling.
+- Security baselines.
+- Cloud Run deployment.
+- Database deployment.
+- Storage provisioning.
+- Monitoring.
+
+Do not assume that the central project has the authority to perform organisation-wide or billing-account operations.
+
+Do not change IAM permissions.
+
+Report missing permissions and their exact resource scopes.
+
+2. Customer-specific infrastructure readiness
+
+Prepare the architecture to support the following deployment models:
+
+1. Shared application infrastructure.
+2. Dedicated Cloud Run service.
+3. Dedicated GCP project.
+4. Multiple Cloud Run services.
+5. Dedicated database.
+6. Hybrid infrastructure.
+
+The platform must be able to provision resources according to an approved Instance Architecture Profile.
+
+Do not create sample customer projects or incur customer infrastructure costs unless explicitly authorised.
+
+3. Storage infrastructure
+
+Prepare support for:
+
+- Google Cloud Storage.
+- Private Google Drive integrations.
+- Hybrid storage.
+
+Where approved, create the necessary storage infrastructure and configure:
+
+- Bucket location.
+- Storage class.
+- Uniform bucket-level access.
+- Public access prevention.
+- Versioning, where required.
+- Retention and lifecycle policies.
+- Resource labels.
+
+Do not upload credentials or private customer files.
+
+Do not create unrestricted public buckets.
+
+4. Monitoring and logging
+
+Configure central observability for:
+
+- Cloud Run services.
+- Cloud Run Jobs.
+- Cloud Workflows.
+- Cloud SQL.
+- Database connections.
+- Load balancer.
+- Serverless NEGs.
+- SSL certificates.
+- Storage.
+- Provisioning execution.
+
+Create suitable:
+
+- Log-based metrics.
+- Monitoring dashboards.
+- Uptime checks.
+- Alerting policies.
+- Error-rate monitoring.
+- Resource utilisation monitoring.
+- Database health monitoring.
+- Certificate expiry monitoring.
+
+Do not create alerts that depend on invented email addresses or notification credentials.
+
+Report the notification channels that still require administrator configuration.
+
+5. Billing and cost controls
+
+Prepare:
+
+- GCP resource labels.
+- Budget monitoring.
+- Billing alerts.
+- Cost attribution.
+- Resource usage monitoring.
+- Quota monitoring.
+- Idle-resource reporting.
+
+Do not assume that creating a budget automatically enforces a spending limit.
+
+Do not automatically delete or suspend customer resources because of a budget threshold.
+
+Report any billing-account permissions or notification configuration that remain outstanding.
+
+6. Security and operational verification
+
+Verify:
+
+- Cloud Run services use the intended runtime identities.
+- Jobs use their designated identities.
+- Workflows use the intended identity.
+- No unintended public database access exists.
+- No unrestricted public storage exists.
+- Load-balancer routing reaches the correct services.
+- Cloud Run ingress is compatible with the load balancer.
+- Existing production services remain available.
+- No service-account permissions were changed.
+- No credentials were exposed in logs or resource configuration.
+- No application environment variables were installed.
+- No secrets were created or populated.
+
+7. Final infrastructure inventory
+
+Produce a complete inventory of actual resources.
+
+For each resource, report:
+
+- Resource name.
+- Resource type.
+- Project ID.
+- Region or global scope.
+- Resource identifier.
+- Status.
+- Runtime identity.
+- Relevant configuration.
+- Dependencies.
+- Estimated recurring cost, where available.
+- Verification method.
+- Outstanding requirements.
+
+Phase 4 acceptance criteria
+
+- Supporting infrastructure completed.
+- Storage infrastructure readiness established.
+- Monitoring configured.
+- Logging configured.
+- Cost monitoring prepared.
+- Security verification completed.
+- Existing service identities preserved.
+- No secrets installed.
+- No application environment variables installed.
+- Outstanding permissions and credentials documented.
+
+---
+
+FINAL DELIVERY — MANDATORY REPORTS
+
+At the end of all four phases, produce the following reports.
+
+A. Google Cloud Resource Inventory
+
+List every resource created, reused, modified or found missing.
+
+Distinguish clearly between:
+
+- Created.
+- Existing and reused.
+- Modified.
+- Pending.
+- Failed.
+- Not required.
+
+Include actual resource identifiers.
+
+B. Service Identity Verification Report
+
+For every service identity, report:
+
+- Logical identity name.
+- Actual service-account email.
+- Assigned roles.
+- IAM scope.
+- Intended workload.
+- Whether the identity was successfully attached.
+- Missing permissions, if any.
+
+Do not change permissions.
+
+C. Credentials and Environment Configuration Register
+
+Produce a complete table containing:
+
+Configuration item| Intended resource/service| Type| Purpose| Required location| Status
+PostgreSQL connection configuration| Backend| Non-secret/secret components| Database connectivity| Cloud Run configuration and Secret Manager| Pending
+Database application credentials| Backend| Secret| Database authentication| Secret Manager| Pending
+Registrar API credentials| Domain Manager| Secret| Domain and DNS management| Secret Manager| Pending
+OAuth credentials| Relevant integration| Secret| Third-party authentication| Secret Manager| Pending
+Webhook signing credentials| Relevant service| Secret| Webhook verification| Secret Manager| Pending
+Notification configuration| Monitoring| Non-secret/secret components| Operational alerts| Monitoring configuration| Pending
+
+Expand this table to include every credential and variable required by the actual provisioned infrastructure.
+
+For each item, state:
+
+- Exact variable or secret name, if known.
+- Intended resource.
+- Required format.
+- Required location.
+- Whether it is mandatory.
+- Whether it has been supplied.
+- Whether installation is pending.
+
+Do not populate any of them.
+
+D. DNS and Domain Configuration Report
+
+Report:
+
+- Global IP address.
+- Required DNS records.
+- Required hostnames.
+- Target destinations.
+- Certificate status.
+- DNS verification status.
+- Registrar actions still required.
+
+Do not claim a domain is operational before verification.
+
+E. Infrastructure Cost Report
+
+Report:
+
+- Estimated recurring cost of created resources.
+- Cost drivers.
+- Scaling-related cost exposure.
+- Cloud SQL cost.
+- Load-balancer cost.
+- Cloud Run cost.
+- Storage cost.
+- Monitoring and logging cost.
+- Any uncertain or usage-dependent charges.
+
+Use current pricing where available and clearly identify estimates.
+
+F. Outstanding Actions Register
+
+List everything that requires administrator action, including:
+
+- Missing IAM permissions.
+- Missing container images.
+- Credentials awaiting supply.
+- Environment variables awaiting configuration.
+- DNS changes.
+- Domain ownership verification.
+- Certificate dependencies.
+- Billing permissions.
+- External integration requirements.
+- Pending deployment or application dependencies.
+
+G. Final Operational Status
+
+For each resource and integration, classify it as:
+
+1. Designed.
+2. Provisioned.
+3. Configured.
+4. Tested.
+5. Verified operational.
+6. Pending credentials.
+7. Pending external dependency.
+8. Failed.
+
+Do not report an integration as operational simply because its underlying Google Cloud resource exists.
+
+---
+
+PERMANENT EXECUTION PRINCIPLES
+
+1. Preserve the existing Curriculum Server deployment.
+2. Use the existing manually created service identities.
+3. Never recreate or modify their IAM permissions.
+4. Never install or expose secrets.
+5. Never configure application environment variables.
+6. Report all required credentials and variables for later manual configuration.
+7. Do not invent container images or credentials.
+8. Do not create duplicate resources.
+9. Do not silently incur unexpected costs.
+10. Verify actual Google Cloud resource state.
+11. Maintain an auditable record of infrastructure operations.
+12. Execute the four phases sequentially.
+13. Stop for administrator approval at the end of each phase.
+14. Do not claim success without verification.
+
+PLATFORM OBJECTIVE
+
+ONE CENTRAL CONTROL PLANE.
+
+INDEPENDENT CURRICULUM APPLICATIONS.
+
+ONE UNIFIED BACKEND ECOSYSTEM.
+
+FLEXIBLE CUSTOMER INFRASTRUCTURE.
+
+AUTOMATED PROVISIONING.
+
+HUMAN-GOVERNED PRIVILEGED ACCESS.
+
+SECURE, AUDITABLE AND SCALABLE GOOGLE CLOUD INFRASTRUCTURE.
