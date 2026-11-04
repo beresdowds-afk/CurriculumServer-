@@ -39,7 +39,11 @@ import {
   Image as ImageIcon,
   GripVertical,
   Download,
-  Share2
+  Share2,
+  Settings,
+  Edit3,
+  Check,
+  X
 } from 'lucide-react';
 import { unifiedApiClient } from '../services/unifiedApiClient';
 import { InstallShareModal } from './InstallShareModal';
@@ -62,6 +66,11 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
   const [mutableConfig, setMutableConfig] = useState<HomepageConfiguration>(config);
   const [isSectionManagerOpen, setIsSectionManagerOpen] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [draggedSectionIndex, setDraggedSectionIndex] = useState<number | null>(null);
+  const [dragOverSectionIndex, setDragOverSectionIndex] = useState<number | null>(null);
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editSubtitle, setEditSubtitle] = useState('');
 
   useEffect(() => {
     setMutableConfig(config);
@@ -134,6 +143,40 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
   const handleToggleSection = (id: string) => {
     const newSecs = mutableConfig.sections.map(s => s.id === id ? { ...s, enabled: !s.enabled } : s);
     handleUpdateSections(newSecs);
+  };
+
+  const handleDeleteSection = (id: string) => {
+    const newSecs = mutableConfig.sections.filter(s => s.id !== id);
+    newSecs.forEach((s, idx) => { s.order = idx + 1; });
+    handleUpdateSections(newSecs);
+    if (editingSectionId === id) {
+      setEditingSectionId(null);
+    }
+  };
+
+  const handleStartEditSection = (sec: HomepageSectionConfig) => {
+    if (editingSectionId === sec.id) {
+      setEditingSectionId(null);
+    } else {
+      setEditingSectionId(sec.id);
+      setEditTitle(sec.title);
+      setEditSubtitle(sec.subtitle || '');
+    }
+  };
+
+  const handleSaveSectionSettings = (id: string) => {
+    const newSecs = mutableConfig.sections.map(s => {
+      if (s.id === id) {
+        return {
+          ...s,
+          title: editTitle.trim() || s.title,
+          subtitle: editSubtitle.trim()
+        };
+      }
+      return s;
+    });
+    handleUpdateSections(newSecs);
+    setEditingSectionId(null);
   };
 
   const handleAddPredefinedSection = (type: HomepageSectionType, title: string) => {
@@ -716,66 +759,197 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Current Sections</span>
-                <span className="text-[11px] text-slate-400">Drag & drop rows or use up/down arrows to reorder</span>
+                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Current Sections ({mutableConfig.sections.length})</span>
+                <span className="text-[11px] text-slate-400">Drag & drop rows to reorder • Edit titles or remove sections</span>
               </div>
-              {mutableConfig.sections.map((sec, idx) => (
-                <div 
-                  key={sec.id}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('text/plain', idx.toString());
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const sourceIdxStr = e.dataTransfer.getData('text/plain');
-                    if (sourceIdxStr !== '') {
-                      const sourceIdx = parseInt(sourceIdxStr, 10);
-                      handleReorderSections(sourceIdx, idx);
-                    }
-                  }}
-                  className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between gap-3 cursor-grab active:cursor-grabbing hover:border-emerald-500/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="text-slate-500 hover:text-slate-300">
-                      <GripVertical className="w-4 h-4" />
-                    </div>
-                    <span className="w-6 h-6 rounded-lg bg-slate-900 flex items-center justify-center text-xs font-mono text-slate-400">{sec.order}</span>
-                    <div>
-                      <span className="text-xs font-bold text-white">{sec.title}</span>
-                      <span className="ml-2 px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 uppercase">{sec.type}</span>
-                    </div>
-                  </div>
+              {mutableConfig.sections.map((sec, idx) => {
+                const isDragging = draggedSectionIndex === idx;
+                const isOver = dragOverSectionIndex === idx && draggedSectionIndex !== idx;
+                const isEditing = editingSectionId === sec.id;
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleToggleSection(sec.id)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer ${sec.enabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}
-                    >
-                      {sec.enabled ? 'Enabled' : 'Disabled'}
-                    </button>
-                    <button
-                      onClick={() => handleMoveSection(idx, 'up')}
-                      disabled={idx === 0}
-                      className="p-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 rounded-lg text-xs cursor-pointer"
-                      title="Move Up"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      onClick={() => handleMoveSection(idx, 'down')}
-                      disabled={idx === mutableConfig.sections.length - 1}
-                      className="p-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 rounded-lg text-xs cursor-pointer"
-                      title="Move Down"
-                    >
-                      ↓
-                    </button>
+                return (
+                  <div
+                    key={sec.id}
+                    className={`rounded-2xl border transition-all ${
+                      isDragging ? 'opacity-40 border-purple-500 scale-[0.99] bg-purple-950/20' :
+                      isOver ? 'border-emerald-400 bg-emerald-950/25 shadow-lg shadow-emerald-950/30 ring-1 ring-emerald-400/50' :
+                      'bg-slate-950 border-slate-800'
+                    }`}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      if (dragOverSectionIndex !== idx) {
+                        setDragOverSectionIndex(idx);
+                      }
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverSectionIndex === idx) {
+                        setDragOverSectionIndex(null);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const sourceIdxStr = e.dataTransfer.getData('text/plain');
+                      if (sourceIdxStr !== '') {
+                        const sourceIdx = parseInt(sourceIdxStr, 10);
+                        handleReorderSections(sourceIdx, idx);
+                      }
+                      setDraggedSectionIndex(null);
+                      setDragOverSectionIndex(null);
+                    }}
+                  >
+                    <div className="p-3.5 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('text/plain', idx.toString());
+                            e.dataTransfer.effectAllowed = 'move';
+                            setDraggedSectionIndex(idx);
+                          }}
+                          onDragEnd={() => {
+                            setDraggedSectionIndex(null);
+                            setDragOverSectionIndex(null);
+                          }}
+                          className="text-slate-500 hover:text-slate-200 cursor-grab active:cursor-grabbing p-1 rounded hover:bg-slate-800 transition-colors"
+                          title="Drag to reorder section"
+                        >
+                          <GripVertical className="w-4 h-4" />
+                        </div>
+                        <span className="w-6 h-6 rounded-lg bg-slate-900 flex items-center justify-center text-xs font-mono text-slate-400 border border-slate-800 shrink-0">
+                          {sec.order}
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-white">{sec.title}</span>
+                            <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 uppercase font-mono">{sec.type}</span>
+                          </div>
+                          {sec.subtitle && (
+                            <p className="text-[11px] text-slate-400 truncate max-w-xs">{sec.subtitle}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 sm:gap-2">
+                        {/* Edit Settings Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditSection(sec)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+                            isEditing 
+                              ? 'bg-purple-600 text-white shadow-sm' 
+                              : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                          }`}
+                          title="Edit section title and subtitle"
+                        >
+                          <Settings className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">{isEditing ? 'Close' : 'Edit Settings'}</span>
+                        </button>
+
+                        {/* Visibility Toggle Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSection(sec.id)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-all ${
+                            sec.enabled 
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30' 
+                              : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                          }`}
+                          title={sec.enabled ? 'Section is visible on homepage' : 'Section is hidden'}
+                        >
+                          {sec.enabled ? 'Enabled' : 'Disabled'}
+                        </button>
+
+                        {/* Move Up/Down buttons (fallback controls) */}
+                        <button
+                          type="button"
+                          onClick={() => handleMoveSection(idx, 'up')}
+                          disabled={idx === 0}
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 rounded-lg text-xs cursor-pointer transition-colors"
+                          title="Move Up"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveSection(idx, 'down')}
+                          disabled={idx === mutableConfig.sections.length - 1}
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 rounded-lg text-xs cursor-pointer transition-colors"
+                          title="Move Down"
+                        >
+                          ↓
+                        </button>
+
+                        {/* Delete (Trash) Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSection(sec.id)}
+                          className="p-1.5 bg-slate-800 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 hover:border-rose-700/60 border border-slate-700 rounded-lg text-xs cursor-pointer transition-colors"
+                          title="Delete Section"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Sub-menu for Updating Section Title and Subtitle */}
+                    {isEditing && (
+                      <div className="px-4 pb-4 pt-2 border-t border-slate-800/80 bg-slate-900/60 rounded-b-2xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-purple-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <Settings className="w-3 h-3" />
+                            <span>Edit Section Settings</span>
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">ID: {sec.id}</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                              Section Title
+                            </label>
+                            <input
+                              type="text"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              placeholder="e.g., Campus Photo Gallery"
+                              className="w-full bg-[#0B0F17] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-colors"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                              Section Subtitle
+                            </label>
+                            <input
+                              type="text"
+                              value={editSubtitle}
+                              onChange={(e) => setEditSubtitle(e.target.value)}
+                              placeholder="e.g., Vibrant Learning Environments"
+                              className="w-full bg-[#0B0F17] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-colors"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditingSectionId(null)}
+                            className="px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveSectionSettings(sec.id)}
+                            className="px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg shadow transition-colors flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Save Settings</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="space-y-3 pt-4 border-t border-slate-800">
