@@ -39,6 +39,7 @@ import { instanceLifecycleManager } from './server/instanceLifecycleManager';
 import { costGovernanceManager } from './server/costGovernanceManager';
 import { productionHardeningEngine } from './server/productionHardeningEngine';
 import { homepageEngineManager } from './server/homepageEngineManager';
+import { cipaAgentService } from './server/cipaAgentService';
 import { MOCK_USERS } from './src/data/curriculumFlowData';
 
 dotenv.config();
@@ -3430,6 +3431,122 @@ app.post('/api/v1/server/homepage/:instanceId/rollback', requireSchoolAuth, (req
   } catch (err: any) {
     const status = err.message?.startsWith('ACCESS_DENIED') ? 403 : 400;
     res.status(status).json({ success: false, error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// CURRICULUM INFRASTRUCTURE PROVISIONING AGENT (CIPA) APIS
+// -------------------------------------------------------------
+app.get('/api/v1/agent/health', (req: Request, res: Response) => {
+  res.json({ status: 'ok', service: 'curriculum-provisioning-agent', runtime: 'curriculum-provisioning-agent-runtime', time: new Date().toISOString() });
+});
+
+app.get('/api/v1/agent/ready', (req: Request, res: Response) => {
+  res.json({ status: 'ready', database: 'connected', orchestrator: 'active', piam: 'enforced' });
+});
+
+app.get('/api/v1/agent/requests', (req: Request, res: Response) => {
+  try {
+    const list = cipaAgentService.getAllRequests();
+    res.json({ success: true, data: list });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/agent/requests', (req: Request, res: Response) => {
+  try {
+    const { prompt } = req.body;
+    if (!prompt) {
+      res.status(400).json({ success: false, error: 'prompt is required' });
+      return;
+    }
+    const created = cipaAgentService.createRequest(prompt);
+    res.json({ success: true, data: created });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/v1/agent/requests/:requestId', (req: Request, res: Response) => {
+  try {
+    const rec = cipaAgentService.getRequest(req.params.requestId);
+    if (!rec) {
+      res.status(404).json({ success: false, error: 'Provisioning request not found' });
+      return;
+    }
+    res.json({ success: true, data: rec });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/agent/requests/:requestId/evaluate', (req: Request, res: Response) => {
+  try {
+    const rec = cipaAgentService.getRequest(req.params.requestId);
+    if (!rec) {
+      res.status(404).json({ success: false, error: 'Provisioning request not found' });
+      return;
+    }
+    cipaAgentService.updateLifecycle(req.params.requestId, 'Architecture Evaluation');
+    res.json({ success: true, data: rec });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/agent/requests/:requestId/plan', (req: Request, res: Response) => {
+  try {
+    const rec = cipaAgentService.getRequest(req.params.requestId);
+    if (!rec) {
+      res.status(404).json({ success: false, error: 'Provisioning request not found' });
+      return;
+    }
+    cipaAgentService.updateLifecycle(req.params.requestId, 'Awaiting Privileged Approval');
+    res.json({ success: true, data: rec });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/agent/requests/:requestId/submit', (req: Request, res: Response) => {
+  try {
+    const rec = cipaAgentService.getRequest(req.params.requestId);
+    if (!rec) {
+      res.status(404).json({ success: false, error: 'Provisioning request not found' });
+      return;
+    }
+    cipaAgentService.updateLifecycle(req.params.requestId, 'Project Creation');
+    res.json({ success: true, data: rec });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/agent/requests/:requestId/piam-approval', (req: Request, res: Response) => {
+  try {
+    const { action, approverEmail, notes } = req.body;
+    const updated = cipaAgentService.piamApprovalAction(req.params.requestId, action, approverEmail || 'superadmin@curriculumserver.com.ng', notes || 'Approved via CIPA PIAM workflow.');
+    if (!updated) {
+      res.status(404).json({ success: false, error: 'Provisioning request not found' });
+      return;
+    }
+    res.json({ success: true, data: updated });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/v1/agent/requests/:requestId/cancel', (req: Request, res: Response) => {
+  try {
+    const updated = cipaAgentService.updateLifecycle(req.params.requestId, 'Cancelled');
+    if (!updated) {
+      res.status(404).json({ success: false, error: 'Provisioning request not found' });
+      return;
+    }
+    res.json({ success: true, data: updated });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 

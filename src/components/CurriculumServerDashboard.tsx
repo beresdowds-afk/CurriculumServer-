@@ -58,7 +58,8 @@ import {
   XCircle,
   HelpCircle,
   Zap,
-  ArrowRight
+  ArrowRight,
+  Bot
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -78,6 +79,7 @@ import {
 import { OPTIONAL_FEATURE_DEFINITIONS, INITIAL_SAAS_METRICS } from '../mockCurriculumServerData';
 import { InstanceLifecycleCenter } from './InstanceLifecycleCenter';
 import { ProductionHardeningDeck } from './ProductionHardeningDeck';
+import { CipaProvisioningAgentPortal } from './CipaProvisioningAgentPortal';
 
 interface CurriculumServerDashboardProps {
   tenants: TenantSchoolApp[];
@@ -106,7 +108,8 @@ export type SaaSActiveTab =
   | 'invoicing_ledger'
   | 'lease_contracts'
   | 'features_matrix'
-  | 'security_vault';
+  | 'security_vault'
+  | 'cipa_agent';
 
 export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps> = ({
   tenants,
@@ -540,6 +543,7 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
           {[
             { id: 'master_overview', label: 'Master SaaS Analytics', icon: TrendingUp },
             { id: 'provisioned_schools', label: 'Provisioned School Fleet', count: filteredTenants.length, icon: Building2 },
+            { id: 'cipa_agent', label: 'Provisioning Agent (CIPA)', icon: Bot },
             { id: 'universal_requests', label: 'Universal Onboarding (Phase 8)', count: universalRequests.length, icon: Sparkles },
             { id: 'instance_lifecycle', label: 'Lifecycle & Migration (Phase 9)', icon: Server },
             { id: 'production_hardening', label: 'Hardening & Cost (Phase 10)', icon: ShieldCheck },
@@ -574,6 +578,11 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
           })}
         </div>
       </div>
+
+      {/* CIPA AGENT PORTAL */}
+      {activeTab === 'cipa_agent' && (
+        <CipaProvisioningAgentPortal />
+      )}
 
       {/* TAB 1: MASTER SAAS OVERVIEW & TELEMETRY */}
       {activeTab === 'master_overview' && (
