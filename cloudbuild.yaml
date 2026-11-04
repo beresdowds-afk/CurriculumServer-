@@ -1,0 +1,43 @@
+# Cloud Build Configuration for Curriculum Server Platform
+# Project ID: curious-subject-477114-e4
+# Region: europe-west1
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  - name: 'node:20-alpine'
+    id: 'install-dependencies'
+    entrypoint: 'npm'
+    args: ['install']
+
+  - name: 'node:20-alpine'
+    id: 'build-all-applications'
+    entrypoint: 'npm'
+    args: ['run', 'build:all']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-container-image'
+    args: [
+      'build',
+      '-t', 'europe-west1-docker.pkg.dev/curious-subject-477114-e4/curriculum-registry/curriculum-server:$COMMIT_SHA',
+      '-t', 'europe-west1-docker.pkg.dev/curious-subject-477114-e4/curriculum-registry/curriculum-server:latest',
+      '.'
+    ]
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-container-image'
+    args: [
+      'push',
+      'europe-west1-docker.pkg.dev/curious-subject-477114-e4/curriculum-registry/curriculum-server:$COMMIT_SHA'
+    ]
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-cloud-run'
+    entrypoint: 'gcloud'
+    args: [
+      'run', 'deploy', 'curriculum-server',
+      '--image', 'europe-west1-docker.pkg.dev/curious-subject-477114-e4/curriculum-registry/curriculum-server:$COMMIT_SHA',
+      '--region', 'europe-west1',
+      '--platform', 'managed'
+    ]
