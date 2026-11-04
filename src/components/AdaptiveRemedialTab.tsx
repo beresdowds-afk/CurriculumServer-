@@ -18,20 +18,40 @@ import {
   BookOpen
 } from 'lucide-react';
 
+import { MOCK_USERS, MOCK_REMEDIALS } from '../data/curriculumFlowData';
+
 interface AdaptiveRemedialTabProps {
-  currentUser: UserProfile;
-  remedials: AdaptiveRemedialUnit[];
-  onAddRemedial: (unit: AdaptiveRemedialUnit) => void;
-  onScheduleRemedialToTimetable: (unitId: string) => void;
+  currentUser?: UserProfile;
+  remedials?: AdaptiveRemedialUnit[];
+  onAddRemedial?: (unit: AdaptiveRemedialUnit) => void;
+  onScheduleRemedialToTimetable?: (unitId: string) => void;
 }
 
 export const AdaptiveRemedialTab: React.FC<AdaptiveRemedialTabProps> = ({
-  currentUser,
-  remedials,
-  onAddRemedial,
-  onScheduleRemedialToTimetable
+  currentUser = MOCK_USERS[0],
+  remedials = MOCK_REMEDIALS,
+  onAddRemedial = (_unit: AdaptiveRemedialUnit) => {},
+  onScheduleRemedialToTimetable = (_id: string) => {}
 }) => {
-  const [activeRemedialId, setActiveRemedialId] = useState<string>(remedials[0]?.id || '');
+  const safeRemedials = remedials && remedials.length > 0 ? remedials : MOCK_REMEDIALS;
+  const fallback = MOCK_REMEDIALS[0] || {
+    id: 'rem-fallback-1',
+    originalLessonId: 'les-001',
+    subjectName: 'General Mathematics',
+    classGrade: 'SS 2',
+    topicTitle: 'Algebraic Processes',
+    weaknessIdentified: 'Factorisation struggles',
+    masteryScore: 45,
+    remedialObjectives: [],
+    remedialStrategies: [],
+    simplifiedExplanation: '',
+    scaffoldedPracticeExercises: [],
+    reassessmentQuestions: [],
+    status: 'recommended',
+    createdAt: new Date().toISOString()
+  };
+
+  const [activeRemedialId, setActiveRemedialId] = useState<string>(safeRemedials[0]?.id || fallback.id);
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Generator form
@@ -41,7 +61,7 @@ export const AdaptiveRemedialTab: React.FC<AdaptiveRemedialTabProps> = ({
   const [genComment, setGenComment] = useState('Students struggled with factorising quadratic equations when leading coefficient a > 1.');
   const [genUnderstanding, setGenUnderstanding] = useState('Poor (45% Class Mastery)');
 
-  const activeRemedial = remedials.find(r => r.id === activeRemedialId) || remedials[0];
+  const activeRemedial = safeRemedials.find(r => r.id === activeRemedialId) || safeRemedials[0] || fallback;
 
   const handleGenerateRemedial = async (e: React.FormEvent) => {
     e.preventDefault();

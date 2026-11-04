@@ -35,33 +35,35 @@ import {
   Zap
 } from 'lucide-react';
 import { BiometricMovementLog } from '../types';
+import { INITIAL_CLASS_GROUPS, INITIAL_STUDENTS, INITIAL_TEACHERS } from '../data/schoolManagementData';
+import { MOCK_USERS } from '../data/curriculumFlowData';
 
 interface StudentRegistersTabProps {
-  currentUser: UserProfile;
-  students: Student[];
-  classGroups: ClassGroup[];
-  teachers: Teacher[];
-  attendanceRegisters: ClassAttendanceRegister[];
+  currentUser?: UserProfile;
+  students?: Student[];
+  classGroups?: ClassGroup[];
+  teachers?: Teacher[];
+  attendanceRegisters?: ClassAttendanceRegister[];
   movementLogs?: BiometricMovementLog[];
-  onAddStudent: (student: Student) => void;
-  onUpdateStudent: (student: Student) => void;
-  onSaveAttendanceRegister: (register: ClassAttendanceRegister) => void;
+  onAddStudent?: (student: Student) => void;
+  onUpdateStudent?: (student: Student) => void;
+  onSaveAttendanceRegister?: (register: ClassAttendanceRegister) => void;
   initialSelectedClassGroupId?: string;
   onNavigateTab?: (tab: any) => void;
 }
 
 export const StudentRegistersTab: React.FC<StudentRegistersTabProps> = ({
-  currentUser,
-  students,
-  classGroups,
-  teachers,
-  attendanceRegisters,
+  currentUser = MOCK_USERS[0],
+  students = INITIAL_STUDENTS,
+  classGroups = INITIAL_CLASS_GROUPS,
+  teachers = INITIAL_TEACHERS,
+  attendanceRegisters = [],
   movementLogs = [],
-  onAddStudent,
-  onUpdateStudent,
-  onSaveAttendanceRegister,
+  onAddStudent = (_s: Student) => {},
+  onUpdateStudent = (_s: Student) => {},
+  onSaveAttendanceRegister = (_r: ClassAttendanceRegister) => {},
   initialSelectedClassGroupId,
-  onNavigateTab
+  onNavigateTab = (_tab: any) => {}
 }) => {
   const [activeTab, setActiveTab] = useState<'class_registers' | 'general_roster'>('class_registers');
   const [selectedClassId, setSelectedClassId] = useState<string>(

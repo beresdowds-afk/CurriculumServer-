@@ -4,6 +4,7 @@ import {
   StandardLessonNote, 
   LessonApprovalStatus 
 } from '../types';
+import { MOCK_USERS, MOCK_LESSON_NOTES } from '../data/curriculumFlowData';
 import { 
   FileCheck2, 
   CheckCircle2, 
@@ -23,35 +24,74 @@ import {
 } from 'lucide-react';
 
 interface LessonApprovalChainTabProps {
-  currentUser: UserProfile;
-  lessonNotes: StandardLessonNote[];
-  onApproveLesson: (lessonId: string) => void;
-  onRejectLesson: (lessonId: string, reason: string) => void;
-  onReviewLesson: (lessonId: string, comment: string) => void;
-  onOpenDraftModal: () => void;
+  currentUser?: UserProfile;
+  lessonNotes?: StandardLessonNote[];
+  onApproveLesson?: (lessonId: string) => void;
+  onRejectLesson?: (lessonId: string, reason: string) => void;
+  onReviewLesson?: (lessonId: string, comment: string) => void;
+  onOpenDraftModal?: () => void;
 }
 
 export const LessonApprovalChainTab: React.FC<LessonApprovalChainTabProps> = ({
-  currentUser,
-  lessonNotes,
-  onApproveLesson,
-  onRejectLesson,
-  onReviewLesson,
-  onOpenDraftModal,
+  currentUser = {
+    id: 'usr-principal-01',
+    name: 'Dr. (Mrs.) Funke Adeyemi',
+    title: 'Principal & Chief Executive Officer',
+    role: 'principal_admin',
+    avatar: 'FA',
+    email: 'principal@curriculumflow.edu.ng'
+  },
+  lessonNotes = [],
+  onApproveLesson = (_id: string) => {},
+  onRejectLesson = (_id: string, _reason: string) => {},
+  onReviewLesson = (_id: string, _comment: string) => {},
+  onOpenDraftModal = () => {},
 }) => {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [activeLessonId, setActiveLessonId] = useState<string>(lessonNotes[0]?.id || '');
+  
+  const safeLessonNotes = lessonNotes && lessonNotes.length > 0 ? lessonNotes : [
+    {
+      id: 'ln-fallback-01',
+      subjectId: 'sss-general-mathematics',
+      subjectName: 'General Mathematics',
+      classGrade: 'SS 2',
+      term: 'Term 1',
+      week: 5,
+      lessonNumber: 2,
+      topicTitle: 'Algebraic Processes: Quadratic Equations',
+      subTopic: 'Solution of Quadratic Equations by Factorisation',
+      durationMinutes: 80,
+      averageAge: '15 - 16 years',
+      previousKnowledge: 'Basic algebra',
+      learningObjectives: ['Solve quadratic equations'],
+      instructionalMaterials: ['Textbook'],
+      referenceBooks: ['NERDC Math SSS 2'],
+      introduction: { duration: '5 mins', activity: 'Review' },
+      presentationSteps: [],
+      guidedPractice: 'Board work',
+      independentPractice: 'Exercises',
+      evaluationQuestions: ['Solve x^2 - 5x + 6 = 0'],
+      summaryAndConclusion: 'Summary',
+      homework: ['Ex 5b'],
+      status: 'pending_coordinator_review',
+      createdBy: 'Mr. Babatunde Adewale',
+      createdAt: new Date().toISOString(),
+      version: 1
+    }
+  ];
+
+  const [activeLessonId, setActiveLessonId] = useState<string>(safeLessonNotes[0].id);
   const [copied, setCopied] = useState(false);
   const [reviewCommentInput, setReviewCommentInput] = useState('');
   const [rejectReasonInput, setRejectReasonInput] = useState('');
   const [isRejecting, setIsRejecting] = useState(false);
 
-  const filteredLessons = lessonNotes.filter((lesson) => {
+  const filteredLessons = safeLessonNotes.filter((lesson) => {
     if (selectedStatus === 'all') return true;
     return lesson.status === selectedStatus;
   });
 
-  const activeLesson = lessonNotes.find((l) => l.id === activeLessonId) || filteredLessons[0] || lessonNotes[0];
+  const activeLesson = safeLessonNotes.find((l) => l.id === activeLessonId) || filteredLessons[0] || safeLessonNotes[0];
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);

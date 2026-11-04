@@ -12,6 +12,8 @@ import {
   RLSPermissionEvaluation, 
   ScoreAuditRecord 
 } from '../types';
+import { INITIAL_CLASS_GROUPS, INITIAL_STUDENTS, INITIAL_TEACHERS } from '../data/schoolManagementData';
+import { MOCK_USERS } from '../data/curriculumFlowData';
 import { 
   BookOpen, 
   ShieldCheck, 
@@ -68,35 +70,35 @@ import {
 import { CurriculumChangesAuditView } from './CurriculumChangesAuditView';
 
 interface AcademicRecordsTabProps {
-  currentUser: UserProfile;
-  classGroups: ClassGroup[];
-  teachers: Teacher[];
-  students: Student[];
-  subjectScores: StudentSubjectScore[];
-  classRecords: ClassAcademicRecord[];
-  onUpdateSubjectScore: (updatedScore: StudentSubjectScore) => void;
-  onBatchUpdateScores: (updatedScores: StudentSubjectScore[]) => void;
-  onUpdateStudentTermSummary: (classGroupId: string, summary: StudentTermSummary) => void;
-  onLockSubjectScores: (subjectId: string, classGroupId: string) => void;
-  onUnlockSubjectScores: (subjectId: string, classGroupId: string) => void;
-  onApproveBroadsheet: (classRecordId: string) => void;
+  currentUser?: UserProfile;
+  classGroups?: ClassGroup[];
+  teachers?: Teacher[];
+  students?: Student[];
+  subjectScores?: StudentSubjectScore[];
+  classRecords?: ClassAcademicRecord[];
+  onUpdateSubjectScore?: (updatedScore: StudentSubjectScore) => void;
+  onBatchUpdateScores?: (updatedScores: StudentSubjectScore[]) => void;
+  onUpdateStudentTermSummary?: (classGroupId: string, summary: StudentTermSummary) => void;
+  onLockSubjectScores?: (subjectId: string, classGroupId: string) => void;
+  onUnlockSubjectScores?: (subjectId: string, classGroupId: string) => void;
+  onApproveBroadsheet?: (classRecordId: string) => void;
   onNavigateTab?: (tab: any) => void;
 }
 
 export const AcademicRecordsTab: React.FC<AcademicRecordsTabProps> = ({
-  currentUser,
-  classGroups,
-  teachers,
-  students,
-  subjectScores,
-  classRecords,
-  onUpdateSubjectScore,
-  onBatchUpdateScores,
-  onUpdateStudentTermSummary,
-  onLockSubjectScores,
-  onUnlockSubjectScores,
-  onApproveBroadsheet,
-  onNavigateTab
+  currentUser = MOCK_USERS[0],
+  classGroups = INITIAL_CLASS_GROUPS,
+  teachers = INITIAL_TEACHERS,
+  students = INITIAL_STUDENTS,
+  subjectScores = [],
+  classRecords = [],
+  onUpdateSubjectScore = (_score: StudentSubjectScore) => {},
+  onBatchUpdateScores = (_scores: StudentSubjectScore[]) => {},
+  onUpdateStudentTermSummary = (_groupId: string, _summary: StudentTermSummary) => {},
+  onLockSubjectScores = (_subjectId: string, _groupId: string) => {},
+  onUnlockSubjectScores = (_subjectId: string, _groupId: string) => {},
+  onApproveBroadsheet = (_recordId: string) => {},
+  onNavigateTab = (_tab: any) => {}
 }) => {
   // Navigation Sub-Tabs
   const [activeSubTab, setActiveSubTab] = useState<

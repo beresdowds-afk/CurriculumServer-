@@ -203,7 +203,16 @@ export const CurriculumFlowApp: React.FC = () => {
 
             {activeTab === 'curriculum_explorer' && (
               <CurriculumExplorerTab
+                subjects={NERDC_SUBJECTS_DATABASE}
                 onSelectSubject={(subject) => setSelectedSubjectDetail(subject)}
+                onOpenLessonPlan={(subject, topic) => {
+                  setSelectedSubjectDetail(subject);
+                  setIsLessonModalOpen(true);
+                }}
+                onOpenScheme={(subject) => {
+                  setSelectedSubjectDetail(subject);
+                  setIsSchemeModalOpen(true);
+                }}
               />
             )}
 
@@ -237,7 +246,10 @@ export const CurriculumFlowApp: React.FC = () => {
             )}
 
             {activeTab === 'remedial_hub' && (
-              <AdaptiveRemedialTab />
+              <AdaptiveRemedialTab
+                remedials={MOCK_REMEDIALS}
+                currentUser={currentUser}
+              />
             )}
 
             {activeTab === 'academic_records' && (

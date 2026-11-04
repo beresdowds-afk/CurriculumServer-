@@ -46,19 +46,20 @@ import {
   SUBJECT_PERFORMANCE_TRENDS, 
   SubjectPerformanceTrend 
 } from '../data/academicRecordsData';
+import { MOCK_USERS, MOCK_KPIS, MOCK_STUDENT_PROFILES } from '../data/curriculumFlowData';
 
 interface AcademicAnalyticsTabProps {
-  currentUser: UserProfile;
-  kpis: SchoolAcademicCommandKPIs;
-  studentProfiles: StudentMasteryProfile[];
-  onGeneratePersonalizedWorksheet: (studentId: string) => void;
+  currentUser?: UserProfile;
+  kpis?: SchoolAcademicCommandKPIs;
+  studentProfiles?: any[];
+  onGeneratePersonalizedWorksheet?: (studentId: string) => void;
 }
 
 export const AcademicAnalyticsTab: React.FC<AcademicAnalyticsTabProps> = ({
-  currentUser,
-  kpis,
-  studentProfiles,
-  onGeneratePersonalizedWorksheet
+  currentUser = MOCK_USERS[0],
+  kpis = MOCK_KPIS,
+  studentProfiles = MOCK_STUDENT_PROFILES as any[],
+  onGeneratePersonalizedWorksheet = (_id: string) => {}
 }) => {
   const [selectedStudentId, setSelectedStudentId] = useState<string>(studentProfiles[0]?.studentId || '');
   const [activeAnalyticsSubTab, setActiveAnalyticsSubTab] = useState<'coverage' | 'teachers' | 'subject_trends' | 'class_trends' | 'students'>('coverage');
@@ -80,7 +81,7 @@ export const AcademicAnalyticsTab: React.FC<AcademicAnalyticsTabProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const activeStudent = studentProfiles.find(s => s.studentId === selectedStudentId) || studentProfiles[0];
+  const activeStudent = studentProfiles.find(s => s.studentId === selectedStudentId) || studentProfiles[0] || { studentId: 'stu-001', studentName: 'Chinedu Eze', overallMasteryPercentage: 76 };
 
   // Filtered Subject Trends
   const filteredSubjectTrends = useMemo(() => {
@@ -159,7 +160,7 @@ export const AcademicAnalyticsTab: React.FC<AcademicAnalyticsTabProps> = ({
 
     // Highest improving subject
     const sortedByGain = [...SUBJECT_PERFORMANCE_TRENDS].sort((a, b) => (b.term3Avg - b.term1Avg) - (a.term3Avg - a.term1Avg));
-    const topSubject = sortedByGain[0];
+    const topSubject = sortedByGain[0] || { name: 'General Mathematics', term3Avg: 75, term1Avg: 68, creditPassRateTerm3: 90 };
 
     return {
       schoolMeanT3,
@@ -171,7 +172,7 @@ export const AcademicAnalyticsTab: React.FC<AcademicAnalyticsTabProps> = ({
   }, []);
 
   const activeTrendSubject = useMemo(() => {
-    return SUBJECT_PERFORMANCE_TRENDS.find(s => s.id === selectedTrendSubjectId) || SUBJECT_PERFORMANCE_TRENDS[0];
+    return SUBJECT_PERFORMANCE_TRENDS.find(s => s.id === selectedTrendSubjectId) || SUBJECT_PERFORMANCE_TRENDS[0] || { id: 'subj-math', name: 'General Mathematics', term3Avg: 75, term1Avg: 68, creditPassRateTerm3: 90 };
   }, [selectedTrendSubjectId]);
 
   return (

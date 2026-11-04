@@ -30,33 +30,39 @@ import {
 import { NerdcAnnualWorkerModal } from './NerdcAnnualWorkerModal';
 import { CurriculumChangesAuditView } from './CurriculumChangesAuditView';
 
+import { NERDC_SUBJECTS_DATABASE } from '../data/nerdcDatabase';
+
 interface CurriculumExplorerTabProps {
-  subjects: SubjectCurriculum[];
-  onOpenLessonPlan: (subject: SubjectCurriculum, topic?: CurriculumTopic) => void;
-  onOpenScheme: (subject: SubjectCurriculum) => void;
-  onOpenVariableQuestions: (subject: SubjectCurriculum, topic?: CurriculumTopic) => void;
-  onOpenTaughtAssessment: (subject: SubjectCurriculum) => void;
+  subjects?: SubjectCurriculum[];
+  onOpenLessonPlan?: (subject: SubjectCurriculum, topic?: CurriculumTopic) => void;
+  onOpenScheme?: (subject: SubjectCurriculum) => void;
+  onOpenVariableQuestions?: (subject: SubjectCurriculum, topic?: CurriculumTopic) => void;
+  onOpenTaughtAssessment?: (subject: SubjectCurriculum) => void;
+  onSelectSubject?: (subject: SubjectCurriculum) => void;
 }
 
 export const CurriculumExplorerTab: React.FC<CurriculumExplorerTabProps> = ({
-  subjects,
-  onOpenLessonPlan,
-  onOpenScheme,
-  onOpenVariableQuestions,
-  onOpenTaughtAssessment,
+  subjects = NERDC_SUBJECTS_DATABASE,
+  onOpenLessonPlan = (_subj: any, _top?: any) => {},
+  onOpenScheme = (_subj: any) => {},
+  onOpenVariableQuestions = (_subj: any, _top?: any) => {},
+  onOpenTaughtAssessment = (_subj: any) => {},
+  onSelectSubject = (_subj: any) => {},
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'explorer' | 'changes_audit'>('explorer');
   const [selectedLevel, setSelectedLevel] = useState<EducationLevel>('all');
   const [selectedField, setSelectedField] = useState<SubjectField | 'all'>('all');
   const [selectedGrade, setSelectedGrade] = useState<ClassGrade | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSubjectId, setSelectedSubjectId] = useState<string>(subjects[0]?.id || '');
+  
+  const safeSubjects = subjects && subjects.length > 0 ? subjects : NERDC_SUBJECTS_DATABASE;
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>(safeSubjects[0]?.id || '');
   const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null);
   const [isWorkerModalOpen, setIsWorkerModalOpen] = useState(false);
 
   // Filter subjects
   const filteredSubjects = useMemo(() => {
-    return subjects.filter((subject) => {
+    return safeSubjects.filter((subject) => {
       if (selectedLevel !== 'all' && subject.level !== selectedLevel) return false;
       if (selectedField !== 'all' && subject.field !== selectedField) return false;
       if (selectedGrade !== 'all' && !subject.targetGrades.includes(selectedGrade)) return false;
@@ -77,9 +83,9 @@ export const CurriculumExplorerTab: React.FC<CurriculumExplorerTabProps> = ({
       }
       return true;
     });
-  }, [subjects, selectedLevel, selectedField, selectedGrade, searchQuery]);
+  }, [safeSubjects, selectedLevel, selectedField, selectedGrade, searchQuery]);
 
-  const activeSubject = subjects.find(s => s.id === selectedSubjectId) || filteredSubjects[0] || subjects[0];
+  const activeSubject = safeSubjects.find(s => s.id === selectedSubjectId) || filteredSubjects[0] || safeSubjects[0];
 
   return (
     <div className="space-y-6 animate-fadeIn">

@@ -10,6 +10,14 @@ import {
   TenantSchoolApp
 } from '../types';
 import { 
+  MOCK_USERS, 
+  MOCK_KPIS, 
+  MOCK_LESSON_NOTES, 
+  MOCK_DELIVERIES, 
+  MOCK_REMEDIALS, 
+  MOCK_SECURE_EXAMS 
+} from '../data/curriculumFlowData';
+import { 
   Phone,
   Mail,
   MapPin,
@@ -60,35 +68,35 @@ import { PrincipalModals } from './principal-dashboard/PrincipalModals';
 import mobileAppImg from '../assets/images/flow_mobile_preview_1787052426217.jpg';
 
 interface CommandCenterTabProps {
-  currentUser: UserProfile;
-  kpis: SchoolAcademicCommandKPIs;
-  lessonNotes: StandardLessonNote[];
-  deliveries: AssignedLessonDelivery[];
-  remedials: AdaptiveRemedialUnit[];
-  exams: SecureExaminationPaper[];
-  onNavigateTab: (tab: MainTabType) => void;
-  onApproveLesson: (lessonId: string) => void;
-  onLaunchLessonModal: () => void;
-  onLaunchExamModal: () => void;
+  currentUser?: UserProfile;
+  kpis?: SchoolAcademicCommandKPIs;
+  lessonNotes?: StandardLessonNote[];
+  deliveries?: AssignedLessonDelivery[];
+  remedials?: AdaptiveRemedialUnit[];
+  exams?: SecureExaminationPaper[];
+  onNavigateTab?: (tab: MainTabType) => void;
+  onApproveLesson?: (lessonId: string) => void;
+  onLaunchLessonModal?: () => void;
+  onLaunchExamModal?: () => void;
   brandProfile?: SchoolBrandProfile;
   activeTenant?: TenantSchoolApp;
   onOpenAuthModal?: () => void;
 }
 
 export const CommandCenterTab: React.FC<CommandCenterTabProps> = ({
-  currentUser,
-  kpis,
-  lessonNotes,
-  deliveries,
-  remedials,
-  exams,
-  onNavigateTab,
-  onApproveLesson,
-  onLaunchLessonModal,
-  onLaunchExamModal,
+  currentUser = MOCK_USERS[0],
+  kpis = MOCK_KPIS,
+  lessonNotes = MOCK_LESSON_NOTES,
+  deliveries = MOCK_DELIVERIES,
+  remedials = MOCK_REMEDIALS,
+  exams = MOCK_SECURE_EXAMS,
+  onNavigateTab = (_tab: MainTabType) => {},
+  onApproveLesson = (_id: string) => {},
+  onLaunchLessonModal = () => {},
+  onLaunchExamModal = () => {},
   brandProfile,
   activeTenant,
-  onOpenAuthModal
+  onOpenAuthModal = () => {}
 }) => {
   // Active Sidebar Nav Key
   const [activeSidebarNav, setActiveSidebarNav] = useState<string>('dashboard');

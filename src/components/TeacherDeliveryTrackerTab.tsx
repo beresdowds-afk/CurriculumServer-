@@ -6,6 +6,7 @@ import {
   TeacherFeedback,
   StudentUnderstanding
 } from '../types';
+import { MOCK_DELIVERIES, MOCK_USERS } from '../data/curriculumFlowData';
 import { 
   CalendarCheck2, 
   CheckCircle2, 
@@ -22,19 +23,19 @@ import {
 } from 'lucide-react';
 
 interface TeacherDeliveryTrackerTabProps {
-  currentUser: UserProfile;
-  deliveries: AssignedLessonDelivery[];
-  onUpdateDeliveryStatus: (deliveryId: string, status: DeliveryStatus) => void;
-  onSubmitFeedback: (deliveryId: string, feedback: TeacherFeedback) => void;
-  onTriggerRemedial: (delivery: AssignedLessonDelivery) => void;
+  currentUser?: UserProfile;
+  deliveries?: AssignedLessonDelivery[];
+  onUpdateDeliveryStatus?: (deliveryId: string, status: DeliveryStatus) => void;
+  onSubmitFeedback?: (deliveryId: string, feedback: TeacherFeedback) => void;
+  onTriggerRemedial?: (delivery: AssignedLessonDelivery) => void;
 }
 
 export const TeacherDeliveryTrackerTab: React.FC<TeacherDeliveryTrackerTabProps> = ({
-  currentUser,
-  deliveries,
-  onUpdateDeliveryStatus,
-  onSubmitFeedback,
-  onTriggerRemedial
+  currentUser = MOCK_USERS[0],
+  deliveries = MOCK_DELIVERIES,
+  onUpdateDeliveryStatus = (_deliveryId: string, _status: DeliveryStatus) => {},
+  onSubmitFeedback = (_deliveryId: string, _feedback: TeacherFeedback) => {},
+  onTriggerRemedial = (_delivery: AssignedLessonDelivery) => {}
 }) => {
   const [selectedDay, setSelectedDay] = useState<string>('all');
   const [activeDeliveryId, setActiveDeliveryId] = useState<string>(deliveries[0]?.id || '');

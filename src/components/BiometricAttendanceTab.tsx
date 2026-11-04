@@ -13,6 +13,9 @@ import {
   PunctualityCategory,
   MovementLocationType
 } from '../types';
+import { INITIAL_BIOMETRIC_DEVICES, INITIAL_BIOMETRIC_LOGS } from '../data/biometricAttendanceData';
+import { INITIAL_CLASS_GROUPS, INITIAL_STUDENTS, INITIAL_TEACHERS } from '../data/schoolManagementData';
+import { MOCK_USERS } from '../data/curriculumFlowData';
 import { 
   ScanFace, 
   Fingerprint, 
@@ -49,41 +52,41 @@ import {
 } from 'lucide-react';
 
 interface BiometricAttendanceTabProps {
-  currentUser: UserProfile;
-  teachers: Teacher[];
-  classGroups: ClassGroup[];
-  students: Student[];
-  devices: BiometricDevice[];
-  movementLogs: BiometricMovementLog[];
-  teacherAttendanceRecords: TeacherAttendanceRecord[];
-  movementPasses: MovementPass[];
-  biometricProfiles: BiometricEnrollmentProfile[];
-  onAddMovementLog: (log: BiometricMovementLog) => void;
-  onUpdateTeacherAttendance: (record: TeacherAttendanceRecord) => void;
-  onAddMovementPass: (pass: MovementPass) => void;
-  onUpdateMovementPass: (pass: MovementPass) => void;
-  onUpdateBiometricProfile: (profile: BiometricEnrollmentProfile) => void;
+  currentUser?: UserProfile;
+  teachers?: Teacher[];
+  classGroups?: ClassGroup[];
+  students?: Student[];
+  devices?: BiometricDevice[];
+  movementLogs?: BiometricMovementLog[];
+  teacherAttendanceRecords?: TeacherAttendanceRecord[];
+  movementPasses?: MovementPass[];
+  biometricProfiles?: BiometricEnrollmentProfile[];
+  onAddMovementLog?: (log: BiometricMovementLog) => void;
+  onUpdateTeacherAttendance?: (record: TeacherAttendanceRecord) => void;
+  onAddMovementPass?: (pass: MovementPass) => void;
+  onUpdateMovementPass?: (pass: MovementPass) => void;
+  onUpdateBiometricProfile?: (profile: BiometricEnrollmentProfile) => void;
   onSyncClassRegisterFromBiometrics?: (classGroupId: string, date: string) => void;
   onNavigateTab?: (tab: any) => void;
 }
 
 export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
-  currentUser,
-  teachers,
-  classGroups,
-  students,
-  devices,
-  movementLogs,
-  teacherAttendanceRecords,
-  movementPasses,
-  biometricProfiles,
-  onAddMovementLog,
-  onUpdateTeacherAttendance,
-  onAddMovementPass,
-  onUpdateMovementPass,
-  onUpdateBiometricProfile,
-  onSyncClassRegisterFromBiometrics,
-  onNavigateTab
+  currentUser = MOCK_USERS[0],
+  teachers = INITIAL_TEACHERS,
+  classGroups = INITIAL_CLASS_GROUPS,
+  students = INITIAL_STUDENTS,
+  devices = INITIAL_BIOMETRIC_DEVICES,
+  movementLogs = INITIAL_BIOMETRIC_LOGS,
+  teacherAttendanceRecords = [],
+  movementPasses = [],
+  biometricProfiles = [],
+  onAddMovementLog = (_log: BiometricMovementLog) => {},
+  onUpdateTeacherAttendance = (_rec: TeacherAttendanceRecord) => {},
+  onAddMovementPass = (_pass: MovementPass) => {},
+  onUpdateMovementPass = (_pass: MovementPass) => {},
+  onUpdateBiometricProfile = (_prof: BiometricEnrollmentProfile) => {},
+  onSyncClassRegisterFromBiometrics = (_groupId: string, _date: string) => {},
+  onNavigateTab = (_tab: any) => {}
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
     'live_feed' | 'class_attendance' | 'teacher_attendance' | 'devices_hub' | 'movement_passes' | 'biometric_enrollment'

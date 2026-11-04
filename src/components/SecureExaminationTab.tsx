@@ -8,6 +8,7 @@ import {
 import { Principal2FAGate } from './Principal2FAGate';
 import { PaperExamGeneratorKiosk } from './PaperExamGeneratorKiosk';
 import { CBTExamKiosk } from './CBTExamKiosk';
+import { MOCK_SECURE_EXAMS, MOCK_MARKING_SCHEMES } from '../data/curriculumFlowData';
 import { 
   Lock, 
   Unlock, 
@@ -32,22 +33,24 @@ import {
 
 interface SecureExaminationTabProps {
   currentUser: UserProfile;
-  exams: SecureExaminationPaper[];
-  markingSchemes: SecureMarkingScheme[];
-  onLockExam: (examId: string) => void;
-  onUnlockMarkingScheme: (markingSchemeId: string) => void;
-  onAddExam: (exam: SecureExaminationPaper, scheme: SecureMarkingScheme) => void;
-  onAuthorizeExam: (examId: string) => void;
+  exams?: SecureExaminationPaper[];
+  markingSchemes?: SecureMarkingScheme[];
+  onLockExam?: (examId: string) => void;
+  onUnlockMarkingScheme?: (markingSchemeId: string) => void;
+  onAddExam?: (exam: SecureExaminationPaper, scheme: SecureMarkingScheme) => void;
+  onAuthorizeExam?: (examId: string) => void;
+  onOpenExamBuilder?: () => void;
 }
 
 export const SecureExaminationTab: React.FC<SecureExaminationTabProps> = ({
   currentUser,
-  exams,
-  markingSchemes,
-  onLockExam,
-  onUnlockMarkingScheme,
-  onAddExam,
-  onAuthorizeExam
+  exams = MOCK_SECURE_EXAMS,
+  markingSchemes = MOCK_MARKING_SCHEMES,
+  onLockExam = (_examId: string) => {},
+  onUnlockMarkingScheme = (_schemeId: string) => {},
+  onAddExam = (_exam: SecureExaminationPaper, _scheme: SecureMarkingScheme) => {},
+  onAuthorizeExam = (_examId: string) => {},
+  onOpenExamBuilder = () => {}
 }) => {
   // Main Suite Mode Switcher
   const [suiteMode, setSuiteMode] = useState<'paper_kiosk' | 'cbt_kiosk' | 'vault_registry' | 'security_governance'>('paper_kiosk');

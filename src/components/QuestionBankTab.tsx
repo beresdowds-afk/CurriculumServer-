@@ -1,11 +1,6 @@
 import React, { useState } from 'react';
-import { 
-  UserProfile, 
-  QuestionBankItem, 
-  QuestionCognitiveLevel, 
-  QuestionType,
-  ClassGrade
-} from '../types';
+import { UserProfile, QuestionBankItem } from '../types';
+import { MOCK_QUESTION_BANK, MOCK_USERS } from '../data/curriculumFlowData';
 import { 
   Layers, 
   Sparkles, 
@@ -23,15 +18,17 @@ import {
 } from 'lucide-react';
 
 interface QuestionBankTabProps {
-  currentUser: UserProfile;
-  questionBank: QuestionBankItem[];
-  onAddQuestion: (item: QuestionBankItem) => void;
+  currentUser?: UserProfile;
+  questionBank?: QuestionBankItem[];
+  onAddQuestion?: (item: QuestionBankItem) => void;
+  onOpenExamBuilder?: (item?: any) => void;
 }
 
 export const QuestionBankTab: React.FC<QuestionBankTabProps> = ({
-  currentUser,
-  questionBank,
-  onAddQuestion
+  currentUser = MOCK_USERS[0],
+  questionBank = MOCK_QUESTION_BANK,
+  onAddQuestion = (_item: QuestionBankItem) => {},
+  onOpenExamBuilder = (_item?: any) => {}
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
@@ -376,13 +373,13 @@ export const QuestionBankTab: React.FC<QuestionBankTabProps> = ({
                   {activeQuestion.correctAnswer || activeQuestion.stepByStepSolution || activeQuestion.solution}
                 </p>
 
-                {activeQuestion.markingRubric && activeQuestion.markingRubric.length > 0 && (
+                {(activeQuestion as any).markingRubric && (activeQuestion as any).markingRubric.length > 0 && (
                   <div className="space-y-2 pt-2 border-t border-slate-800">
                     <span className="font-bold text-slate-300 text-[11px] uppercase tracking-wider block">
-                      Step-by-Step Marking Rubric ({activeQuestion.markingRubric.reduce((s, r) => s + (r.marksAwarded || 0), 0)} Marks Total):
+                      Step-by-Step Marking Rubric ({(activeQuestion as any).markingRubric.reduce((s: any, r: any) => s + (r.marksAwarded || 0), 0)} Marks Total):
                     </span>
                     <div className="space-y-1.5">
-                      {activeQuestion.markingRubric.map((step, si) => (
+                      {(activeQuestion as any).markingRubric.map((step: any, si: number) => (
                         <div key={si} className="flex items-center justify-between p-2 rounded-lg bg-slate-850 border border-slate-800 text-[11px] font-mono">
                           <span className="text-slate-300">Step {si + 1}: {step.stepDescription}</span>
                           <span className="text-emerald-400 font-bold whitespace-nowrap ml-2">+{step.marksAwarded} Marks</span>
