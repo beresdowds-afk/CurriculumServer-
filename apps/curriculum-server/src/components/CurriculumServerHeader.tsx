@@ -10,6 +10,7 @@ import {
   Activity
 } from 'lucide-react';
 import { ServerNavTab } from './CurriculumServerSidebar';
+import { PwaSyncIndicator } from '../../../../src/components/PwaSyncIndicator';
 
 interface CurriculumServerHeaderProps {
   activeTab: ServerNavTab;
@@ -94,6 +95,9 @@ export const CurriculumServerHeader: React.FC<CurriculumServerHeaderProps> = ({
           <span>Launch Curriculum Flow</span>
           <ArrowRight className="w-3.5 h-3.5 text-indigo-400" />
         </button>
+
+        {/* Real-time PWA Sync Indicator */}
+        <PwaSyncIndicator appType="curriculum_server" />
 
         {/* Provision School Instance Button */}
         <button

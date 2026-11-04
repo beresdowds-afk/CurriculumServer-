@@ -3551,6 +3551,47 @@ app.post('/api/v1/agent/requests/:requestId/cancel', (req: Request, res: Respons
 });
 
 // -------------------------------------------------------------
+// PWA REAL-TIME SYNC API ENDPOINTS
+// -------------------------------------------------------------
+app.get('/api/v1/sync/status', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    serverVersion: '2.4.0-prod',
+    timestamp: Date.now(),
+    syncStatus: 'ACTIVE',
+    activeConnections: 1
+  });
+});
+
+app.post('/api/v1/sync/push', (req: Request, res: Response) => {
+  try {
+    const { mutations } = req.body;
+    if (!Array.isArray(mutations)) {
+      res.status(400).json({ success: false, error: 'Invalid mutations payload format. Expected array.' });
+      return;
+    }
+    console.log(`[PWA Sync] Received ${mutations.length} offline batched mutations from pre-installed PWA.`);
+    res.json({
+      success: true,
+      processedCount: mutations.length,
+      timestamp: Date.now()
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/v1/sync/poll', (req: Request, res: Response) => {
+  const since = Number(req.query.since) || 0;
+  res.json({
+    success: true,
+    since,
+    timestamp: Date.now(),
+    deltas: []
+  });
+});
+
+// -------------------------------------------------------------
 // VITE DEV / STATIC PRODUCTION SERVING
 
 // -------------------------------------------------------------

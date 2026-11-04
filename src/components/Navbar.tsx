@@ -43,6 +43,7 @@ import {
   Boxes
 } from 'lucide-react';
 import { CurriculumServerIcon, CurriculumFlowIcon } from './brand/BrandAssets';
+import { PwaSyncIndicator } from './PwaSyncIndicator';
 
 export type MainTabType = 
   | 'curriculum_server_landing'
@@ -646,6 +647,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="xl:hidden text-[11px] font-bold">Auth</span>
               </button>
             )}
+
+            {/* Real-time PWA Sync Indicator */}
+            <PwaSyncIndicator appType="curriculum_flow" />
 
             {/* Install / Share App Button */}
             {onOpenInstallModal && (

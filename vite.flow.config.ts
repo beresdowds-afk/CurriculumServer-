@@ -9,8 +9,11 @@ export default defineConfig(() => {
     root: path.resolve(__dirname, 'apps/curriculum-flow'),
     plugins: [react(), tailwindcss()],
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: {
         '@': path.resolve(__dirname, '.'),
+        'react': path.resolve(__dirname, 'node_modules/react'),
+        'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
         '@shared-ui': path.resolve(__dirname, 'packages/shared-ui/src/index.tsx'),
         '@shared-types': path.resolve(__dirname, 'packages/shared-types/src/index.ts'),
       },
