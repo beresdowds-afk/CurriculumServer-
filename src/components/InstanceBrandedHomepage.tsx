@@ -37,9 +37,12 @@ import {
   Trash2,
   Video,
   Image as ImageIcon,
-  GripVertical
+  GripVertical,
+  Download,
+  Share2
 } from 'lucide-react';
 import { unifiedApiClient } from '../services/unifiedApiClient';
+import { InstallShareModal } from './InstallShareModal';
 
 interface InstanceBrandedHomepageProps {
   config: HomepageConfiguration;
@@ -58,6 +61,7 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
 }) => {
   const [mutableConfig, setMutableConfig] = useState<HomepageConfiguration>(config);
   const [isSectionManagerOpen, setIsSectionManagerOpen] = useState(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
 
   useEffect(() => {
     setMutableConfig(config);
@@ -243,6 +247,15 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
               </button>
             )}
 
+            <button
+              onClick={() => setIsInstallModalOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-700/70 text-emerald-300 rounded-xl transition-all cursor-pointer shadow-sm"
+              title="Download Self-Installing PWA & Shareable Link"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Install App & Share</span>
+            </button>
+
             <a
               href="#portal-login"
               className="px-4 py-2 text-xs font-bold text-white border border-slate-700/80 hover:bg-slate-800/80 rounded-xl transition-all"
@@ -314,6 +327,14 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
                     {hero.ctaSecondaryText}
                   </a>
                 )}
+
+                <button
+                  onClick={() => setIsInstallModalOpen(true)}
+                  className={`px-6 py-3.5 text-sm font-semibold bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-700/70 text-emerald-300 ${borderRadiusClass} transition-all flex items-center gap-2 cursor-pointer shadow-lg`}
+                >
+                  <Download className="w-4 h-4 text-emerald-400" />
+                  <span>Download Self-Installing PWA & Share Link</span>
+                </button>
               </div>
             </div>
 
@@ -856,6 +877,12 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
           </div>
         </div>
       </footer>
+
+      {/* PWA Install & Share Modal */}
+      <InstallShareModal 
+        isOpen={isInstallModalOpen} 
+        onClose={() => setIsInstallModalOpen(false)} 
+      />
     </div>
   );
 };
