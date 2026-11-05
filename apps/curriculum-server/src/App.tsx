@@ -61,6 +61,7 @@ export const CurriculumServerApp: React.FC = () => {
   const [tenants, setTenants] = useState<TenantSchoolApp[]>(INITIAL_PROVISIONED_TENANTS);
   const [clonedTenants, setClonedTenants] = useState<TenantSchoolApp[]>(INITIAL_CLONED_TENANTS);
   const [saasMetrics, setSaasMetrics] = useState(INITIAL_SAAS_METRICS);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Modals state
   const [isProvisionModalOpen, setIsProvisionModalOpen] = useState(false);
@@ -202,6 +203,8 @@ export const CurriculumServerApp: React.FC = () => {
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
         tenantCount={tenants.length}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
       />
 
       {/* Main Content Area */}
@@ -214,6 +217,8 @@ export const CurriculumServerApp: React.FC = () => {
           onOpenUniversalWizard={() => setIsUniversalWizardOpen(true)}
           onSwitchToFlowApp={handleSwitchToFlow}
           onViewPublicHomepage={() => setViewMode('public_homepage')}
+          onToggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          isSidebarCollapsed={isSidebarCollapsed}
         />
 
         {/* Viewport Content */}

@@ -66,6 +66,34 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
   const [mutableConfig, setMutableConfig] = useState<HomepageConfiguration>(config);
   const [isSectionManagerOpen, setIsSectionManagerOpen] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [isAdmissionsModalOpen, setIsAdmissionsModalOpen] = useState(false);
+  const [isFeesModalOpen, setIsFeesModalOpen] = useState(false);
+  const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
+  const [isCbtModalOpen, setIsCbtModalOpen] = useState(false);
+
+  const [applicantName, setApplicantName] = useState('');
+  const [applicantGrade, setApplicantGrade] = useState('JSS 1');
+  const [guardianEmail, setGuardianEmail] = useState('');
+  const [admissionSuccessId, setAdmissionSuccessId] = useState<string | null>(null);
+
+  const [cbtAnswer, setCbtAnswer] = useState<string | null>(null);
+  const [cbtSubmitted, setCbtSubmitted] = useState(false);
+
+  // Feature Test Bench State
+  const [activeFeatureTest, setActiveFeatureTest] = useState<'none' | 'exam_gen' | 'lesson_approval' | 'vault_storage' | 'attendance' | 'fees_payment'>('none');
+  const [testSubject, setTestSubject] = useState('General Mathematics');
+  const [generatedQuestions, setGeneratedQuestions] = useState<any[] | null>(null);
+  const [isTestGenerating, setIsTestGenerating] = useState(false);
+  const [lessonNoteStatus, setLessonNoteStatus] = useState<'pending' | 'approved' | 'revision'>('pending');
+  const [vaultBackups, setVaultBackups] = useState([
+    { id: 'bak_001', name: 'Sovereign_Database_Full_Snapshot.enc', size: '42.8 MB', timestamp: 'Today, 04:00 UTC', status: 'Encrypted & Verified' }
+  ]);
+  const [attendanceLogs, setAttendanceLogs] = useState([
+    { name: 'Oluwaseun Adeleke (SS 2 Science)', time: '07:45 AM', gate: 'Gate A (Main RFID)', status: 'On Time' }
+  ]);
+  const [feeAmount, setFeeAmount] = useState('230000');
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
+
   const [draggedSectionIndex, setDraggedSectionIndex] = useState<number | null>(null);
   const [dragOverSectionIndex, setDragOverSectionIndex] = useState<number | null>(null);
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
@@ -267,7 +295,11 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
             </div>
           </div>
 
-          <nav className="hidden lg:flex items-center gap-7 text-xs font-semibold text-slate-300">
+          <nav className="hidden xl:flex items-center gap-5 text-xs font-semibold text-slate-300">
+            <button onClick={() => setIsAdmissionsModalOpen(true)} className="hover:text-white transition-colors cursor-pointer text-emerald-400 font-bold">Admissions</button>
+            <button onClick={() => setIsFeesModalOpen(true)} className="hover:text-white transition-colors cursor-pointer">Fee Schedule</button>
+            <button onClick={() => setIsCalendarModalOpen(true)} className="hover:text-white transition-colors cursor-pointer">Calendar</button>
+            <button onClick={() => setIsCbtModalOpen(true)} className="hover:text-white transition-colors cursor-pointer text-teal-400 font-bold">CBT Demo</button>
             {enabledSections.map(sec => (
               <a 
                 key={sec.id} 
@@ -997,8 +1029,397 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* 4. INSTANCE FOOTER                                            */}
+      {/* 3B. VISITOR FEATURE TEST BENCH                                */}
       {/* ------------------------------------------------------------- */}
+      <section className="py-20 border-b border-slate-800/80 bg-gradient-to-b from-[#070A0F] to-[#0A0F1A]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+          <div className="text-center max-w-3xl mx-auto space-y-3">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-xs font-bold uppercase tracking-wider">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Live Functional Demonstration</span>
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">Test Core Workflows & Engines</h2>
+            <p className="text-sm text-slate-300">
+              Visitors can test exam question generation, vault storage backups, lesson note approval chains, biometric gate attendance, and bursary payment splits directly below.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* 1. Exam Question Generation */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 flex flex-col justify-between space-y-6 shadow-xl hover:border-emerald-500/40 transition-all">
+              <div className="space-y-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-bold text-white">AI Exam Question Generator</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Test the Gemini AI question generation engine aligned with NERDC curriculum standards.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveFeatureTest('exam_gen')}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow transition-all cursor-pointer"
+              >
+                Test Question Generator
+              </button>
+            </div>
+
+            {/* 2. Lesson Note Approval Chain */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 flex flex-col justify-between space-y-6 shadow-xl hover:border-indigo-500/40 transition-all">
+              <div className="space-y-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-bold text-white">Lesson Note Approval Chain</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Simulate teacher submission and principal review/approval workflow for instructional notes.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveFeatureTest('lesson_approval')}
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow transition-all cursor-pointer"
+              >
+                Test Approval Workflow
+              </button>
+            </div>
+
+            {/* 3. Encrypted Vault Storage */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 flex flex-col justify-between space-y-6 shadow-xl hover:border-purple-500/40 transition-all">
+              <div className="space-y-3">
+                <div className="w-10 h-10 rounded-2xl bg-purple-500/10 border border-purple-500/30 text-purple-400 flex items-center justify-center">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-bold text-white">Encrypted Vault Storage</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Test sovereign backup snapshots, checksum verification, and disaster recovery storage vaults.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveFeatureTest('vault_storage')}
+                className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl shadow transition-all cursor-pointer"
+              >
+                Test Vault Storage
+              </button>
+            </div>
+
+            {/* 4. Biometric Attendance Gate */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 flex flex-col justify-between space-y-6 shadow-xl hover:border-amber-500/40 transition-all">
+              <div className="space-y-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-bold text-white">Biometric Attendance Logs</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Simulate RFID gate check-ins and real-time student presence record keeping.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveFeatureTest('attendance')}
+                className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl shadow transition-all cursor-pointer"
+              >
+                Test Attendance Gate
+              </button>
+            </div>
+
+            {/* 5. Bursary Fee Split & Payment */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 flex flex-col justify-between space-y-6 shadow-xl hover:border-teal-500/40 transition-all">
+              <div className="space-y-3">
+                <div className="w-10 h-10 rounded-2xl bg-teal-500/10 border border-teal-500/30 text-teal-400 flex items-center justify-center">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-bold text-white">Bursary Fee & Payment Flow</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Test termly fee settlement and automated PSP multi-split distribution across accounts.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveFeatureTest('fees_payment')}
+                className="w-full py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl shadow transition-all cursor-pointer"
+              >
+                Test Payment Split
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Feature Test Modals */}
+      {activeFeatureTest === 'exam_gen' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="max-w-xl w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 text-slate-100 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-bold text-white">AI Exam Question Generator Simulator</h3>
+              </div>
+              <button onClick={() => { setActiveFeatureTest('none'); setGeneratedQuestions(null); }} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">Select Subject & Curriculum Topic</label>
+                <select
+                  value={testSubject}
+                  onChange={e => setTestSubject(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
+                >
+                  <option value="General Mathematics">General Mathematics (Quadratic Equations)</option>
+                  <option value="Civic Education">Civic Education (Fundamental Human Rights)</option>
+                  <option value="Biology">Biology (Cellular Respiration & Enzymes)</option>
+                  <option value="English Language">English Language (Lexis & Structure)</option>
+                </select>
+              </div>
+              <button
+                onClick={async () => {
+                  setIsTestGenerating(true);
+                  try {
+                    const res = await fetch('/api/v1/question-bank/generate-objective', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ subjectName: testSubject, classGrade: 'SS 2', count: 2 })
+                    });
+                    const data = await res.json();
+                    if (data.success && data.questions) {
+                      setGeneratedQuestions(data.questions);
+                    } else {
+                      setGeneratedQuestions([
+                        {
+                          stem: `Which of the following is the primary NERDC curriculum objective for ${testSubject}?`,
+                          options: { A: 'Mastery of fundamental principles', B: 'Rote memorization only', C: 'Tax evasion procedures', D: 'Manual typewriter operation' },
+                          correctOption: 'A',
+                          pedagogicalExplanation: 'Curriculum objective focuses on conceptual mastery and application.'
+                        }
+                      ]);
+                    }
+                  } catch {
+                    setGeneratedQuestions([
+                      {
+                        stem: `Sample objective question for ${testSubject} under NERDC 2026 standards.`,
+                        options: { A: 'Option Alpha', B: 'Option Beta', C: 'Option Gamma', D: 'Option Delta' },
+                        correctOption: 'A',
+                        pedagogicalExplanation: 'Verified correct option with pedagogical reasoning.'
+                      }
+                    ]);
+                  } finally {
+                    setIsTestGenerating(false);
+                  }
+                }}
+                disabled={isTestGenerating}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                {isTestGenerating ? <span>Generating AI Questions...</span> : <span>Generate AI Question Paper Now</span>}
+              </button>
+
+              {generatedQuestions && (
+                <div className="space-y-3 pt-2">
+                  <span className="font-bold text-emerald-400 block">Generated Questions ({generatedQuestions.length}):</span>
+                  {generatedQuestions.map((q, i) => (
+                    <div key={i} className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+                      <p className="font-semibold text-white">Q{i+1}: {q.stem}</p>
+                      <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-300">
+                        {Object.entries(q.options || {}).map(([k, v]) => (
+                          <div key={k} className={`p-1.5 rounded-lg border ${k === q.correctOption ? 'bg-emerald-950 border-emerald-600 text-emerald-300 font-bold' : 'bg-slate-900 border-slate-800'}`}>
+                            {k}: {String(v)}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-slate-400 italic">Explanation: {q.pedagogicalExplanation}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeFeatureTest === 'lesson_approval' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="max-w-lg w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 text-slate-100 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-base font-bold text-white">Lesson Note Approval Simulator</h3>
+              </div>
+              <button onClick={() => setActiveFeatureTest('none')} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4 text-xs">
+              <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+                <div className="flex justify-between font-bold text-white">
+                  <span>Subject: General Mathematics (SS 2)</span>
+                  <span className={lessonNoteStatus === 'approved' ? 'text-emerald-400' : lessonNoteStatus === 'revision' ? 'text-rose-400' : 'text-amber-400'}>
+                    Status: {lessonNoteStatus.toUpperCase()}
+                  </span>
+                </div>
+                <p className="text-slate-300">Topic: Factorization of Quadratic Expressions where coefficient a &gt; 1.</p>
+                <p className="text-[11px] text-slate-400">Teacher: Mr. Babatunde Ogunlesi • Submitted for Principal Review</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setLessonNoteStatus('approved')}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl cursor-pointer"
+                >
+                  Approve Lesson Note
+                </button>
+                <button
+                  onClick={() => setLessonNoteStatus('revision')}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl cursor-pointer"
+                >
+                  Request Revision
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeFeatureTest === 'vault_storage' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="max-w-lg w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 text-slate-100 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Lock className="w-5 h-5 text-purple-400" />
+                <h3 className="text-base font-bold text-white">Sovereign Vault Storage & Backups</h3>
+              </div>
+              <button onClick={() => setActiveFeatureTest('none')} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4 text-xs">
+              <div className="space-y-2">
+                {vaultBackups.map((bak, idx) => (
+                  <div key={idx} className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-white font-mono text-[11px]">{bak.name}</p>
+                      <p className="text-[10px] text-slate-400">{bak.size} • {bak.timestamp}</p>
+                    </div>
+                    <span className="px-2 py-1 rounded-lg bg-purple-950 text-purple-300 border border-purple-800 font-bold text-[10px]">
+                      {bak.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  const newBak = {
+                    id: `bak_00${vaultBackups.length + 1}`,
+                    name: `Sovereign_Snapshot_${new Date().toISOString().slice(0,10)}.enc`,
+                    size: '43.1 MB',
+                    timestamp: 'Just now',
+                    status: 'Encrypted & Verified'
+                  };
+                  setVaultBackups([newBak, ...vaultBackups]);
+                }}
+                className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl cursor-pointer"
+              >
+                Create Instant Encrypted Snapshot Backup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeFeatureTest === 'attendance' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="max-w-lg w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 text-slate-100 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-amber-400" />
+                <h3 className="text-base font-bold text-white">Biometric & RFID Attendance Gate</h3>
+              </div>
+              <button onClick={() => setActiveFeatureTest('none')} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4 text-xs">
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {attendanceLogs.map((log, idx) => (
+                  <div key={idx} className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-white">{log.name}</p>
+                      <p className="text-[10px] text-slate-400">{log.gate} at {log.time}</p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold text-[10px]">
+                      {log.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  const names = ['Amina Bello (SS 1 Arts)', 'Chinedu Okafor (JSS 3)', 'Fatima Garba (SS 3 Science)'];
+                  const randomName = names[Math.floor(Math.random() * names.length)];
+                  const newLog = { name: randomName, time: new Date().toLocaleTimeString(), gate: 'Gate B (Secondary Wing)', status: 'On Time' };
+                  setAttendanceLogs([newLog, ...attendanceLogs]);
+                }}
+                className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl cursor-pointer"
+              >
+                Simulate RFID Check-In Tap
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeFeatureTest === 'fees_payment' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 text-slate-100 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-teal-400" />
+                <h3 className="text-base font-bold text-white">Bursary Fee & PSP Multi-Split</h3>
+              </div>
+              <button onClick={() => { setActiveFeatureTest('none'); setPaymentSuccess(false); }} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {paymentSuccess ? (
+              <div className="text-center space-y-4 py-4">
+                <div className="w-12 h-12 rounded-full bg-teal-500/20 text-teal-400 flex items-center justify-center mx-auto border border-teal-500/40">
+                  <Check className="w-6 h-6" />
+                </div>
+                <h4 className="text-lg font-bold text-white">Payment Settled & Automated Multi-Split Successful!</h4>
+                <p className="text-xs text-slate-300">₦{Number(feeAmount).toLocaleString()} successfully processed and distributed across Tuition, ICT, and Sports accounts.</p>
+                <button
+                  onClick={() => { setActiveFeatureTest('none'); setPaymentSuccess(false); }}
+                  className="w-full py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Termly Settlement Amount (₦)</label>
+                  <input
+                    type="number"
+                    value={feeAmount}
+                    onChange={e => setFeeAmount(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-mono focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1 text-[11px] text-slate-400">
+                  <p className="font-bold text-white">Automated Split Rule:</p>
+                  <p>• Tuition Account (70%): ₦{(Number(feeAmount) * 0.7).toLocaleString()}</p>
+                  <p>• ICT Development (20%): ₦{(Number(feeAmount) * 0.2).toLocaleString()}</p>
+                  <p>• Sports & Maintenance (10%): ₦{(Number(feeAmount) * 0.1).toLocaleString()}</p>
+                </div>
+                <button
+                  onClick={() => setPaymentSuccess(true)}
+                  className="w-full py-3 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl shadow-lg transition-all cursor-pointer"
+                >
+                  Simulate Secure Payment & Split
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
       <footer className="bg-[#05070B] py-12 text-slate-400 text-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
@@ -1051,6 +1472,239 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
           </div>
         </div>
       </footer>
+
+      {/* Admissions Application Modal */}
+      {isAdmissionsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 text-slate-100 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <GraduationCap className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-bold text-white">Online Admissions Application</h3>
+              </div>
+              <button onClick={() => setIsAdmissionsModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {admissionSuccessId ? (
+              <div className="text-center space-y-4 py-4">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/40">
+                  <Check className="w-6 h-6" />
+                </div>
+                <h4 className="text-lg font-bold text-white">Application Submitted Successfully!</h4>
+                <p className="text-xs text-slate-300">Your admission application for {applicantName} has been received and logged into the {branding.institutionName} admissions queue.</p>
+                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 font-mono text-emerald-400 text-sm font-bold">
+                  Reference ID: {admissionSuccessId}
+                </div>
+                <button
+                  onClick={() => { setAdmissionSuccessId(null); setIsAdmissionsModalOpen(false); }}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const ref = `ADM/2026/${Math.floor(1000 + Math.random() * 9000)}`;
+                setAdmissionSuccessId(ref);
+              }} className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Applicant Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={applicantName}
+                    onChange={e => setApplicantName(e.target.value)}
+                    placeholder="e.g., Oluwaseun Adeleke"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Target Class Grade</label>
+                  <select
+                    value={applicantGrade}
+                    onChange={e => setApplicantGrade(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="JSS 1">JSS 1 (Basic 7)</option>
+                    <option value="JSS 2">JSS 2 (Basic 8)</option>
+                    <option value="JSS 3">JSS 3 (Basic 9)</option>
+                    <option value="SS 1">SS 1 (Senior 1)</option>
+                    <option value="SS 2">SS 2 (Senior 2)</option>
+                    <option value="SS 3">SS 3 (Senior 3)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Parent / Guardian Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={guardianEmail}
+                    onChange={e => setGuardianEmail(e.target.value)}
+                    placeholder="guardian@example.com"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer"
+                >
+                  Submit Application & Generate ID
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Fee Schedule Modal */}
+      {isFeesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="max-w-lg w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 text-slate-100 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-purple-400" />
+                <h3 className="text-base font-bold text-white">2026/2027 Term 1 Fee Schedule</h3>
+              </div>
+              <button onClick={() => setIsFeesModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3 text-xs text-slate-300">
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
+                <span>Tuition & Academic Development</span>
+                <strong className="text-white font-mono">₦125,000</strong>
+              </div>
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
+                <span>ICT & Computer Laboratory Levy</span>
+                <strong className="text-white font-mono">₦25,000</strong>
+              </div>
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
+                <span>Sports, Library & Extra-Curricular</span>
+                <strong className="text-white font-mono">₦15,000</strong>
+              </div>
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
+                <span>Boarding & Catering (Optional)</span>
+                <strong className="text-white font-mono">₦65,000</strong>
+              </div>
+              <div className="p-3 bg-indigo-950/40 rounded-xl border border-indigo-800/60 flex items-center justify-between text-indigo-300 font-bold">
+                <span>Total Termly Settlement</span>
+                <strong className="font-mono text-white">₦230,000</strong>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsFeesModalOpen(false)}
+              className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl cursor-pointer"
+            >
+              Close Schedule
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Academic Calendar Modal */}
+      {isCalendarModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="max-w-lg w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 text-slate-100 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-amber-400" />
+                <h3 className="text-base font-bold text-white">Academic Calendar — 2026/2027</h3>
+              </div>
+              <button onClick={() => setIsCalendarModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3 text-xs text-slate-300">
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                <div className="flex justify-between font-bold text-white">
+                  <span>Term 1 Resumption & Lectures</span>
+                  <span className="text-emerald-400">Sep 14, 2026 - Dec 18, 2026</span>
+                </div>
+                <p className="text-[11px] text-slate-400">Includes mid-term break (Oct 26-30) and terminal examinations (Dec 7-16).</p>
+              </div>
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                <div className="flex justify-between font-bold text-white">
+                  <span>Term 2 Resumption</span>
+                  <span className="text-blue-400">Jan 11, 2027 - Apr 09, 2027</span>
+                </div>
+                <p className="text-[11px] text-slate-400">Sports festival, science fair, and continuous assessment tests.</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsCalendarModalOpen(false)}
+              className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl cursor-pointer"
+            >
+              Close Calendar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* CBT Demo Test Modal */}
+      {isCbtModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="max-w-lg w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 text-slate-100 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-teal-400" />
+                <h3 className="text-base font-bold text-white">CBT Secure Exam Kiosk Demo</h3>
+              </div>
+              <button onClick={() => { setIsCbtModalOpen(false); setCbtSubmitted(false); setCbtAnswer(null); }} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {cbtSubmitted ? (
+              <div className="text-center space-y-4 py-4">
+                <div className="w-12 h-12 rounded-full bg-teal-500/20 text-teal-400 flex items-center justify-center mx-auto border border-teal-500/40">
+                  <Check className="w-6 h-6" />
+                </div>
+                <h4 className="text-lg font-bold text-white">Test Submitted Successfully!</h4>
+                <p className="text-xs text-slate-300">Your answer was recorded in the secure CBT sovereign engine.</p>
+                <button
+                  onClick={() => { setIsCbtModalOpen(false); setCbtSubmitted(false); setCbtAnswer(null); }}
+                  className="w-full py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Close Kiosk
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4 text-xs text-slate-300">
+                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 font-semibold text-white">
+                  Question 1: What is the primary function of the NERDC in the Nigerian educational framework?
+                </div>
+                <div className="space-y-2">
+                  {[
+                    { key: 'A', text: 'Curriculum development, research and periodic review' },
+                    { key: 'B', text: 'Collection of state school levies and taxes' },
+                    { key: 'C', text: 'Operation of interstate railway networks' }
+                  ].map(opt => (
+                    <button
+                      key={opt.key}
+                      onClick={() => setCbtAnswer(opt.key)}
+                      className={`w-full text-left p-3 rounded-xl border transition-all flex items-center gap-3 cursor-pointer ${
+                        cbtAnswer === opt.key ? 'bg-teal-950 border-teal-500 text-white font-bold' : 'bg-slate-950 border-slate-800 hover:bg-slate-800'
+                      }`}
+                    >
+                      <span className="w-6 h-6 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-xs font-mono">{opt.key}</span>
+                      <span>{opt.text}</span>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  disabled={!cbtAnswer}
+                  onClick={() => setCbtSubmitted(true)}
+                  className="w-full py-3 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer"
+                >
+                  Submit CBT Answer
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* PWA Install & Share Modal */}
       <InstallShareModal 

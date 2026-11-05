@@ -61,6 +61,7 @@ export const CurriculumFlowApp: React.FC = () => {
   const [schoolBrand, setSchoolBrand] = useState(INITIAL_SCHOOL_BRAND);
   const [activeTenantId, setActiveTenantId] = useState<string>('tenant_apex_001');
   const [schoolProfile, setSchoolProfile] = useState<any>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Authenticate and synchronize school configuration from authoritative unified backend
   useEffect(() => {
@@ -174,6 +175,8 @@ export const CurriculumFlowApp: React.FC = () => {
         onSelectTab={handleSelectTab}
         userRole={currentUser.role}
         schoolName={schoolBrand.schoolName}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
       />
 
       {/* Main Content Area */}
@@ -185,6 +188,8 @@ export const CurriculumFlowApp: React.FC = () => {
           onSwitchToServerApp={handleSwitchToServer}
           onViewPublicHomepage={() => setViewMode('public_homepage')}
           schoolName={schoolBrand.schoolName}
+          onToggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          isSidebarCollapsed={isSidebarCollapsed}
         />
 
         {/* Viewport Content */}

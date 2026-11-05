@@ -66,7 +66,8 @@ export type PricingManagementTab =
   | 'addons' 
   | 'domains' 
   | 'promos' 
-  | 'audit_simulator';
+  | 'audit_simulator'
+  | 'psp_sandbox';
 
 interface PricingOffersManagementPortalProps {
   currentUser?: UserProfile;
@@ -138,6 +139,25 @@ export const PricingOffersManagementPortal: React.FC<PricingOffersManagementPort
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
   };
+
+  // PSP Sandbox State
+  const [sandboxPsp, setSandboxPsp] = useState<'Paystack' | 'Flutterwave' | 'OPay' | 'Direct Bank Wire'>('Paystack');
+  const [sandboxTenant, setSandboxTenant] = useState("King's College Lagos");
+  const [sandboxAmount, setSandboxAmount] = useState('1200000');
+  const [sandboxTestTransactions, setSandboxTestTransactions] = useState<any[]>([
+    {
+      id: 'tx_test_01',
+      invoiceNumber: 'INV-CS-2026-TEST-91',
+      tenantName: "King's College Lagos",
+      amount: 1200000,
+      psp: 'Paystack',
+      reference: 'PSTK_TEST_894172',
+      status: 'success',
+      responseCode: '200_OK',
+      timestamp: 'Just now'
+    }
+  ]);
+  const [isProcessingSandbox, setIsProcessingSandbox] = useState(false);
 
   // Modals state
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlanOffer | null>(null);
@@ -717,7 +737,8 @@ export const PricingOffersManagementPortal: React.FC<PricingOffersManagementPort
               { id: 'addons', label: 'Add-On Feature Modules', count: optionalFeatures.length, icon: Zap },
               { id: 'domains', label: 'Domain & TLD Rates', count: tldPlans.length, icon: Globe },
               { id: 'promos', label: 'Promotions & Coupons', count: promoOffers.length, icon: Tag },
-              { id: 'audit_simulator', label: 'Audit Ledger & Simulator', count: auditLogs.length, icon: BarChart3 }
+              { id: 'audit_simulator', label: 'Audit Ledger & Simulator', count: auditLogs.length, icon: BarChart3 },
+              { id: 'psp_sandbox', label: 'PSP Payment & Invoicing Sandbox', count: sandboxTestTransactions.length, icon: ShieldCheck }
             ].map(tab => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -1261,6 +1282,130 @@ export const PricingOffersManagementPortal: React.FC<PricingOffersManagementPort
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 7: PSP PAYMENT & INVOICING SANDBOX */}
+        {activeTab === 'psp_sandbox' && (
+          <div className="space-y-6 animate-in fade-in duration-150">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-white">PSP Payment, Invoicing & Record-Keeping Simulator</h3>
+                <p className="text-xs text-slate-400">Test live payment processing, automated webhook confirmation, digital invoicing, and ledger recording across Paystack, Flutterwave, OPay, and Direct Bank Wire.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Test Charge Generator */}
+              <div className="lg:col-span-5 bg-[#0f172a] border border-slate-800 rounded-3xl p-6 space-y-4">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Simulate PSP Payment & Invoicing</span>
+                </h4>
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="block text-slate-400 font-medium mb-1">Select Payment Service Provider (PSP)</label>
+                    <select
+                      value={sandboxPsp}
+                      onChange={e => setSandboxPsp(e.target.value as any)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
+                    >
+                      <option value="Paystack">Paystack Automated Gateway (Split Code & Webhooks)</option>
+                      <option value="Flutterwave">Flutterwave Enterprise Gateway (Tokenized & Charge)</option>
+                      <option value="OPay">OPay Dynamic Virtual NUBAN & Push Checkout</option>
+                      <option value="Direct Bank Wire">Direct Bank Wire (NiRA / Manual Reconciliation)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 font-medium mb-1">Select School Tenant</label>
+                    <select
+                      value={sandboxTenant}
+                      onChange={e => setSandboxTenant(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
+                    >
+                      <option value="King's College Lagos">King's College Lagos</option>
+                      <option value="Corona Secondary School Agbara">Corona Secondary School Agbara</option>
+                      <option value="Loyola Jesuit College Abuja">Loyola Jesuit College Abuja</option>
+                      <option value="Federal Government College Kano">Federal Government College Kano</option>
+                      <option value="Atlantic Hall School Poka">Atlantic Hall School Poka</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 font-medium mb-1">Billing Amount (₦ NGN)</label>
+                    <input
+                      type="number"
+                      value={sandboxAmount}
+                      onChange={e => setSandboxAmount(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-mono focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setIsProcessingSandbox(true);
+                      setTimeout(() => {
+                        const newTx = {
+                          id: `tx_test_${Date.now()}`,
+                          invoiceNumber: `INV-CS-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+                          tenantName: sandboxTenant,
+                          amount: Number(sandboxAmount),
+                          psp: sandboxPsp,
+                          reference: `${sandboxPsp.toUpperCase().slice(0,3)}_LIVE_${Math.floor(100000 + Math.random() * 900000)}`,
+                          status: 'success',
+                          responseCode: sandboxPsp === 'Paystack' ? '200_OK' : sandboxPsp === 'OPay' ? '00_APPROVED' : 'SUCCESS',
+                          timestamp: 'Just now'
+                        };
+                        setSandboxTestTransactions([newTx, ...sandboxTestTransactions]);
+                        setIsProcessingSandbox(false);
+                        showToast(`Successfully processed ₦${Number(sandboxAmount).toLocaleString()} via ${sandboxPsp}! Invoice & record keeping confirmed.`);
+                      }, 800);
+                    }}
+                    disabled={isProcessingSandbox}
+                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {isProcessingSandbox ? <span>Processing Gateway & Invoicing...</span> : <span>Execute Live PSP Charge & Record Invoice</span>}
+                  </button>
+                </div>
+              </div>
+
+              {/* Transaction & Invoicing Record Keeping Ledger */}
+              <div className="lg:col-span-7 bg-[#0f172a] border border-slate-800 rounded-3xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-indigo-400" />
+                    <span>Real-Time PSP Transaction & Invoicing Ledger</span>
+                  </h4>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono text-[10px] font-bold">
+                    {sandboxTestTransactions.length} Settled
+                  </span>
+                </div>
+
+                <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                  {sandboxTestTransactions.map((tx) => (
+                    <div key={tx.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-bold text-indigo-400">{tx.invoiceNumber}</span>
+                        <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                          {tx.responseCode}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-white">{tx.tenantName}</span>
+                        <span className="font-mono text-emerald-400 font-bold">₦{Number(tx.amount).toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-800/80 font-mono">
+                        <span>Gateway: {tx.psp}</span>
+                        <span>Ref: {tx.reference}</span>
+                        <span>{tx.timestamp}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         )}

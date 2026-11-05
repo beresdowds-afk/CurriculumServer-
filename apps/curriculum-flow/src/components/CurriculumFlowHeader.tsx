@@ -7,7 +7,8 @@ import {
   ShieldCheck, 
   Server,
   BookOpen,
-  Calendar
+  Calendar,
+  Menu
 } from 'lucide-react';
 import { UserProfile, UserRole } from '@/src/types';
 import { MOCK_USERS } from '@/src/data/curriculumFlowData';
@@ -18,6 +19,8 @@ interface CurriculumFlowHeaderProps {
   onSwitchToServerApp: () => void;
   onViewPublicHomepage?: () => void;
   schoolName: string;
+  onToggleSidebar?: () => void;
+  isSidebarCollapsed?: boolean;
 }
 
 export const CurriculumFlowHeader: React.FC<CurriculumFlowHeaderProps> = ({
@@ -25,16 +28,28 @@ export const CurriculumFlowHeader: React.FC<CurriculumFlowHeaderProps> = ({
   onChangeUserRole,
   onSwitchToServerApp,
   onViewPublicHomepage,
-  schoolName
+  schoolName,
+  onToggleSidebar,
+  isSidebarCollapsed
 }) => {
   return (
     <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 flex items-center justify-between shrink-0 text-slate-800 dark:text-slate-200">
-      {/* School Breadcrumb */}
+      {/* School Breadcrumb & Sidebar Toggle */}
       <div className="flex items-center gap-3">
-        <span className="text-xs font-mono text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800/60">
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 transition-all flex items-center gap-1.5 text-xs font-bold shrink-0 shadow-sm"
+            title={isSidebarCollapsed ? "Expand Sidebar Menu" : "Collapse Sidebar Menu"}
+          >
+            <Menu className="w-4 h-4" />
+            <span className="hidden md:inline">{isSidebarCollapsed ? "Expand Menu" : "Collapse Menu"}</span>
+          </button>
+        )}
+        <span className="text-xs font-mono text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800/60 hidden sm:inline">
           CURRICULUM FLOW
         </span>
-        <span className="text-xs font-bold text-slate-800 dark:text-white hidden sm:inline">
+        <span className="text-xs font-bold text-slate-800 dark:text-white truncate max-w-xs sm:max-w-md">
           {schoolName}
         </span>
       </div>
@@ -44,7 +59,7 @@ export const CurriculumFlowHeader: React.FC<CurriculumFlowHeaderProps> = ({
         {onViewPublicHomepage && (
           <button
             onClick={onViewPublicHomepage}
-            className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/60 text-xs font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5 transition-all shadow-sm"
+            className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/60 text-xs font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5 transition-all shadow-sm hidden sm:inline-flex"
             title="View Public Education Homepage"
           >
             <span>Public Education Home</span>
@@ -58,12 +73,12 @@ export const CurriculumFlowHeader: React.FC<CurriculumFlowHeaderProps> = ({
           title="Switch to Curriculum Server SaaS Control Plane"
         >
           <Server className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-          <span>Launch Control Plane</span>
+          <span>Control Plane</span>
         </button>
 
         {/* Role Switcher Demo Picker */}
         <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
-          <span className="text-[10px] font-semibold text-slate-500 pl-2 hidden md:inline">Simulate Role:</span>
+          <span className="text-[10px] font-semibold text-slate-500 pl-2 hidden md:inline">Role:</span>
           <select
             value={currentUser.id}
             onChange={(e) => {
