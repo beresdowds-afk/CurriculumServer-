@@ -2970,14 +2970,15 @@ app.post('/api/v1/server/onboarding/requests/:id/review', requireSuperAdmin, (re
   res.json({ success: true, data: updated });
 });
 
-// Payment Initialization (Paystack & OPay)
+// Payment Initialization (Paystack, Flutterwave, OPay, Interswitch, Direct Bank Wire)
 app.post('/api/v1/server/payments/initialize', (req: Request, res: Response) => {
   const { provider, amountNGN, customerEmail } = req.body;
   if (!provider || !amountNGN || !customerEmail) {
     res.status(400).json({ success: false, error: 'Missing required payment initialization parameters' });
     return;
   }
-  const reference = `${provider === 'paystack' ? 'pstk' : 'opay'}_txn_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const prefix = provider === 'paystack' ? 'pstk' : provider === 'flutterwave' ? 'flw' : provider === 'opay' ? 'opay' : provider === 'interswitch' ? 'isw' : 'wire';
+  const reference = `${prefix}_txn_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   res.json({
     success: true,
     data: {
@@ -3014,6 +3015,9 @@ app.post('/api/v1/server/payments/verify', requireSuperAdmin, (req: Request, res
       provider,
       reference,
       amountNGN,
+      invoiceNumber: result.record?.payment.invoiceNumber,
+      receiptNumber: result.record?.payment.receiptNumber,
+      invoiceUrl: result.record?.payment.invoiceUrl,
       paidAt: result.record?.payment.verifiedAt,
       channel: provider.toUpperCase(),
       gatewayResponse: result.record?.payment.gatewayResponse

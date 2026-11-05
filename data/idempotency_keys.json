@@ -118,5 +118,20 @@
       "jobId": "job_123"
     },
     "callCount": 2
+  },
+  "idemp_audit_test_1793920337130": {
+    "createdAt": "2026-11-05T23:12:17.130Z",
+    "resultPayload": {
+      "job": "run_1"
+    },
+    "callCount": 2
+  },
+  "idemp_test_1793920337131": {
+    "createdAt": "2026-11-05T23:12:17.131Z",
+    "resultPayload": {
+      "jobStatus": "provisioning",
+      "jobId": "job_123"
+    },
+    "callCount": 2
   }
 }

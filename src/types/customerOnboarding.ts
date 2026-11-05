@@ -70,13 +70,16 @@ export interface FeatureCollectionSpec {
 }
 
 export interface CommercialPaymentVerification {
-  provider: 'paystack' | 'opay';
+  provider: 'paystack' | 'flutterwave' | 'opay' | 'interswitch' | 'bank_wire';
   transactionReference: string;
   amountNGN: number;
   paymentStatus: 'pending' | 'verified' | 'failed';
   verifiedAt?: string;
   gatewayResponse?: any;
   billingModel: 'monthly' | 'yearly' | 'lease_to_own';
+  invoiceNumber?: string;
+  invoiceUrl?: string;
+  receiptNumber?: string;
 }
 
 export interface InstanceVerificationChecklist {

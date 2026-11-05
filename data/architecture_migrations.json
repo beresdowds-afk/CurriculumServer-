@@ -1,5 +1,35 @@
 [
   {
+    "migrationId": "mig_inst_greenwood_002_1793920337126",
+    "instanceId": "inst_greenwood_002",
+    "tenantId": "cust_greenwood_abuja",
+    "customerName": "Greenwood High School, Abuja",
+    "sourceTier": "dedicated_cloud_run_service",
+    "targetTier": "dedicated_gcp_project",
+    "status": "preflight_passed",
+    "preflightChecks": {
+      "instanceIdentityPreserved": true,
+      "customerIdentityPreserved": true,
+      "userAccountsValidated": true,
+      "operationalDataChecksumVerified": true,
+      "domainSslTransferred": true,
+      "storageReferencesIntact": true,
+      "auditHistoryContinuous": true,
+      "subscriptionHistoryPreserved": true
+    },
+    "backupSnapshotId": "snap_pre_migration_inst_greenwood_002_1793920337126",
+    "backupChecksumSha256": "fb4fcea5650fb444bba8781d82f9bfc479e21179450d0f48fc45b250cdbae7a4",
+    "targetCloudRunUrl": "https://greenwood-proj-qgnm52ow7ssvvowbf2375u.a.run.app",
+    "targetDatabaseShardId": "cloudsql_cust_greenwood_abuja",
+    "targetStorageBucket": "gs://cust_greenwood_abuja-dedicated-vault",
+    "scheduledCutoverTime": "2026-11-05T23:27:17.127Z",
+    "logs": [
+      "[2026-11-05T23:12:17.127Z] Migration plan generated: dedicated_cloud_run_service -> dedicated_gcp_project",
+      "[2026-11-05T23:12:17.127Z] Pre-flight audit: All 8 entity preservation guarantees verified.",
+      "[2026-11-05T23:12:17.127Z] Pre-migration backup snapshot prepared: snap_pre_migration_inst_greenwood_002_1793920337126 (SHA256: fb4fcea5650fb444...)"
+    ]
+  },
+  {
     "migrationId": "mig_inst_greenwood_002_1793688012550",
     "instanceId": "inst_greenwood_002",
     "tenantId": "cust_greenwood_abuja",

@@ -2768,5 +2768,467 @@
     "publishedBy": "principal@apexcollege.sch.ng",
     "publishedAt": "2026-11-03T06:40:12.559Z",
     "changelog": "Rollback to version v1"
+  },
+  {
+    "versionId": "ver_tenant-apex-01_10_1793920337133",
+    "instanceId": "tenant-apex-01",
+    "versionNumber": 10,
+    "configurationSnapshot": {
+      "id": "hp_tenant-apex-01",
+      "instanceId": "tenant-apex-01",
+      "tenantId": "tenant-apex-01",
+      "schoolSlug": "apex",
+      "domain": "apexcollege.sch.ng",
+      "templateId": "premium_academic",
+      "presetType": "secondary_school",
+      "branding": {
+        "institutionName": "Apex Comprehensive College, Ikeja",
+        "shortName": "APEX",
+        "tagline": "Excellence in Academics, Character, Digital Innovation & Leadership",
+        "crestBadgePreset": "emerald_prestige",
+        "primaryColor": "#064e3b",
+        "secondaryColor": "#047857",
+        "accentColor": "#f59e0b",
+        "backgroundColor": "#0a0e17",
+        "surfaceColor": "#111827",
+        "textColor": "#f8fafc",
+        "typographyFace": "Playfair Display",
+        "borderRadius": "lg",
+        "headerStyle": "floating_blur",
+        "footerStyle": "full_featured"
+      },
+      "hero": {
+        "headline": "DRAFT_HEADLINE_MODIFIED_UNPUBLISHED",
+        "subheadline": "Welcome to Apex Comprehensive College, Ikeja. Fostering holistic student development, curriculum mastery, character building, and digital literacy.",
+        "ctaPrimaryText": "Student & Staff Portal",
+        "ctaPrimaryLink": "#portal-login",
+        "ctaSecondaryText": "Admissions & Enrolment",
+        "ctaSecondaryLink": "#admissions",
+        "backgroundType": "gradient",
+        "layoutAlignment": "left",
+        "imagePlacement": "card_cluster",
+        "badgeText": "NERDC 2026 Aligned & Fully Accredited",
+        "showQuickAuthBox": true
+      },
+      "sections": [
+        {
+          "id": "sec_about",
+          "type": "about",
+          "title": "About Our Institution",
+          "subtitle": "A Legacy of Excellence & Innovation",
+          "enabled": true,
+          "order": 1,
+          "content": {
+            "description": "Apex Comprehensive College, Ikeja is dedicated to fostering an intellectually stimulating, disciplined, and nurturing environment where every learner thrives.",
+            "bulletPoints": [
+              "Full statutory alignment with NERDC 2026 national curriculum frameworks",
+              "Modern digital laboratory suites and interactive computer-based learning",
+              "Holistic extracurricular programs in sports, debate, robotics, and creative arts"
+            ]
+          }
+        },
+        {
+          "id": "sec_academics",
+          "type": "academics",
+          "title": "Academic Programs & Faculty",
+          "subtitle": "Rigorous Curriculum Mastery",
+          "enabled": true,
+          "order": 2,
+          "content": {
+            "items": [
+              {
+                "title": "Junior Secondary School (JSS 1 - JSS 3)",
+                "description": "Foundation courses in sciences, humanities, vocational entrepreneurship, and digital literacy with continuous NERDC-guided formative assessments.",
+                "badge": "Basic Education"
+              },
+              {
+                "title": "Senior Secondary School (SS 1 - SS 3)",
+                "description": "Specialized departmental tracks in Science & Mathematics, Arts & Humanities, and Commercial Business Studies preparing scholars for WAEC, NECO, and JAMB.",
+                "badge": "Senior Academy"
+              },
+              {
+                "title": "STEM & Robotics Laboratory",
+                "description": "Practical coding, artificial intelligence concepts, electronics prototyping, and computer-assisted science experiments.",
+                "badge": "Innovation Suite"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sec_stats",
+          "type": "statistics",
+          "title": "Institutional Highlights",
+          "subtitle": "Our Track Record in Numbers",
+          "enabled": true,
+          "order": 3,
+          "content": {
+            "items": [
+              {
+                "title": "Pass Rate",
+                "statValue": "99.4%",
+                "statLabel": "WAEC / NECO Distinction Rate"
+              },
+              {
+                "title": "Enrolled Scholars",
+                "statValue": "1,450+",
+                "statLabel": "Active Learners Across Grades"
+              },
+              {
+                "title": "Faculty Members",
+                "statValue": "85+",
+                "statLabel": "Certified Specialist Teachers"
+              },
+              {
+                "title": "Digital Labs",
+                "statValue": "100%",
+                "statLabel": "CBT Kiosk & RFID Coverage"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sec_admissions",
+          "type": "admissions",
+          "title": "Admissions & Enrolment",
+          "subtitle": "Join Our Community of Achievers",
+          "enabled": true,
+          "order": 4,
+          "content": {
+            "description": "Applications for the upcoming academic session are now open. Prospective students must register online and sit for the computer-based entrance examination.",
+            "items": [
+              {
+                "title": "1. Online Application Form",
+                "description": "Submit applicant biodata, previous academic transcripts, and birth certification via the digital portal."
+              },
+              {
+                "title": "2. Entrance Assessment",
+                "description": "Candidates sit for the computer-based entrance evaluation in Mathematics, English, and General Aptitude."
+              },
+              {
+                "title": "3. Offer & Digital Clearance",
+                "description": "Successful applicants receive an automated provisional admission letter and student clearance invoice."
+              }
+            ]
+          }
+        },
+        {
+          "id": "sec_announcements",
+          "type": "announcements",
+          "title": "Notices & Bulletin",
+          "subtitle": "Official Institutional Updates",
+          "enabled": true,
+          "order": 5,
+          "content": {
+            "items": [
+              {
+                "title": "2026 Academic Session Resumption Date",
+                "description": "All boarding students are expected to resume on Sunday, while day students commence classes on Monday 8:00 AM prompt.",
+                "date": "September 14, 2026",
+                "badge": "Academic Notice"
+              },
+              {
+                "title": "Continuous Assessment Tests Schedule",
+                "description": "First Mid-Term CAT will be conducted using the School Computer-Based Testing Kiosk from Wednesday through Friday.",
+                "date": "October 21, 2026",
+                "badge": "Examination Desk"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sec_portal_access",
+          "type": "portal_access",
+          "title": "Digital Campus Access",
+          "subtitle": "Secure Self-Service for All Institutional Stakeholders",
+          "enabled": true,
+          "order": 6,
+          "content": {
+            "items": [
+              {
+                "title": "Teacher Delivery Tracker",
+                "description": "Lesson plan submission, attendance logging, and student progress reports.",
+                "iconName": "GraduationCap"
+              },
+              {
+                "title": "Student Terminal Results",
+                "description": "Real-time terminal broadsheet review, e-report card downloads, and past CBT review.",
+                "iconName": "FileText"
+              },
+              {
+                "title": "Parent Fee Clearance",
+                "description": "Instant school fee settlement via Paystack/OPay with tamper-evident digital receipts.",
+                "iconName": "CreditCard"
+              }
+            ]
+          }
+        }
+      ],
+      "authPresentation": {
+        "enabledUserGroups": [
+          "admin",
+          "teacher",
+          "staff",
+          "student",
+          "parent"
+        ],
+        "displayStyle": "embedded",
+        "defaultGroup": "student",
+        "welcomeHeading": "Access Apex Comprehensive College, Ikeja Institutional Portal",
+        "welcomeSubtext": "Sign in with your verified institutional identity to access your academic records, course notes, assessments, and fee management.",
+        "showMfaNotice": true,
+        "customHelpText": "For institutional credential recovery or enrollment support, contact the ICT Academic Helpdesk."
+      },
+      "contact": {
+        "addressText": "Km 12, Academic Boulevard, Victoria Island",
+        "city": "Lagos",
+        "state": "Lagos State",
+        "country": "Nigeria",
+        "primaryEmail": "info@apex.sch.ng",
+        "admissionsEmail": "admissions@apex.sch.ng",
+        "primaryPhone": "+234 803 555 0192",
+        "alternatePhone": "+234 802 333 4488",
+        "whatsappSupport": "+234 803 555 0192",
+        "copyrightText": "© 2026 Apex Comprehensive College, Ikeja. All rights reserved. Powered by Curriculum Server."
+      },
+      "status": "published",
+      "versionNumber": 10,
+      "publishedAt": "2026-11-05T23:12:17.133Z",
+      "updatedAt": "2026-11-05T23:12:17.133Z",
+      "updatedBy": "principal@apexcollege.sch.ng"
+    },
+    "publishedBy": "principal@apexcollege.sch.ng",
+    "publishedAt": "2026-11-05T23:12:17.133Z",
+    "changelog": "Verified automated publication test"
+  },
+  {
+    "versionId": "ver_tenant-apex-01_11_rb_1793920337136",
+    "instanceId": "tenant-apex-01",
+    "versionNumber": 11,
+    "configurationSnapshot": {
+      "id": "hp_tenant-apex-01",
+      "instanceId": "tenant-apex-01",
+      "tenantId": "tenant-apex-01",
+      "schoolSlug": "apex",
+      "domain": "apexcollege.sch.ng",
+      "templateId": "premium_academic",
+      "presetType": "secondary_school",
+      "branding": {
+        "institutionName": "Apex Comprehensive College, Ikeja",
+        "shortName": "APEX",
+        "tagline": "Excellence in Academics, Character, Digital Innovation & Leadership",
+        "crestBadgePreset": "emerald_prestige",
+        "primaryColor": "#064e3b",
+        "secondaryColor": "#047857",
+        "accentColor": "#f59e0b",
+        "backgroundColor": "#0a0e17",
+        "surfaceColor": "#111827",
+        "textColor": "#f8fafc",
+        "typographyFace": "Playfair Display",
+        "borderRadius": "lg",
+        "headerStyle": "floating_blur",
+        "footerStyle": "full_featured"
+      },
+      "hero": {
+        "headline": "Shaping Tomorrow's Leaders Through Academic Excellence",
+        "subheadline": "Welcome to Apex Comprehensive College, Ikeja. Fostering holistic student development, curriculum mastery, character building, and digital literacy.",
+        "ctaPrimaryText": "Student & Staff Portal",
+        "ctaPrimaryLink": "#portal-login",
+        "ctaSecondaryText": "Admissions & Enrolment",
+        "ctaSecondaryLink": "#admissions",
+        "backgroundType": "gradient",
+        "layoutAlignment": "left",
+        "imagePlacement": "card_cluster",
+        "badgeText": "NERDC 2026 Aligned & Fully Accredited",
+        "showQuickAuthBox": true
+      },
+      "sections": [
+        {
+          "id": "sec_about",
+          "type": "about",
+          "title": "About Our Institution",
+          "subtitle": "A Legacy of Excellence & Innovation",
+          "enabled": true,
+          "order": 1,
+          "content": {
+            "description": "Apex Comprehensive College, Ikeja is dedicated to fostering an intellectually stimulating, disciplined, and nurturing environment where every learner thrives.",
+            "bulletPoints": [
+              "Full statutory alignment with NERDC 2026 national curriculum frameworks",
+              "Modern digital laboratory suites and interactive computer-based learning",
+              "Holistic extracurricular programs in sports, debate, robotics, and creative arts"
+            ]
+          }
+        },
+        {
+          "id": "sec_academics",
+          "type": "academics",
+          "title": "Academic Programs & Faculty",
+          "subtitle": "Rigorous Curriculum Mastery",
+          "enabled": true,
+          "order": 2,
+          "content": {
+            "items": [
+              {
+                "title": "Junior Secondary School (JSS 1 - JSS 3)",
+                "description": "Foundation courses in sciences, humanities, vocational entrepreneurship, and digital literacy with continuous NERDC-guided formative assessments.",
+                "badge": "Basic Education"
+              },
+              {
+                "title": "Senior Secondary School (SS 1 - SS 3)",
+                "description": "Specialized departmental tracks in Science & Mathematics, Arts & Humanities, and Commercial Business Studies preparing scholars for WAEC, NECO, and JAMB.",
+                "badge": "Senior Academy"
+              },
+              {
+                "title": "STEM & Robotics Laboratory",
+                "description": "Practical coding, artificial intelligence concepts, electronics prototyping, and computer-assisted science experiments.",
+                "badge": "Innovation Suite"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sec_stats",
+          "type": "statistics",
+          "title": "Institutional Highlights",
+          "subtitle": "Our Track Record in Numbers",
+          "enabled": true,
+          "order": 3,
+          "content": {
+            "items": [
+              {
+                "title": "Pass Rate",
+                "statValue": "99.4%",
+                "statLabel": "WAEC / NECO Distinction Rate"
+              },
+              {
+                "title": "Enrolled Scholars",
+                "statValue": "1,450+",
+                "statLabel": "Active Learners Across Grades"
+              },
+              {
+                "title": "Faculty Members",
+                "statValue": "85+",
+                "statLabel": "Certified Specialist Teachers"
+              },
+              {
+                "title": "Digital Labs",
+                "statValue": "100%",
+                "statLabel": "CBT Kiosk & RFID Coverage"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sec_admissions",
+          "type": "admissions",
+          "title": "Admissions & Enrolment",
+          "subtitle": "Join Our Community of Achievers",
+          "enabled": true,
+          "order": 4,
+          "content": {
+            "description": "Applications for the upcoming academic session are now open. Prospective students must register online and sit for the computer-based entrance examination.",
+            "items": [
+              {
+                "title": "1. Online Application Form",
+                "description": "Submit applicant biodata, previous academic transcripts, and birth certification via the digital portal."
+              },
+              {
+                "title": "2. Entrance Assessment",
+                "description": "Candidates sit for the computer-based entrance evaluation in Mathematics, English, and General Aptitude."
+              },
+              {
+                "title": "3. Offer & Digital Clearance",
+                "description": "Successful applicants receive an automated provisional admission letter and student clearance invoice."
+              }
+            ]
+          }
+        },
+        {
+          "id": "sec_announcements",
+          "type": "announcements",
+          "title": "Notices & Bulletin",
+          "subtitle": "Official Institutional Updates",
+          "enabled": true,
+          "order": 5,
+          "content": {
+            "items": [
+              {
+                "title": "2026 Academic Session Resumption Date",
+                "description": "All boarding students are expected to resume on Sunday, while day students commence classes on Monday 8:00 AM prompt.",
+                "date": "September 14, 2026",
+                "badge": "Academic Notice"
+              },
+              {
+                "title": "Continuous Assessment Tests Schedule",
+                "description": "First Mid-Term CAT will be conducted using the School Computer-Based Testing Kiosk from Wednesday through Friday.",
+                "date": "October 21, 2026",
+                "badge": "Examination Desk"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sec_portal_access",
+          "type": "portal_access",
+          "title": "Digital Campus Access",
+          "subtitle": "Secure Self-Service for All Institutional Stakeholders",
+          "enabled": true,
+          "order": 6,
+          "content": {
+            "items": [
+              {
+                "title": "Teacher Delivery Tracker",
+                "description": "Lesson plan submission, attendance logging, and student progress reports.",
+                "iconName": "GraduationCap"
+              },
+              {
+                "title": "Student Terminal Results",
+                "description": "Real-time terminal broadsheet review, e-report card downloads, and past CBT review.",
+                "iconName": "FileText"
+              },
+              {
+                "title": "Parent Fee Clearance",
+                "description": "Instant school fee settlement via Paystack/OPay with tamper-evident digital receipts.",
+                "iconName": "CreditCard"
+              }
+            ]
+          }
+        }
+      ],
+      "authPresentation": {
+        "enabledUserGroups": [
+          "admin",
+          "teacher",
+          "staff",
+          "student",
+          "parent"
+        ],
+        "displayStyle": "embedded",
+        "defaultGroup": "student",
+        "welcomeHeading": "Access Apex Comprehensive College, Ikeja Institutional Portal",
+        "welcomeSubtext": "Sign in with your verified institutional identity to access your academic records, course notes, assessments, and fee management.",
+        "showMfaNotice": true,
+        "customHelpText": "For institutional credential recovery or enrollment support, contact the ICT Academic Helpdesk."
+      },
+      "contact": {
+        "addressText": "Km 12, Academic Boulevard, Victoria Island",
+        "city": "Lagos",
+        "state": "Lagos State",
+        "country": "Nigeria",
+        "primaryEmail": "info@apex.sch.ng",
+        "admissionsEmail": "admissions@apex.sch.ng",
+        "primaryPhone": "+234 803 555 0192",
+        "alternatePhone": "+234 802 333 4488",
+        "whatsappSupport": "+234 803 555 0192",
+        "copyrightText": "© 2026 Apex Comprehensive College, Ikeja. All rights reserved. Powered by Curriculum Server."
+      },
+      "status": "published",
+      "versionNumber": 11,
+      "publishedAt": "2026-11-05T23:12:17.135Z",
+      "updatedAt": "2026-11-05T23:12:17.135Z",
+      "updatedBy": "principal@apexcollege.sch.ng"
+    },
+    "publishedBy": "principal@apexcollege.sch.ng",
+    "publishedAt": "2026-11-05T23:12:17.136Z",
+    "changelog": "Rollback to version v1"
   }
 ]

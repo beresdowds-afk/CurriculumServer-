@@ -9,12 +9,12 @@
     "deploymentTier": "dedicated_cloud_run_service",
     "versionManifest": {
       "applicationVersion": "v3.2.0",
-      "deploymentVersion": "dep_rollback_1793688012549",
+      "deploymentVersion": "dep_rollback_1793920337125",
       "databaseSchemaVersion": "pg_schema_v14_2",
       "architectureProfileVersion": 2,
       "featureVersion": "feat_v2.4",
-      "releaseDate": "2026-11-03T06:40:12.549Z",
-      "changelogNotes": "Rolled back to snapshot snap_rollback_inst_greenwood_002_1793688012548 (v3.2.0) by Automated Test Runner"
+      "releaseDate": "2026-11-05T23:12:17.125Z",
+      "changelogNotes": "Rolled back to snapshot snap_rollback_inst_greenwood_002_1793920337124 (v3.2.0) by Automated Test Runner"
     },
     "resources": {
       "cpuCores": 2,
@@ -68,9 +68,37 @@
     "monthlyPriceNGN": 180000,
     "activeStudents": 1200,
     "createdAt": "2025-03-01T09:00:00Z",
-    "updatedAt": "2026-11-03T06:40:12.552Z",
-    "lastStateTransitionAt": "2026-11-03T06:40:12.552Z",
+    "updatedAt": "2026-11-05T23:12:17.128Z",
+    "lastStateTransitionAt": "2026-11-05T23:12:17.128Z",
     "history": [
+      {
+        "timestamp": "2026-11-05T23:12:17.128Z",
+        "fromState": "migration_pending",
+        "toState": "active",
+        "actor": "Test Runner",
+        "reason": "Cleaned up migration test state"
+      },
+      {
+        "timestamp": "2026-11-05T23:12:17.127Z",
+        "fromState": "active",
+        "toState": "migration_pending",
+        "actor": "Solutions Architect Test Runner",
+        "reason": "Architecture migration scheduled to dedicated_gcp_project"
+      },
+      {
+        "timestamp": "2026-11-05T23:12:17.121Z",
+        "fromState": "degraded",
+        "toState": "active",
+        "actor": "Automated Test Runner",
+        "reason": "Reverted after test"
+      },
+      {
+        "timestamp": "2026-11-05T23:12:17.120Z",
+        "fromState": "active",
+        "toState": "degraded",
+        "actor": "Automated Test Runner",
+        "reason": "Test degradation"
+      },
       {
         "timestamp": "2026-11-03T06:40:12.552Z",
         "fromState": "migration_pending",
@@ -340,7 +368,7 @@
     ],
     "previousLifecycleState": "migration_pending",
     "stateTransitionReason": "Cleaned up migration test state",
-    "activeMigrationId": "mig_inst_greenwood_002_1793688012550"
+    "activeMigrationId": "mig_inst_greenwood_002_1793920337126"
   },
   {
     "instanceId": "inst_leadway_enterprise_001",

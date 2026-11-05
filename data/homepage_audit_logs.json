@@ -1,5 +1,35 @@
 [
   {
+    "id": "aud_1793920337137_0f50",
+    "instanceId": "tenant-apex-01",
+    "action": "rolled_back",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-05T23:12:17.137Z",
+    "versionNumber": 11,
+    "notes": "Restored state of version v1"
+  },
+  {
+    "id": "aud_1793920337135_ozkp",
+    "instanceId": "tenant-apex-01",
+    "action": "published",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-05T23:12:17.135Z",
+    "versionNumber": 10,
+    "notes": "Verified automated publication test"
+  },
+  {
+    "id": "aud_1793920337132_rosx",
+    "instanceId": "tenant-apex-01",
+    "action": "draft_updated",
+    "actorEmail": "principal@apexcollege.sch.ng",
+    "actorRole": "principal",
+    "timestamp": "2026-11-05T23:12:17.132Z",
+    "versionNumber": 9,
+    "notes": "Draft updated in visual editor"
+  },
+  {
     "id": "aud_1793688012560_vmv1",
     "instanceId": "tenant-apex-01",
     "action": "rolled_back",

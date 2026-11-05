@@ -114,7 +114,7 @@ export class CustomerOnboardingClient {
     customDomain?: string;
     billingModel: 'monthly' | 'yearly' | 'lease_to_own';
     monthlyPriceNGN: number;
-    paymentProvider: 'paystack' | 'opay';
+    paymentProvider: 'paystack' | 'flutterwave' | 'opay' | 'interswitch' | 'bank_wire';
     paymentReference: string;
     amountPaidNGN: number;
   }): Promise<UniversalInstanceRecord> {
@@ -180,7 +180,7 @@ export class CustomerOnboardingClient {
   }
 
   public async initializePayment(
-    provider: 'paystack' | 'opay',
+    provider: 'paystack' | 'flutterwave' | 'opay' | 'interswitch' | 'bank_wire',
     amountNGN: number,
     customerEmail: string,
     customerName: string,
@@ -202,7 +202,7 @@ export class CustomerOnboardingClient {
   public async verifyPayment(
     instanceId: string,
     reference: string,
-    provider: 'paystack' | 'opay',
+    provider: 'paystack' | 'flutterwave' | 'opay' | 'interswitch' | 'bank_wire',
     amountNGN: number
   ): Promise<PaymentVerificationResponse> {
     const res = await fetch('/api/v1/server/payments/verify', {
