@@ -2,7 +2,14 @@ export type ActiveApplicationType = 'curriculum_server' | 'curriculum_flow' | 'i
 
 export const PRODUCTION_DOMAINS = {
   SERVER: ['curriculumserver.com.ng', 'www.curriculumserver.com.ng', 'control.curriculumserver.com.ng'],
-  FLOW: ['curriculumflow.com.ng', 'www.curriculumflow.com.ng', 'app.curriculumflow.com.ng']
+  FLOW: [
+    'curriculumflow.com.ng', 
+    'www.curriculumflow.com.ng', 
+    'app.curriculumflow.com.ng',
+    'curriculum-flow.com.ng',
+    'www.curriculum-flow.com.ng',
+    'app.curriculum-flow.com.ng'
+  ]
 };
 
 /**
@@ -13,14 +20,14 @@ export const PRODUCTION_DOMAINS = {
  * 2. Hash routing prefix (e.g. #/instance_home -> instance_homepage; #/flow_home -> flow)
  * 3. Domain / Hostname match:
  *    - curriculumserver.com.ng -> curriculum_server
- *    - curriculumflow.com.ng -> curriculum_flow
+ *    - curriculum-flow.com.ng / curriculumflow.com.ng -> curriculum_flow
  *    - Verified customer custom domain or subdomain (e.g. abeokutagrammar.sch.ng) -> instance_homepage
  * 4. LocalStorage developer preference ('cs_active_app')
- * 5. Default fallback ('curriculum_server')
+ * 5. Default fallback ('curriculum_flow')
  */
 export function detectActiveApplication(): ActiveApplicationType {
   if (typeof window === 'undefined') {
-    return 'curriculum_server';
+    return 'curriculum_flow';
   }
 
   const hostname = window.location.hostname.toLowerCase();
@@ -32,7 +39,7 @@ export function detectActiveApplication(): ActiveApplicationType {
   // 1. Explicit query param
   if (appParam === 'instance' || instanceParam || domainParam) return 'instance_homepage';
   if (appParam === 'server' || appParam === 'curriculum_server') return 'curriculum_server';
-  if (appParam === 'flow' || appParam === 'curriculum_flow') return 'curriculum_flow';
+  if (appParam === 'flow' || appParam === 'curriculum_flow' || appParam === 'curriculum-flow') return 'curriculum_flow';
 
   // 2. Hash route hints
   const hash = window.location.hash.toLowerCase();
@@ -64,8 +71,8 @@ export function detectActiveApplication(): ActiveApplicationType {
   if (hostname.includes('curriculumserver')) {
     return 'curriculum_server';
   }
-  if (hostname.includes('curriculumflow')) {
-    // Check if it's a tenant subdomain like apex.curriculumflow.com.ng
+  if (hostname.includes('curriculumflow') || hostname.includes('curriculum-flow')) {
+    // Check if it's a tenant subdomain like apex.curriculum-flow.com.ng
     const parts = hostname.split('.');
     if (parts.length > 2 && parts[0] !== 'www' && parts[0] !== 'app') {
       return 'instance_homepage';
@@ -87,8 +94,8 @@ export function detectActiveApplication(): ActiveApplicationType {
     return savedApp as ActiveApplicationType;
   }
 
-  // Default to curriculum_server as the SaaS control plane
-  return 'curriculum_server';
+  // Default to curriculum_flow as the primary education operating system and landing page
+  return 'curriculum_flow';
 }
 
 export function getResolvedInstanceParam(): string {
