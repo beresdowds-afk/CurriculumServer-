@@ -20,9 +20,7 @@ export const App: React.FC = () => {
       const isPublicProd = hostname === 'curriculumserver.com.ng' || 
                            hostname === 'www.curriculumserver.com.ng' || 
                            hostname === 'curriculumflow.com.ng' || 
-                           hostname === 'www.curriculumflow.com.ng' ||
-                           hostname === 'curriculum-flow.com.ng' ||
-                           hostname === 'www.curriculum-flow.com.ng';
+                           hostname === 'www.curriculumflow.com.ng';
       setIsDevEnvironment(!isPublicProd);
     }
 
