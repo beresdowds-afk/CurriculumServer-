@@ -172,6 +172,14 @@ export class ServerSchoolManager {
     enabledModules: string[];
     storageStrategy?: 'private_drive' | 'platform_storage' | 'hybrid';
     databaseStrategy?: 'shared_schema_isolated' | 'dedicated_database' | 'dedicated_customer_gcp_project';
+    provisionedByRole?: 'proprietor' | 'principal';
+    proprietorName?: string;
+    proprietorEmail?: string;
+    proprietorPhone?: string;
+    isPrincipalAlsoIctTechnician?: boolean;
+    ictTechnicianAppointedBy?: 'proprietor' | 'principal';
+    ictTechnicianAppointedByName?: string;
+    principalAppointedBy?: 'proprietor' | 'self_provisioned';
   }): TenantSchoolApp {
     const id = `tenant_${data.subdomain.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}_${Date.now().toString(36)}`;
     const randNum = Math.floor(100 + Math.random() * 900);
@@ -210,6 +218,14 @@ export class ServerSchoolManager {
       subscriptionTier: data.businessModel === 'lease_to_own' ? 'Apex Enterprise' : 'Pro College',
       enabledFeatures: enabledFeaturesMap as any,
       provisionedAt: new Date().toISOString(),
+      provisionedByRole: data.provisionedByRole || 'proprietor',
+      proprietorName: data.proprietorName || (data.provisionedByRole === 'proprietor' ? data.principalName : undefined),
+      proprietorEmail: data.proprietorEmail || (data.provisionedByRole === 'proprietor' ? data.principalEmail : undefined),
+      proprietorPhone: data.proprietorPhone || (data.provisionedByRole === 'proprietor' ? data.principalPhone : undefined),
+      isPrincipalAlsoIctTechnician: data.isPrincipalAlsoIctTechnician ?? false,
+      principalAppointedBy: data.principalAppointedBy || (data.provisionedByRole === 'proprietor' ? 'proprietor' : 'self_provisioned'),
+      ictTechnicianAppointedBy: data.ictTechnicianAppointedBy || (data.isPrincipalAlsoIctTechnician ? 'principal' : undefined),
+      ictTechnicianAppointedByName: data.ictTechnicianAppointedByName,
       shardNodeId: `shard-${data.state.slice(0, 3).toLowerCase()}-01`,
       databaseIsolationStrategy: data.databaseStrategy || 'dedicated_database',
       storageStrategy: data.storageStrategy || 'hybrid',

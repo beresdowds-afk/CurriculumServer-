@@ -73,6 +73,12 @@ export const ProvisionSchoolModal: React.FC<ProvisionSchoolModalProps> = ({
   const [primaryColor, setPrimaryColor] = useState('#1e3a8a');
   const [accentColor, setAccentColor] = useState('#059669');
 
+  // Governance Hierarchy State (Proprietor > Principal > ICT Technician)
+  const [provisionerRole, setProvisionerRole] = useState<'proprietor' | 'principal'>('proprietor');
+  const [proprietorName, setProprietorName] = useState('Chief (Dr.) Olusegun Bakare');
+  const [proprietorEmail, setProprietorEmail] = useState('proprietor@school.sch.ng');
+  const [isPrincipalAlsoIctTechnician, setIsPrincipalAlsoIctTechnician] = useState(false);
+
   // Form State - Step 2: Business Model
   const [businessModel, setBusinessModel] = useState<BusinessModelType>('yearly');
   const [studentCapacity, setStudentCapacity] = useState<number>(1000);
@@ -286,8 +292,15 @@ export const ProvisionSchoolModal: React.FC<ProvisionSchoolModalProps> = ({
         principalName: principalName || 'Principal Administrator',
         principalEmail: principalEmail || 'principal@school.sch.ng',
         principalPhone: principalPhone || '+234 800 000 0000',
-        ictAdminName: ictAdminName || 'Lead Systems Admin',
-        ictAdminEmail: ictAdminEmail || 'ict@school.sch.ng',
+        ictAdminName: isPrincipalAlsoIctTechnician ? (principalName || 'Principal Administrator') : (ictAdminName || 'Lead Systems Admin'),
+        ictAdminEmail: isPrincipalAlsoIctTechnician ? (principalEmail || 'principal@school.sch.ng') : (ictAdminEmail || 'ict@school.sch.ng'),
+        provisionedByRole: provisionerRole,
+        proprietorName: provisionerRole === 'proprietor' ? (proprietorName || 'School Proprietor') : undefined,
+        proprietorEmail: provisionerRole === 'proprietor' ? (proprietorEmail || 'proprietor@school.sch.ng') : undefined,
+        isPrincipalAlsoIctTechnician: isPrincipalAlsoIctTechnician,
+        principalAppointedBy: provisionerRole === 'proprietor' ? 'proprietor' : 'self_provisioned',
+        ictTechnicianAppointedBy: isPrincipalAlsoIctTechnician ? 'principal' : (provisionerRole === 'proprietor' ? 'proprietor' : 'principal'),
+        ictTechnicianAppointedByName: isPrincipalAlsoIctTechnician ? principalName : undefined,
         businessModel: businessModel,
         subscriptionTier: businessModel === 'lease_to_own' 
           ? 'Bespoke Lease-to-Own' 
@@ -459,9 +472,82 @@ export const ProvisionSchoolModal: React.FC<ProvisionSchoolModalProps> = ({
                   />
                 </div>
 
+                {/* Institutional Governance Authority Hierarchy */}
+                <div className="sm:col-span-2 p-3.5 rounded-xl bg-slate-950/80 border border-emerald-500/30 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                        Institutional Governance & Provisioning Authority
+                      </span>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Proprietor &gt; Principal &gt; ICT Technician. ICT Tech cannot single-handedly provision.
+                      </p>
+                    </div>
+                    <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-mono">
+                      Strict Hierarchy
+                    </span>
+                  </div>
+
+                  {/* Provisioner Role Selection */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setProvisionerRole('proprietor')}
+                      className={`p-2.5 rounded-lg border text-left transition-all ${
+                        provisionerRole === 'proprietor'
+                          ? 'bg-emerald-950/60 border-emerald-500 text-white ring-1 ring-emerald-500/30'
+                          : 'bg-slate-900 border-slate-800 text-slate-300'
+                      }`}
+                    >
+                      <div className="font-semibold text-xs flex items-center justify-between">
+                        <span>School Proprietor</span>
+                        {provisionerRole === 'proprietor' && <Check className="w-3 h-3 text-emerald-400" />}
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">Appoints Principal & ICT</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setProvisionerRole('principal')}
+                      className={`p-2.5 rounded-lg border text-left transition-all ${
+                        provisionerRole === 'principal'
+                          ? 'bg-emerald-950/60 border-emerald-500 text-white ring-1 ring-emerald-500/30'
+                          : 'bg-slate-900 border-slate-800 text-slate-300'
+                      }`}
+                    >
+                      <div className="font-semibold text-xs flex items-center justify-between">
+                        <span>School Principal</span>
+                        {provisionerRole === 'principal' && <Check className="w-3 h-3 text-emerald-400" />}
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">Appoints ICT Tech / Dual</span>
+                    </button>
+
+                    <div className="p-2.5 rounded-lg border border-red-500/20 bg-red-950/20 text-left opacity-70 cursor-not-allowed">
+                      <div className="font-semibold text-xs text-slate-400 flex items-center justify-between">
+                        <span className="line-through">ICT Technician</span>
+                        <span className="text-[8px] bg-red-950 text-red-400 px-1 rounded uppercase font-bold">Restricted</span>
+                      </div>
+                      <span className="text-[9px] text-red-300/80 block mt-0.5">Cannot single-handedly provision</span>
+                    </div>
+                  </div>
+
+                  {/* Dual Role Option: Principal holds both positions */}
+                  <label className="flex items-center gap-2 pt-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isPrincipalAlsoIctTechnician}
+                      onChange={e => setIsPrincipalAlsoIctTechnician(e.target.checked)}
+                      className="rounded border-slate-700 text-emerald-600 focus:ring-emerald-500 bg-slate-950"
+                    />
+                    <span className="text-xs text-slate-200">
+                      School Principal holds both positions of Principal and ICT Technician
+                    </span>
+                  </label>
+                </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Principal's Full Name
+                    Principal's Full Name {provisionerRole === 'proprietor' ? '(Appointed by Proprietor)' : ''}
                   </label>
                   <input
                     type="text"
@@ -485,31 +571,35 @@ export const ProvisionSchoolModal: React.FC<ProvisionSchoolModalProps> = ({
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    ICT / System Admin Name
-                  </label>
-                  <input
-                    type="text"
-                    value={ictAdminName}
-                    onChange={e => setIctAdminName(e.target.value)}
-                    placeholder="e.g. Engr. Kayode Bello"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
+                {!isPrincipalAlsoIctTechnician && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        ICT / System Admin Name (Appointed Staff)
+                      </label>
+                      <input
+                        type="text"
+                        value={ictAdminName}
+                        onChange={e => setIctAdminName(e.target.value)}
+                        placeholder="e.g. Engr. Kayode Bello"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    ICT Admin Email
-                  </label>
-                  <input
-                    type="email"
-                    value={ictAdminEmail}
-                    onChange={e => setIctAdminEmail(e.target.value)}
-                    placeholder="ict@school.sch.ng"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        ICT Admin Email
+                      </label>
+                      <input
+                        type="email"
+                        value={ictAdminEmail}
+                        onChange={e => setIctAdminEmail(e.target.value)}
+                        placeholder="ict@school.sch.ng"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-semibold text-slate-300 mb-1">

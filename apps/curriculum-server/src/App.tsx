@@ -31,6 +31,7 @@ import { ProvisioningTerminalModal } from '../../../src/components/ProvisioningT
 import { VersionRolloutModal } from '../../../src/components/VersionRolloutModal';
 import { UniversalCustomerOnboardingWizard } from '../../../src/components/UniversalCustomerOnboardingWizard';
 import { CurriculumServerPublicHome } from '../../../src/components/CurriculumServerPublicHome';
+import { SchoolGovernanceModal } from '../../../src/components/SchoolGovernanceModal';
 
 // Mock Data
 import { 
@@ -73,6 +74,7 @@ export const CurriculumServerApp: React.FC = () => {
   const [selectedTenantForFeatures, setSelectedTenantForFeatures] = useState<TenantSchoolApp | null>(null);
   const [selectedTenantForLease, setSelectedTenantForLease] = useState<TenantSchoolApp | null>(null);
   const [selectedTenantForConnect, setSelectedTenantForConnect] = useState<TenantSchoolApp | null>(null);
+  const [selectedTenantForGovernance, setSelectedTenantForGovernance] = useState<TenantSchoolApp | null>(null);
 
   // Synchronize state with authoritative unified backend
   useEffect(() => {
@@ -284,6 +286,7 @@ export const CurriculumServerApp: React.FC = () => {
                   onOpenFeaturesModal={(t) => setSelectedTenantForFeatures(t)}
                   onOpenLeaseTrackerModal={(t) => setSelectedTenantForLease(t)}
                   onToggleTenantStatus={handleToggleTenantStatus}
+                  onOpenGovernanceModal={(t) => setSelectedTenantForGovernance(t)}
                 />
               </div>
             )}
@@ -563,6 +566,15 @@ export const CurriculumServerApp: React.FC = () => {
           isOpen={Boolean(selectedTenantForConnect)}
           onClose={() => setSelectedTenantForConnect(null)}
           tenant={selectedTenantForConnect}
+        />
+      )}
+
+      {selectedTenantForGovernance && (
+        <SchoolGovernanceModal
+          isOpen={Boolean(selectedTenantForGovernance)}
+          onClose={() => setSelectedTenantForGovernance(null)}
+          instanceId={selectedTenantForGovernance.id}
+          schoolName={selectedTenantForGovernance.schoolName}
         />
       )}
     </div>

@@ -1,0 +1,10 @@
+{
+  "checkpointId": "chk_seq_000030_1794048384431",
+  "startSequence": 21,
+  "endSequence": 30,
+  "eventCount": 10,
+  "chainedRootHash": "dcd83bcb8e79bdc2e3a30acce6385d82602db7e24f5fd5e3e5e8a96df4e1d62c",
+  "timestamp": "2026-11-07T10:46:24.431Z",
+  "signedBy": "CurriculumServer Audit Authority (HMAC-SHA256)",
+  "signature": "361354d499e3c49872771bfd8458293bc94fdc989b2f81eda8cd6eebe532a6fa"
+}

@@ -20,6 +20,7 @@ export type ClassGrade =
 export type Term = 'Term 1' | 'Term 2' | 'Term 3';
 
 export type UserRole = 
+  | 'proprietor'
   | 'principal' 
   | 'principal_admin'
   | 'vice_principal_academic'
@@ -36,6 +37,7 @@ export type UserRole =
   | 'bursar_finance'
   | 'dean_student_affairs'
   | 'ict_system_admin'
+  | 'ict_technician'
   | 'student' 
   | 'parent'
   | 'super_admin';
@@ -61,6 +63,10 @@ export interface UserProfile {
   adminRoles?: string[];
   assignedAdminRoles?: string[];
   isSystemRoot?: boolean;
+  isAlsoIctTechnician?: boolean; // When school principal holds both positions of principal and ICT technician
+  appointedByRole?: 'proprietor' | 'principal' | 'super_admin';
+  appointedByName?: string;
+  appointedAt?: string;
 }
 
 // -----------------------------------------------------------------
@@ -2439,6 +2445,16 @@ export interface TenantSchoolApp {
   principalPhone: string;
   ictAdminName: string;
   ictAdminEmail: string;
+  
+  // Institutional Governance & Provisioner Hierarchy
+  provisionedByRole?: 'proprietor' | 'principal';
+  proprietorName?: string;
+  proprietorEmail?: string;
+  proprietorPhone?: string;
+  isPrincipalAlsoIctTechnician?: boolean; // When school principal holds both positions
+  ictTechnicianAppointedBy?: 'proprietor' | 'principal';
+  ictTechnicianAppointedByName?: string;
+  principalAppointedBy?: 'proprietor' | 'self_provisioned';
   
   // Business & Licensing
   businessModel: BusinessModelType;

@@ -1,0 +1,356 @@
+{
+  "apex_comp_col_mw6a34xe": {
+    "instanceId": "apex_comp_col_mw6a34xe",
+    "tenantId": "cust_apex_comp_col_mw6a34xe",
+    "institutionName": "Apex Comprehensive College",
+    "activeGateways": [
+      "paystack",
+      "opay",
+      "flutterwave",
+      "bank_wire"
+    ],
+    "primaryGateway": "paystack",
+    "credentials": {
+      "paystack": {
+        "subaccountCode": "ACCT_SUB_APEX_COM_01",
+        "publicKey": "pk_live_pstk_apex_c_92fdd348",
+        "webhookSecret": "whsec_pstk_a8bbad38bd82323805c8b869"
+      },
+      "flutterwave": {
+        "subaccountId": "FLW_SUB_APEX_COM",
+        "publicKey": "FLWPUBK_LIVE-4374e5001d9e07fd-X",
+        "secretHash": "flw_sec_hash_apex_comp_col_mw6a34xe_2026"
+      },
+      "opay": {
+        "merchantId": "256615155157795",
+        "publicKey": "OPAY_PUB_APEX_COMP_COL_MW6A34XE_2026",
+        "secretKey": "OPAY_SEC_a5d8550c9f0b7a67400ca179c4c9abd4"
+      },
+      "bankWire": {
+        "bankName": "Zenith Bank PLC",
+        "accountNumber": "1012613776",
+        "accountName": "Apex Comprehensive College — School Operating Account",
+        "sortCode": "057150013"
+      }
+    },
+    "feeCatalog": [
+      {
+        "id": "fee_tuition_term1",
+        "name": "Tuition & Academic Development",
+        "category": "tuition",
+        "amountNGN": 125000,
+        "term": "Term 1",
+        "isMandatory": true,
+        "description": "Classroom instruction, continuous assessment, digital learning tools, and laboratory access"
+      },
+      {
+        "id": "fee_ict_lab",
+        "name": "ICT, CBT & Computer Lab Levy",
+        "category": "laboratory",
+        "amountNGN": 25000,
+        "term": "Term 1",
+        "isMandatory": true,
+        "description": "Dedicated terminal access for CBT examinations and STEM coding lab sessions"
+      },
+      {
+        "id": "fee_admissions_app",
+        "name": "Online Admissions Application & Screening Fee",
+        "category": "admissions_application",
+        "amountNGN": 15000,
+        "term": "Annual",
+        "isMandatory": false,
+        "description": "Official entrance screening form, diagnostic assessment, and placement verification"
+      },
+      {
+        "id": "fee_cbt_pass",
+        "name": "All-Access CBT Mock & WAEC/JAMB Exam Pass",
+        "category": "cbt_exam_pass",
+        "amountNGN": 5000,
+        "term": "Termly",
+        "isMandatory": false,
+        "description": "Unlimited timed simulations, instant broadsheet analytics, and question bank access"
+      },
+      {
+        "id": "fee_sports_library",
+        "name": "Sports, Library & Extra-Curricular Levy",
+        "category": "development_levy",
+        "amountNGN": 15000,
+        "term": "Term 1",
+        "isMandatory": true,
+        "description": "Olympic sports complex access, library resources, and club affiliations"
+      },
+      {
+        "id": "fee_boarding_optional",
+        "name": "Boarding, Residency & Catering (Optional)",
+        "category": "boarding",
+        "amountNGN": 65000,
+        "term": "Term 1",
+        "isMandatory": false,
+        "description": "Hostel accommodation, meal plans, and residential supervision"
+      }
+    ],
+    "installmentPolicy": {
+      "allowed": true,
+      "maxTranches": 3,
+      "tranches": [
+        {
+          "name": "Tranche 1 (Resumption Clearance)",
+          "percentage": 50,
+          "dueWeeksAfterResumption": 0
+        },
+        {
+          "name": "Tranche 2 (Mid-Term Assessment Clearance)",
+          "percentage": 30,
+          "dueWeeksAfterResumption": 6
+        },
+        {
+          "name": "Tranche 3 (Final Terminal Examination Clearance)",
+          "percentage": 20,
+          "dueWeeksAfterResumption": 10
+        }
+      ]
+    },
+    "virtualNubanPool": {
+      "provider": "opay",
+      "poolPrefix": "994ape"
+    },
+    "createdAt": "2026-11-07T10:46:24.434Z",
+    "updatedAt": "2026-11-07T10:46:24.434Z"
+  },
+  "apex_comp_college": {
+    "instanceId": "apex_comp_college",
+    "tenantId": "cust_apex_comp_college",
+    "institutionName": "Apex Comprehensive College (apex_comp_college)",
+    "activeGateways": [
+      "paystack",
+      "opay",
+      "flutterwave",
+      "bank_wire"
+    ],
+    "primaryGateway": "paystack",
+    "credentials": {
+      "paystack": {
+        "subaccountCode": "ACCT_SUB_APEX_COM_01",
+        "publicKey": "pk_live_pstk_apex_c_3861222c",
+        "webhookSecret": "whsec_pstk_5b90034afc2636d6f1cbad51"
+      },
+      "flutterwave": {
+        "subaccountId": "FLW_SUB_APEX_COM",
+        "publicKey": "FLWPUBK_LIVE-719215a9fd4bb919-X",
+        "secretHash": "flw_sec_hash_apex_comp_college_2026"
+      },
+      "opay": {
+        "merchantId": "256666174692381",
+        "publicKey": "OPAY_PUB_APEX_COMP_COLLEGE_2026",
+        "secretKey": "OPAY_SEC_48169665f36e7124fbe70e3c8c745a11"
+      },
+      "bankWire": {
+        "bankName": "Zenith Bank PLC",
+        "accountNumber": "1014145731",
+        "accountName": "Apex Comprehensive College (apex_comp_college) — School Operating Account",
+        "sortCode": "057150013"
+      }
+    },
+    "feeCatalog": [
+      {
+        "id": "fee_tuition_term1",
+        "name": "Tuition & Academic Development",
+        "category": "tuition",
+        "amountNGN": 125000,
+        "term": "Term 1",
+        "isMandatory": true,
+        "description": "Classroom instruction, continuous assessment, digital learning tools, and laboratory access"
+      },
+      {
+        "id": "fee_ict_lab",
+        "name": "ICT, CBT & Computer Lab Levy",
+        "category": "laboratory",
+        "amountNGN": 25000,
+        "term": "Term 1",
+        "isMandatory": true,
+        "description": "Dedicated terminal access for CBT examinations and STEM coding lab sessions"
+      },
+      {
+        "id": "fee_admissions_app",
+        "name": "Online Admissions Application & Screening Fee",
+        "category": "admissions_application",
+        "amountNGN": 15000,
+        "term": "Annual",
+        "isMandatory": false,
+        "description": "Official entrance screening form, diagnostic assessment, and placement verification"
+      },
+      {
+        "id": "fee_cbt_pass",
+        "name": "All-Access CBT Mock & WAEC/JAMB Exam Pass",
+        "category": "cbt_exam_pass",
+        "amountNGN": 5000,
+        "term": "Termly",
+        "isMandatory": false,
+        "description": "Unlimited timed simulations, instant broadsheet analytics, and question bank access"
+      },
+      {
+        "id": "fee_sports_library",
+        "name": "Sports, Library & Extra-Curricular Levy",
+        "category": "development_levy",
+        "amountNGN": 15000,
+        "term": "Term 1",
+        "isMandatory": true,
+        "description": "Olympic sports complex access, library resources, and club affiliations"
+      },
+      {
+        "id": "fee_boarding_optional",
+        "name": "Boarding, Residency & Catering (Optional)",
+        "category": "boarding",
+        "amountNGN": 65000,
+        "term": "Term 1",
+        "isMandatory": false,
+        "description": "Hostel accommodation, meal plans, and residential supervision"
+      }
+    ],
+    "installmentPolicy": {
+      "allowed": true,
+      "maxTranches": 3,
+      "tranches": [
+        {
+          "name": "Tranche 1 (Resumption Clearance)",
+          "percentage": 50,
+          "dueWeeksAfterResumption": 0
+        },
+        {
+          "name": "Tranche 2 (Mid-Term Assessment Clearance)",
+          "percentage": 30,
+          "dueWeeksAfterResumption": 6
+        },
+        {
+          "name": "Tranche 3 (Final Terminal Examination Clearance)",
+          "percentage": 20,
+          "dueWeeksAfterResumption": 10
+        }
+      ]
+    },
+    "virtualNubanPool": {
+      "provider": "opay",
+      "poolPrefix": "994ape"
+    },
+    "createdAt": "2026-11-07T10:46:24.435Z",
+    "updatedAt": "2026-11-07T10:46:24.435Z"
+  },
+  "school_alpha_lagos": {
+    "instanceId": "school_alpha_lagos",
+    "tenantId": "cust_school_alpha_lagos",
+    "institutionName": "Apex Comprehensive College (school_alpha_lagos)",
+    "activeGateways": [
+      "paystack",
+      "opay",
+      "flutterwave",
+      "bank_wire"
+    ],
+    "primaryGateway": "paystack",
+    "credentials": {
+      "paystack": {
+        "subaccountCode": "ACCT_SUB_SCHOOL_A_01",
+        "publicKey": "pk_live_pstk_school_5e307bdd",
+        "webhookSecret": "whsec_pstk_78410ff09c2f10ae09f1578e"
+      },
+      "flutterwave": {
+        "subaccountId": "FLW_SUB_SCHOOL_A",
+        "publicKey": "FLWPUBK_LIVE-2e4c8827a50dca60-X",
+        "secretHash": "flw_sec_hash_school_alpha_lagos_2026"
+      },
+      "opay": {
+        "merchantId": "256674477882130",
+        "publicKey": "OPAY_PUB_SCHOOL_ALPHA_LAGOS_2026",
+        "secretKey": "OPAY_SEC_3e94a9020f3600952b0e07b868c2770c"
+      },
+      "bankWire": {
+        "bankName": "Zenith Bank PLC",
+        "accountNumber": "1012236388",
+        "accountName": "Apex Comprehensive College (school_alpha_lagos) — School Operating Account",
+        "sortCode": "057150013"
+      }
+    },
+    "feeCatalog": [
+      {
+        "id": "fee_tuition_term1",
+        "name": "Tuition & Academic Development",
+        "category": "tuition",
+        "amountNGN": 125000,
+        "term": "Term 1",
+        "isMandatory": true,
+        "description": "Classroom instruction, continuous assessment, digital learning tools, and laboratory access"
+      },
+      {
+        "id": "fee_ict_lab",
+        "name": "ICT, CBT & Computer Lab Levy",
+        "category": "laboratory",
+        "amountNGN": 25000,
+        "term": "Term 1",
+        "isMandatory": true,
+        "description": "Dedicated terminal access for CBT examinations and STEM coding lab sessions"
+      },
+      {
+        "id": "fee_admissions_app",
+        "name": "Online Admissions Application & Screening Fee",
+        "category": "admissions_application",
+        "amountNGN": 15000,
+        "term": "Annual",
+        "isMandatory": false,
+        "description": "Official entrance screening form, diagnostic assessment, and placement verification"
+      },
+      {
+        "id": "fee_cbt_pass",
+        "name": "All-Access CBT Mock & WAEC/JAMB Exam Pass",
+        "category": "cbt_exam_pass",
+        "amountNGN": 5000,
+        "term": "Termly",
+        "isMandatory": false,
+        "description": "Unlimited timed simulations, instant broadsheet analytics, and question bank access"
+      },
+      {
+        "id": "fee_sports_library",
+        "name": "Sports, Library & Extra-Curricular Levy",
+        "category": "development_levy",
+        "amountNGN": 15000,
+        "term": "Term 1",
+        "isMandatory": true,
+        "description": "Olympic sports complex access, library resources, and club affiliations"
+      },
+      {
+        "id": "fee_boarding_optional",
+        "name": "Boarding, Residency & Catering (Optional)",
+        "category": "boarding",
+        "amountNGN": 65000,
+        "term": "Term 1",
+        "isMandatory": false,
+        "description": "Hostel accommodation, meal plans, and residential supervision"
+      }
+    ],
+    "installmentPolicy": {
+      "allowed": true,
+      "maxTranches": 3,
+      "tranches": [
+        {
+          "name": "Tranche 1 (Resumption Clearance)",
+          "percentage": 50,
+          "dueWeeksAfterResumption": 0
+        },
+        {
+          "name": "Tranche 2 (Mid-Term Assessment Clearance)",
+          "percentage": 30,
+          "dueWeeksAfterResumption": 6
+        },
+        {
+          "name": "Tranche 3 (Final Terminal Examination Clearance)",
+          "percentage": 20,
+          "dueWeeksAfterResumption": 10
+        }
+      ]
+    },
+    "virtualNubanPool": {
+      "provider": "opay",
+      "poolPrefix": "994sch"
+    },
+    "createdAt": "2026-11-07T10:46:24.439Z",
+    "updatedAt": "2026-11-07T10:46:24.439Z"
+  }
+}

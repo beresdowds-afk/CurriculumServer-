@@ -23,6 +23,7 @@ import {
   CreditCard, 
   Cpu, 
   ShieldCheck, 
+  Shield,
   Sparkles, 
   Check, 
   Copy, 
@@ -56,14 +57,25 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
     organizationName: 'Lekki Metropolitan High School',
     registrationNumber: 'RC-8849201',
     organizationType: 'educational_institution',
-    contactPersonName: 'Dr. (Mrs.) Folashade Bakare',
-    contactEmail: 'admin@lekkimetroschool.sch.ng',
+    contactPersonName: 'Chief (Dr.) Olusegun Bakare',
+    contactEmail: 'proprietor@lekkimetroschool.sch.ng',
     contactPhone: '+234 803 555 7788',
     address: 'Plot 8 Admiralty Way, Lekki Phase 1',
     state: 'Lagos State',
     lga: 'Eti-Osa',
     country: 'Nigeria',
-    website: 'https://lekkimetroschool.sch.ng'
+    website: 'https://lekkimetroschool.sch.ng',
+    provisionerRole: 'proprietor',
+    proprietorName: 'Chief (Dr.) Olusegun Bakare',
+    proprietorEmail: 'proprietor@lekkimetroschool.sch.ng',
+    proprietorPhone: '+234 803 555 7788',
+    principalName: 'Dr. (Mrs.) Folashade Adeleke',
+    principalEmail: 'principal@lekkimetroschool.sch.ng',
+    principalPhone: '+234 802 111 4455',
+    isPrincipalAlsoIctTechnician: false,
+    ictTechnicianName: 'Engr. Dapo Alabi',
+    ictTechnicianEmail: 'ict@lekkimetroschool.sch.ng',
+    ictTechnicianPhone: '+234 809 222 3344'
   });
 
   // Stage 2: Instance Type
@@ -426,6 +438,160 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
                     onChange={(e) => setOrgInfo({ ...orgInfo, lga: e.target.value })}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-indigo-500"
                   />
+                </div>
+              </div>
+
+              {/* Institutional Governance & Provisioning Authority Hierarchy */}
+              <div className="mt-6 p-4 rounded-2xl bg-slate-950/90 border border-indigo-500/30 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Shield className="w-4 h-4 text-indigo-400" />
+                      Institutional Governance & Authority Hierarchy
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      School Proprietor &gt; School Principal &gt; ICT Technician. Provisioning must be requested by the Proprietor or Principal.
+                    </p>
+                  </div>
+                  <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2.5 py-1 rounded-full border border-indigo-500/30 font-medium">
+                    Strict Governance
+                  </span>
+                </div>
+
+                {/* Provisioner Role Selection */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-200 mb-2">
+                    Who is initiating / requesting this school provisioning?
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {/* Option: Proprietor */}
+                    <button
+                      type="button"
+                      onClick={() => setOrgInfo({ ...orgInfo, provisionerRole: 'proprietor' })}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        orgInfo.provisionerRole === 'proprietor'
+                          ? 'bg-indigo-950/60 border-indigo-500 ring-2 ring-indigo-500/20 text-white'
+                          : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold">School Proprietor</span>
+                        {orgInfo.provisionerRole === 'proprietor' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">Founder / Board Chair. Has authority over Principal & ICT Tech.</p>
+                    </button>
+
+                    {/* Option: Principal */}
+                    <button
+                      type="button"
+                      onClick={() => setOrgInfo({ ...orgInfo, provisionerRole: 'principal' })}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        orgInfo.provisionerRole === 'principal'
+                          ? 'bg-indigo-950/60 border-indigo-500 ring-2 ring-indigo-500/20 text-white'
+                          : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold">School Principal</span>
+                        {orgInfo.provisionerRole === 'principal' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">Academic Head. Has authority over ICT Tech. Can hold dual role.</p>
+                    </button>
+
+                    {/* Option: ICT Technician (Disabled Gatekeeper) */}
+                    <div className="p-3 rounded-xl border border-red-500/20 bg-red-950/20 text-left opacity-75 cursor-not-allowed">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-400 line-through">ICT Technician</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-red-400 bg-red-950/80 px-1.5 py-0.5 rounded border border-red-500/30">
+                          Restricted
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-red-300/80 mt-1">
+                        Cannot single-handedly make a school instance provisioning.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sub-branch: When Initiated by Proprietor */}
+                {orgInfo.provisionerRole === 'proprietor' && (
+                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-emerald-400">
+                        Appoint or Assign School Principal
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        Proprietor Authority Rule
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">Principal Full Name</label>
+                        <input
+                          type="text"
+                          value={orgInfo.principalName || ''}
+                          onChange={(e) => setOrgInfo({ ...orgInfo, principalName: e.target.value })}
+                          placeholder="e.g. Dr. (Mrs.) Folashade Adeleke"
+                          className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">Principal Email</label>
+                        <input
+                          type="email"
+                          value={orgInfo.principalEmail || ''}
+                          onChange={(e) => setOrgInfo({ ...orgInfo, principalEmail: e.target.value })}
+                          placeholder="principal@school.sch.ng"
+                          className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub-branch: Dual-Role Technical Governance (Principal can hold both Principal and ICT Technician) */}
+                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2.5">
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(orgInfo.isPrincipalAlsoIctTechnician)}
+                      onChange={(e) => setOrgInfo({ ...orgInfo, isPrincipalAlsoIctTechnician: e.target.checked })}
+                      className="mt-0.5 rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-950"
+                    />
+                    <div>
+                      <span className="text-xs font-semibold text-slate-200">
+                        School Principal holds both positions of Principal and ICT Technician
+                      </span>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Allowed by institutional governance rules. Grants the Principal dual administrative and technical management rights over this instance.
+                      </p>
+                    </div>
+                  </label>
+
+                  {/* If NOT dual role, prompt for ICT technician appointment */}
+                  {!orgInfo.isPrincipalAlsoIctTechnician && (
+                    <div className="pt-2 border-t border-slate-800/80 mt-2 space-y-2">
+                      <span className="text-[11px] font-medium text-slate-300">
+                        Appoint Dedicated ICT Technician (Managed by Principal / Proprietor):
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          value={orgInfo.ictTechnicianName || ''}
+                          onChange={(e) => setOrgInfo({ ...orgInfo, ictTechnicianName: e.target.value })}
+                          placeholder="ICT Technician Name (e.g. Engr. Dapo Alabi)"
+                          className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white"
+                        />
+                        <input
+                          type="email"
+                          value={orgInfo.ictTechnicianEmail || ''}
+                          onChange={(e) => setOrgInfo({ ...orgInfo, ictTechnicianEmail: e.target.value })}
+                          placeholder="ict@school.sch.ng"
+                          className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

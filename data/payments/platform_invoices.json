@@ -1,0 +1,74 @@
+{
+  "INV-PROV-PREMIERMOD-MW6A34WF": {
+    "invoiceNumber": "INV-PROV-PREMIERMOD-MW6A34WF",
+    "tenantId": "tenant_premiermod",
+    "organizationName": "Premier Model College Victoria Island",
+    "contactEmail": "proprietor@premiermodel.edu.ng",
+    "amountNGN": 250000,
+    "vatAmountNGN": 18750,
+    "totalWithTaxNGN": 250000,
+    "purpose": "Annual Sovereign Instance License",
+    "billingModel": "yearly",
+    "lineItems": [
+      {
+        "description": "Sovereign Instance Provisioning & Academic Cloud Suite (Annual Sovereign Instance License)",
+        "quantity": 1,
+        "unitPriceNGN": 250000,
+        "totalNGN": 250000
+      }
+    ],
+    "issueDate": "2026-11-07T10:46:24.399Z",
+    "dueDate": "2026-11-21T10:46:24.399Z",
+    "status": "paid",
+    "taxRegistrationNumber": "TIN-99281740-0001",
+    "currency": "NGN"
+  },
+  "INV-PROV-GREATHERIT-MW6A34X3": {
+    "invoiceNumber": "INV-PROV-GREATHERIT-MW6A34X3",
+    "tenantId": "tenant_greatherit",
+    "organizationName": "Great Heritage Academy Abuja",
+    "contactEmail": "admin@greatheritage.sch.ng",
+    "amountNGN": 650000,
+    "vatAmountNGN": 48750,
+    "totalWithTaxNGN": 650000,
+    "purpose": "Custom Architecture Tier Onboarding",
+    "billingModel": "lease_to_own",
+    "lineItems": [
+      {
+        "description": "Sovereign Instance Provisioning & Academic Cloud Suite (Custom Architecture Tier Onboarding)",
+        "quantity": 1,
+        "unitPriceNGN": 650000,
+        "totalNGN": 650000
+      }
+    ],
+    "issueDate": "2026-11-07T10:46:24.423Z",
+    "dueDate": "2026-11-21T10:46:24.423Z",
+    "status": "paid",
+    "taxRegistrationNumber": "TIN-99281740-0001",
+    "currency": "NGN"
+  },
+  "INV-PROV-IKEJASCIEN-MW6A34X5": {
+    "invoiceNumber": "INV-PROV-IKEJASCIEN-MW6A34X5",
+    "tenantId": "tenant_ikejascien",
+    "organizationName": "Ikeja Science & Technology High School",
+    "contactEmail": "bursar@ikejascience.edu.ng",
+    "amountNGN": 95000,
+    "vatAmountNGN": 7125,
+    "totalWithTaxNGN": 95000,
+    "purpose": "Standalone CBT & Assessment Center Engine",
+    "billingModel": "monthly",
+    "lineItems": [
+      {
+        "description": "Sovereign Instance Provisioning & Academic Cloud Suite (Standalone CBT & Assessment Center Engine)",
+        "quantity": 1,
+        "unitPriceNGN": 95000,
+        "totalNGN": 95000
+      }
+    ],
+    "issueDate": "2026-11-07T10:46:24.425Z",
+    "dueDate": "2026-11-21T10:46:24.425Z",
+    "status": "paid",
+    "taxRegistrationNumber": "TIN-99281740-0001",
+    "currency": "NGN"
+  }
+}

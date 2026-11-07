@@ -1,0 +1,20 @@
+[
+  {
+    "id": "tx_1794048384440_ndto",
+    "receiptNumber": "RCP-INST-615818",
+    "transactionReference": "alpha_tx_1794048384439",
+    "instanceId": "school_alpha_lagos",
+    "feeCategory": "tuition",
+    "amountPaidNGN": 50000,
+    "gatewayFeeNGN": 750,
+    "netSettlementNGN": 49250,
+    "provider": "paystack",
+    "payerName": "Parent / Guardian",
+    "payerEmail": "parent@example.com",
+    "paymentDate": "2026-11-07T10:46:24.440Z",
+    "status": "successful",
+    "verifiedAt": "2026-11-07T10:46:24.440Z",
+    "verifiedBy": "PAYSTACK Automated Settlement Webhook",
+    "qrVerificationCode": "CF-INST-RCP-INST-615818-SEC-C75D61B2-VERIFIED"
+  }
+]

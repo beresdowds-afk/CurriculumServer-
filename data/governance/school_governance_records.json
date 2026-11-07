@@ -1,0 +1,97 @@
+{
+  "test_inst_gov_1794049726924": {
+    "provisionedByRole": "proprietor",
+    "provisionerName": "Alhaji Ibrahim Danladi",
+    "provisionerEmail": "proprietor@danladicollege.sch.ng",
+    "proprietor": {
+      "name": "Alhaji Ibrahim Danladi",
+      "email": "proprietor@danladicollege.sch.ng"
+    },
+    "principal": {
+      "name": "Dr. (Mrs.) Folashade Adeleke",
+      "email": "principal@danladicollege.sch.ng",
+      "phone": "+234 803 111 2233",
+      "appointedBy": "proprietor",
+      "appointedAt": "2026-11-07T11:08:46.942Z",
+      "isAlsoIctTechnician": true
+    },
+    "ictTechnician": {
+      "name": "Dr. (Mrs.) Folashade Adeleke",
+      "email": "principal@danladicollege.sch.ng",
+      "phone": "+234 803 111 2233",
+      "appointedBy": "principal",
+      "appointedByName": "Dr. (Mrs.) Folashade Adeleke",
+      "appointedAt": "2026-11-07T11:08:46.945Z",
+      "isDualRoleWithPrincipal": true
+    },
+    "appointmentHistory": [
+      {
+        "role": "ict_technician",
+        "name": "Dr. (Mrs.) Folashade Adeleke",
+        "email": "principal@danladicollege.sch.ng",
+        "appointedByRole": "principal",
+        "appointedByName": "Dr. (Mrs.) Folashade Adeleke",
+        "appointedAt": "2026-11-07T11:08:46.945Z",
+        "isAlsoIctTechnician": true,
+        "status": "active",
+        "notes": "School Principal assumed dual responsibilities of Principal and ICT Technician"
+      },
+      {
+        "role": "ict_technician",
+        "name": "Engr. Chukwuemeka Eze",
+        "email": "ict.lead@danladicollege.sch.ng",
+        "phone": "+234 802 333 4455",
+        "appointedByRole": "principal",
+        "appointedByName": "Dr. (Mrs.) Folashade Adeleke",
+        "appointedAt": "2026-11-07T11:08:46.944Z",
+        "isAlsoIctTechnician": false,
+        "status": "active",
+        "notes": "Appointed by Principal to head ICT infrastructure & computer lab"
+      },
+      {
+        "role": "principal",
+        "name": "Dr. (Mrs.) Folashade Adeleke",
+        "email": "principal@danladicollege.sch.ng",
+        "phone": "+234 803 111 2233",
+        "appointedByRole": "proprietor",
+        "appointedByName": "Alhaji Ibrahim Danladi",
+        "appointedAt": "2026-11-07T11:08:46.942Z",
+        "isAlsoIctTechnician": false,
+        "status": "active",
+        "notes": "Officially appointed as Founding Principal"
+      },
+      {
+        "role": "principal",
+        "name": "Alhaji Ibrahim Danladi",
+        "email": "proprietor@danladicollege.sch.ng",
+        "appointedByRole": "proprietor",
+        "appointedByName": "Alhaji Ibrahim Danladi",
+        "appointedAt": "2026-11-07T11:08:46.924Z",
+        "isAlsoIctTechnician": false,
+        "status": "active",
+        "notes": "Appointed by Proprietor upon initial school instance provisioning"
+      },
+      {
+        "role": "principal",
+        "name": "Dr. (Mrs.) A. O. Adeleke",
+        "email": "principal@school.sch.ng",
+        "appointedByRole": "proprietor",
+        "appointedByName": "Alhaji Ibrahim Danladi",
+        "appointedAt": "2026-11-07T11:08:46.925Z",
+        "isAlsoIctTechnician": false,
+        "status": "reassigned",
+        "notes": "Reassigned on 11/7/2026"
+      },
+      {
+        "role": "ict_technician",
+        "name": "Engr. Kayode Bello",
+        "email": "ict@school.sch.ng",
+        "appointedByRole": "principal",
+        "appointedByName": "Dr. (Mrs.) Folashade Adeleke",
+        "appointedAt": "2026-11-07T11:08:46.944Z",
+        "status": "reassigned",
+        "notes": "Reassigned on 11/7/2026"
+      }
+    ]
+  }
+}

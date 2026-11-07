@@ -5,6 +5,50 @@ export type UniversalInstanceType = 'full_school_management' | 'custom_architect
 
 export type SchoolCategory = 'secondary_school' | 'combined_school' | 'vocational_institution' | 'primary_basic';
 
+export type ProvisionerRole = 'proprietor' | 'principal' | 'ict_technician';
+
+export interface SchoolStaffAppointment {
+  role: 'principal' | 'ict_technician';
+  name: string;
+  email: string;
+  phone?: string;
+  appointedByRole: 'proprietor' | 'principal';
+  appointedByName: string;
+  appointedAt: string;
+  isAlsoIctTechnician?: boolean;
+  status: 'active' | 'reassigned' | 'revoked';
+  notes?: string;
+}
+
+export interface InstanceGovernanceHierarchy {
+  provisionedByRole: 'proprietor' | 'principal';
+  provisionerName: string;
+  provisionerEmail: string;
+  proprietor?: {
+    name: string;
+    email: string;
+    phone?: string;
+  };
+  principal?: {
+    name: string;
+    email: string;
+    phone?: string;
+    appointedBy: 'proprietor' | 'self_provisioned';
+    appointedAt: string;
+    isAlsoIctTechnician: boolean;
+  };
+  ictTechnician?: {
+    name: string;
+    email: string;
+    phone?: string;
+    appointedBy: 'proprietor' | 'principal';
+    appointedByName: string;
+    appointedAt: string;
+    isDualRoleWithPrincipal: boolean;
+  };
+  appointmentHistory: SchoolStaffAppointment[];
+}
+
 export interface CustomerOrganizationInfo {
   organizationName: string;
   registrationNumber: string; // CAC/RC
@@ -17,6 +61,17 @@ export interface CustomerOrganizationInfo {
   lga: string;
   country: string;
   website?: string;
+  provisionerRole?: ProvisionerRole;
+  proprietorName?: string;
+  proprietorEmail?: string;
+  proprietorPhone?: string;
+  principalName?: string;
+  principalEmail?: string;
+  principalPhone?: string;
+  isPrincipalAlsoIctTechnician?: boolean;
+  ictTechnicianName?: string;
+  ictTechnicianEmail?: string;
+  ictTechnicianPhone?: string;
 }
 
 export interface CustomArchitectureSpec {
@@ -117,6 +172,7 @@ export interface UniversalInstanceRecord {
   activationUrl?: string;
   activationExpiresAt?: string;
   activatedAt?: string;
+  governanceHierarchy?: InstanceGovernanceHierarchy;
   adminReviewNotes?: string;
   createdAt: string;
   updatedAt: string;

@@ -1,5 +1,59 @@
 [
   {
+    "requestId": "req_1794048384427",
+    "instanceId": "inst_crownheightscurriculumflowcomng_1b59",
+    "tenantId": "cust_crownheightscurriculumflowcomng",
+    "instanceType": "full_school_management",
+    "organization": {
+      "organizationName": "Crown Heights International Secondary School",
+      "registrationNumber": "RC-881920",
+      "organizationType": "educational_institution",
+      "contactPersonName": "Chief Mrs. Folashade Adeyemi",
+      "contactEmail": "proprietor@crownheights.sch.ng",
+      "contactPhone": "+2348029918231",
+      "address": "Plot 4 Crown Way, Lekki Phase 1",
+      "state": "Lagos",
+      "lga": "Eti-Osa",
+      "country": "Nigeria"
+    },
+    "applicationFamily": "curriculum_flow_erp",
+    "selectedModules": [
+      "curriculum_catalog",
+      "cbt_examination",
+      "broadsheet_analytics",
+      "bursary_finance"
+    ],
+    "databaseStrategy": "shared_schema_isolated",
+    "storageStrategy": "platform_storage",
+    "storageProvider": "google_cloud_storage",
+    "subdomain": "crownheightscurriculumflowcomng.curriculumflow.com.ng",
+    "billingModel": "yearly",
+    "monthlyPriceNGN": 250000,
+    "payment": {
+      "provider": "paystack",
+      "transactionReference": "pstk_crown_1794048384427",
+      "amountNGN": 250000,
+      "paymentStatus": "verified",
+      "billingModel": "yearly",
+      "verifiedAt": "2026-11-07T10:46:24.429Z",
+      "invoiceNumber": "INV-PROV-CUST_CROWNHEIGHTSCURRICULUMFLOWCOMNG-MW6A34X9",
+      "receiptNumber": "RCP-PROV-173893",
+      "invoiceUrl": "/api/v1/server/invoices/INV-PROV-CUST_CROWNHEIGHTSCURRICULUMFLOWCOMNG-MW6A34X9",
+      "gatewayResponse": "Approved by PAYSTACK Gateway API. Charge ID: chg_pstk_crown_1794048384427 | Invoice: INV-PROV-CUST_CROWNHEIGHTSCURRICULUMFLOWCOMNG-MW6A34X9"
+    },
+    "provisioningStatus": "activation_ready",
+    "verification": {
+      "databaseConnected": false,
+      "storageReady": false,
+      "securityProfileApplied": false,
+      "dnsProvisioned": false,
+      "healthPingPassed": false,
+      "allPassed": false
+    },
+    "createdAt": "2026-11-07T10:46:24.428Z",
+    "updatedAt": "2026-11-07T10:46:25.839Z"
+  },
+  {
     "requestId": "req_1793920636537",
     "instanceId": "inst_apex_bankwire_120pschng_1ae0",
     "tenantId": "cust_apex_bankwire_120pschng",

@@ -20,6 +20,7 @@ import {
   Users, 
   HardDrive, 
   ShieldCheck, 
+  Shield,
   Search, 
   Filter, 
   Plus, 
@@ -96,6 +97,7 @@ interface CurriculumServerDashboardProps {
   onNavigateToLanding?: () => void;
   onNavigateToDomainPortal?: () => void;
   onOpenUniversalWizard?: () => void;
+  onOpenGovernanceModal?: (tenant: TenantSchoolApp) => void;
 }
 
 export type SaaSActiveTab = 
@@ -125,7 +127,8 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
   onToggleTenantStatus = (_id) => {},
   onNavigateToLanding = () => {},
   onNavigateToDomainPortal = () => {},
-  onOpenUniversalWizard
+  onOpenUniversalWizard,
+  onOpenGovernanceModal = (_t) => {}
 }) => {
   const [activeTab, setActiveTab] = useState<SaaSActiveTab>('provisioned_schools');
   const [searchQuery, setSearchQuery] = useState('');
@@ -932,6 +935,16 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
                           </button>
                         )}
                       </div>
+
+                      {/* Institutional Governance Button */}
+                      <button
+                        onClick={() => onOpenGovernanceModal && onOpenGovernanceModal(tenant)}
+                        className="w-full py-2 rounded-xl bg-indigo-950/60 hover:bg-indigo-900/60 text-indigo-300 border border-indigo-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                        title="Institutional Governance & Role Hierarchy"
+                      >
+                        <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Governance & Hierarchy</span>
+                      </button>
 
                       {/* Primary Launch Instance Button */}
                       <button

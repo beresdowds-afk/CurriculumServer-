@@ -13,6 +13,7 @@ import { GCPProvisioningOrchestrationEngine } from './gcpProvisioningEngine';
 import { StorageAndDatabaseManager } from './storageAndDatabaseManager';
 import { serverSchoolManager } from './serverSchoolManager';
 import { IIAPEngineService } from '../src/services/iiapEngineService';
+import { schoolGovernanceManager } from './schoolGovernanceManager';
 
 const ONBOARDING_FILE = path.join(process.cwd(), 'data', 'universal_instances.json');
 
@@ -365,6 +366,15 @@ export class CustomerOnboardingManager {
     paymentReference: string;
     amountPaidNGN: number;
   }): UniversalInstanceRecord {
+    // 1. Enforce Provisioning Role Hierarchy Gatekeeper
+    // Rule: School proprietors or school principals are able to make or request school provisioning.
+    // Rule: ICT technicians cannot single-handedly make a school instance provisioning.
+    const provRole = payload.organization.provisionerRole || 'proprietor';
+    const permCheck = schoolGovernanceManager.validateProvisioningPermission(provRole);
+    if (!permCheck.allowed) {
+      throw new Error(permCheck.reason || 'PERMISSION_DENIED: Unauthorized to provision school instance');
+    }
+
     const cleanSubdomain = payload.subdomain.toLowerCase().replace(/[^a-z0-9-]/g, '');
     const cleanId = cleanSubdomain.replace(/[^a-z0-9]/g, '_');
     const instanceId = `inst_${cleanId}_${Date.now().toString(16).substring(2, 6)}`;
@@ -381,6 +391,43 @@ export class CustomerOnboardingManager {
       else if (payload.instanceType === 'custom_architecture') monthlyPriceNGN = 650000;
       else monthlyPriceNGN = 95000;
     }
+
+    // 2. Build Governance Hierarchy Model
+    const isPrincipalDualRole = Boolean(payload.organization.isPrincipalAlsoIctTechnician);
+    const governanceHierarchy = schoolGovernanceManager.getOrCreateHierarchy(instanceId, {
+      provisionedByRole: provRole === 'principal' ? 'principal' : 'proprietor',
+      provisionerName: payload.organization.contactPersonName,
+      provisionerEmail: payload.organization.contactEmail,
+      proprietor: provRole === 'proprietor' ? {
+        name: payload.organization.proprietorName || payload.organization.contactPersonName,
+        email: payload.organization.proprietorEmail || payload.organization.contactEmail,
+        phone: payload.organization.proprietorPhone || payload.organization.contactPhone
+      } : undefined,
+      principal: {
+        name: payload.organization.principalName || (provRole === 'principal' ? payload.organization.contactPersonName : 'Principal Administrator'),
+        email: payload.organization.principalEmail || (provRole === 'principal' ? payload.organization.contactEmail : ''),
+        phone: payload.organization.principalPhone || '',
+        appointedBy: provRole === 'proprietor' ? 'proprietor' : 'self_provisioned',
+        appointedAt: new Date().toISOString(),
+        isAlsoIctTechnician: isPrincipalDualRole
+      },
+      ictTechnician: isPrincipalDualRole ? {
+        name: payload.organization.principalName || payload.organization.contactPersonName,
+        email: payload.organization.principalEmail || payload.organization.contactEmail,
+        appointedBy: provRole === 'proprietor' ? 'proprietor' : 'principal',
+        appointedByName: payload.organization.contactPersonName,
+        appointedAt: new Date().toISOString(),
+        isDualRoleWithPrincipal: true
+      } : (payload.organization.ictTechnicianName ? {
+        name: payload.organization.ictTechnicianName,
+        email: payload.organization.ictTechnicianEmail || '',
+        phone: payload.organization.ictTechnicianPhone,
+        appointedBy: provRole === 'proprietor' ? 'proprietor' : 'principal',
+        appointedByName: payload.organization.contactPersonName,
+        appointedAt: new Date().toISOString(),
+        isDualRoleWithPrincipal: false
+      } : undefined)
+    });
 
     const newRecord: UniversalInstanceRecord = {
       requestId,
@@ -424,6 +471,7 @@ export class CustomerOnboardingManager {
         healthPingPassed: false,
         allPassed: false
       },
+      governanceHierarchy,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -600,6 +648,7 @@ export class CustomerOnboardingManager {
     );
 
     // 4. Register Tenant into School Manager
+    const gov = record.governanceHierarchy;
     serverSchoolManager.provisionTenant({
       schoolName: record.organization.organizationName,
       subdomain: record.subdomain.split('.')[0],
@@ -607,12 +656,20 @@ export class CustomerOnboardingManager {
       lga: record.organization.lga,
       businessModel: record.billingModel,
       studentCapacity: 1200,
-      principalName: record.organization.contactPersonName,
-      principalEmail: record.organization.contactEmail,
-      principalPhone: record.organization.contactPhone,
+      principalName: gov?.principal?.name || record.organization.principalName || record.organization.contactPersonName,
+      principalEmail: gov?.principal?.email || record.organization.principalEmail || record.organization.contactEmail,
+      principalPhone: gov?.principal?.phone || record.organization.principalPhone || record.organization.contactPhone,
       enabledModules: record.selectedModules,
       storageStrategy: record.storageStrategy as any,
-      databaseStrategy: record.databaseStrategy as any
+      databaseStrategy: record.databaseStrategy as any,
+      provisionedByRole: (gov?.provisionedByRole === 'principal' ? 'principal' : 'proprietor'),
+      proprietorName: gov?.proprietor?.name || record.organization.proprietorName,
+      proprietorEmail: gov?.proprietor?.email || record.organization.proprietorEmail,
+      proprietorPhone: gov?.proprietor?.phone || record.organization.proprietorPhone,
+      isPrincipalAlsoIctTechnician: gov?.principal?.isAlsoIctTechnician ?? record.organization.isPrincipalAlsoIctTechnician ?? false,
+      principalAppointedBy: gov?.principal?.appointedBy || (record.organization.provisionerRole === 'proprietor' ? 'proprietor' : 'self_provisioned'),
+      ictTechnicianAppointedBy: gov?.ictTechnician?.appointedBy,
+      ictTechnicianAppointedByName: gov?.ictTechnician?.appointedByName
     });
 
     record.provisioningStatus = 'activation_ready';

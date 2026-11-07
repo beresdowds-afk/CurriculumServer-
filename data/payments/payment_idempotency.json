@@ -1,0 +1,304 @@
+{
+  "pstk_prov_premiermod_1794048384399_qqm3": {
+    "timestamp": "2026-11-07T10:46:24.423Z",
+    "reference": "pstk_prov_premiermod_1794048384399_qqm3",
+    "provider": "paystack",
+    "result": {
+      "success": true,
+      "receipt": {
+        "receiptNumber": "RCP-PROV-820589",
+        "invoiceNumber": "INV-PROV-PREMIERMOD-MW6A34WF",
+        "transactionReference": "pstk_prov_premiermod_1794048384399_qqm3",
+        "provider": "paystack",
+        "tenantId": "tenant_premiermod",
+        "organizationName": "Premier Model College Victoria Island",
+        "amountPaidNGN": 250000,
+        "paymentChannel": "PAYSTACK",
+        "paidAt": "2026-11-07T10:46:24.423Z",
+        "qrVerificationCode": "CF-PROV-RCP-PROV-820589-SEC-3481B49B-VERIFIED",
+        "authorizedSignatory": "Chief Financial Officer & Bursar General, CurriculumServer",
+        "gatewayResponse": "Approved by Paystack Live Card Engine",
+        "immutableLedgerSequence": 19,
+        "immutableLedgerHash": "e22ee8652c07dfd8dca661207583b5b688abdb8b427d4021c0e993ea936c5861"
+      },
+      "invoice": {
+        "invoiceNumber": "INV-PROV-PREMIERMOD-MW6A34WF",
+        "tenantId": "tenant_premiermod",
+        "organizationName": "Premier Model College Victoria Island",
+        "contactEmail": "proprietor@premiermodel.edu.ng",
+        "amountNGN": 250000,
+        "vatAmountNGN": 18750,
+        "totalWithTaxNGN": 250000,
+        "purpose": "Annual Sovereign Instance License",
+        "billingModel": "yearly",
+        "lineItems": [
+          {
+            "description": "Sovereign Instance Provisioning & Academic Cloud Suite (Annual Sovereign Instance License)",
+            "quantity": 1,
+            "unitPriceNGN": 250000,
+            "totalNGN": 250000
+          }
+        ],
+        "issueDate": "2026-11-07T10:46:24.399Z",
+        "dueDate": "2026-11-21T10:46:24.399Z",
+        "status": "paid",
+        "taxRegistrationNumber": "TIN-99281740-0001",
+        "currency": "NGN"
+      },
+      "provisioningTriggered": false,
+      "alreadyProcessed": false
+    }
+  },
+  "flw_prov_greatherit_1794048384423_p11w": {
+    "timestamp": "2026-11-07T10:46:24.425Z",
+    "reference": "flw_prov_greatherit_1794048384423_p11w",
+    "provider": "flutterwave",
+    "result": {
+      "success": true,
+      "receipt": {
+        "receiptNumber": "RCP-PROV-859301",
+        "invoiceNumber": "INV-PROV-GREATHERIT-MW6A34X3",
+        "transactionReference": "flw_prov_greatherit_1794048384423_p11w",
+        "provider": "flutterwave",
+        "tenantId": "tenant_greatherit",
+        "organizationName": "Great Heritage Academy Abuja",
+        "amountPaidNGN": 650000,
+        "paymentChannel": "FLUTTERWAVE",
+        "paidAt": "2026-11-07T10:46:24.425Z",
+        "qrVerificationCode": "CF-PROV-RCP-PROV-859301-SEC-45923A78-VERIFIED",
+        "authorizedSignatory": "Chief Financial Officer & Bursar General, CurriculumServer",
+        "gatewayResponse": "Approved by Flutterwave Enterprise Engine",
+        "immutableLedgerSequence": 21,
+        "immutableLedgerHash": "03fd677609983f5732ac642391cb98dbc7c9a08f4d661eb73b871a4630a88868"
+      },
+      "invoice": {
+        "invoiceNumber": "INV-PROV-GREATHERIT-MW6A34X3",
+        "tenantId": "tenant_greatherit",
+        "organizationName": "Great Heritage Academy Abuja",
+        "contactEmail": "admin@greatheritage.sch.ng",
+        "amountNGN": 650000,
+        "vatAmountNGN": 48750,
+        "totalWithTaxNGN": 650000,
+        "purpose": "Custom Architecture Tier Onboarding",
+        "billingModel": "lease_to_own",
+        "lineItems": [
+          {
+            "description": "Sovereign Instance Provisioning & Academic Cloud Suite (Custom Architecture Tier Onboarding)",
+            "quantity": 1,
+            "unitPriceNGN": 650000,
+            "totalNGN": 650000
+          }
+        ],
+        "issueDate": "2026-11-07T10:46:24.423Z",
+        "dueDate": "2026-11-21T10:46:24.423Z",
+        "status": "paid",
+        "taxRegistrationNumber": "TIN-99281740-0001",
+        "currency": "NGN"
+      },
+      "provisioningTriggered": false,
+      "alreadyProcessed": false
+    }
+  },
+  "opay_prov_ikejascien_1794048384425_l8r7": {
+    "timestamp": "2026-11-07T10:46:24.426Z",
+    "reference": "opay_prov_ikejascien_1794048384425_l8r7",
+    "provider": "opay",
+    "result": {
+      "success": true,
+      "receipt": {
+        "receiptNumber": "RCP-PROV-362838",
+        "invoiceNumber": "INV-PROV-IKEJASCIEN-MW6A34X5",
+        "transactionReference": "opay_prov_ikejascien_1794048384425_l8r7",
+        "provider": "opay",
+        "tenantId": "tenant_ikejascien",
+        "organizationName": "Ikeja Science & Technology High School",
+        "amountPaidNGN": 95000,
+        "paymentChannel": "OPAY",
+        "paidAt": "2026-11-07T10:46:24.426Z",
+        "qrVerificationCode": "CF-PROV-RCP-PROV-362838-SEC-58B17792-VERIFIED",
+        "authorizedSignatory": "Chief Financial Officer & Bursar General, CurriculumServer",
+        "gatewayResponse": "Cleared via OPay Instant NUBAN Virtual Settlement",
+        "immutableLedgerSequence": 23,
+        "immutableLedgerHash": "06ce607157180ea447b531904685abbca9cb267d9eff85549e6cc0bf641977ae"
+      },
+      "invoice": {
+        "invoiceNumber": "INV-PROV-IKEJASCIEN-MW6A34X5",
+        "tenantId": "tenant_ikejascien",
+        "organizationName": "Ikeja Science & Technology High School",
+        "contactEmail": "bursar@ikejascience.edu.ng",
+        "amountNGN": 95000,
+        "vatAmountNGN": 7125,
+        "totalWithTaxNGN": 95000,
+        "purpose": "Standalone CBT & Assessment Center Engine",
+        "billingModel": "monthly",
+        "lineItems": [
+          {
+            "description": "Sovereign Instance Provisioning & Academic Cloud Suite (Standalone CBT & Assessment Center Engine)",
+            "quantity": 1,
+            "unitPriceNGN": 95000,
+            "totalNGN": 95000
+          }
+        ],
+        "issueDate": "2026-11-07T10:46:24.425Z",
+        "dueDate": "2026-11-21T10:46:24.425Z",
+        "status": "paid",
+        "taxRegistrationNumber": "TIN-99281740-0001",
+        "currency": "NGN"
+      },
+      "provisioningTriggered": false,
+      "alreadyProcessed": false
+    }
+  },
+  "idem_test_ref_1794048384427": {
+    "timestamp": "2026-11-07T10:46:24.427Z",
+    "reference": "idem_test_ref_1794048384427",
+    "provider": "paystack",
+    "result": {
+      "success": true,
+      "receipt": {
+        "receiptNumber": "RCP-PROV-619062",
+        "invoiceNumber": "INV-PROV-MW6A34X7",
+        "transactionReference": "idem_test_ref_1794048384427",
+        "provider": "paystack",
+        "tenantId": "tenant_mw6a34x7",
+        "organizationName": "Apex Academic Group",
+        "amountPaidNGN": 150000,
+        "paymentChannel": "PAYSTACK",
+        "paidAt": "2026-11-07T10:46:24.427Z",
+        "qrVerificationCode": "CF-PROV-RCP-PROV-619062-SEC-99D6EAA1-VERIFIED",
+        "authorizedSignatory": "Chief Financial Officer & Bursar General, CurriculumServer",
+        "gatewayResponse": "Approved by PAYSTACK Switch. Ref: idem_test_ref_1794048384427",
+        "immutableLedgerSequence": 24,
+        "immutableLedgerHash": "d775bc9e49f6ca00537431e26a991d4bee902f1b851ae58985642089c9ed2f08"
+      },
+      "provisioningTriggered": false,
+      "alreadyProcessed": false
+    }
+  },
+  "pstk_crown_1794048384427": {
+    "timestamp": "2026-11-07T10:46:24.431Z",
+    "reference": "pstk_crown_1794048384427",
+    "provider": "paystack",
+    "result": {
+      "success": true,
+      "receipt": {
+        "receiptNumber": "RCP-PROV-319248",
+        "invoiceNumber": "INV-PROV-MW6A34X8",
+        "transactionReference": "pstk_crown_1794048384427",
+        "provider": "paystack",
+        "instanceId": "inst_crownheightscurriculumflowcomng_1b59",
+        "tenantId": "tenant_mw6a34x8",
+        "organizationName": "Apex Academic Group",
+        "amountPaidNGN": 250000,
+        "paymentChannel": "PAYSTACK",
+        "paidAt": "2026-11-07T10:46:24.428Z",
+        "qrVerificationCode": "CF-PROV-RCP-PROV-319248-SEC-CB084C80-VERIFIED",
+        "authorizedSignatory": "Chief Financial Officer & Bursar General, CurriculumServer",
+        "gatewayResponse": "Approved by Paystack Automated Clearing",
+        "immutableLedgerSequence": 26,
+        "immutableLedgerHash": "230f813f27e2fed0eb2c359443b65043183ecd96ffae4667e7addbf1edb61338"
+      },
+      "provisioningTriggered": true,
+      "alreadyProcessed": false
+    }
+  },
+  "inst_apex_comp_college_pstk_fee_apex_c_1794048384436_ljzo": {
+    "timestamp": "2026-11-07T10:46:24.437Z",
+    "reference": "pstk_fee_apex_c_1794048384436_ljzo",
+    "provider": "paystack",
+    "result": {
+      "id": "tx_1794048384436_mcgg",
+      "receiptNumber": "RCP-INST-333489",
+      "transactionReference": "pstk_fee_apex_c_1794048384436_ljzo",
+      "instanceId": "apex_comp_college",
+      "feeCategory": "tuition",
+      "amountPaidNGN": 115000,
+      "gatewayFeeNGN": 1725,
+      "netSettlementNGN": 113275,
+      "provider": "paystack",
+      "payerName": "Dr. Kunle Adebayo",
+      "payerEmail": "adebayo.parent@gmail.com",
+      "studentName": "Seun Adebayo",
+      "admissionNumber": "ACC/2026/0142",
+      "targetClass": "SS 2",
+      "paymentDate": "2026-11-07T10:46:24.436Z",
+      "status": "successful",
+      "verifiedAt": "2026-11-07T10:46:24.436Z",
+      "verifiedBy": "PAYSTACK Automated Settlement Webhook",
+      "qrVerificationCode": "CF-INST-RCP-INST-333489-SEC-08865A81-VERIFIED"
+    }
+  },
+  "inst_apex_comp_college_opay_adm_apex_c_1794048384437_9752": {
+    "timestamp": "2026-11-07T10:46:24.438Z",
+    "reference": "opay_adm_apex_c_1794048384437_9752",
+    "provider": "opay",
+    "result": {
+      "id": "tx_1794048384437_i5ud",
+      "receiptNumber": "RCP-INST-889850",
+      "transactionReference": "opay_adm_apex_c_1794048384437_9752",
+      "instanceId": "apex_comp_college",
+      "feeCategory": "admissions_application",
+      "amountPaidNGN": 15000,
+      "gatewayFeeNGN": 75,
+      "netSettlementNGN": 14925,
+      "provider": "opay",
+      "payerName": "Mrs. Chioma Okafor",
+      "payerEmail": "parent@example.com",
+      "applicantId": "APP-2026-9921",
+      "targetClass": "JSS 1",
+      "paymentDate": "2026-11-07T10:46:24.437Z",
+      "status": "successful",
+      "verifiedAt": "2026-11-07T10:46:24.437Z",
+      "verifiedBy": "OPAY Automated Settlement Webhook",
+      "qrVerificationCode": "CF-INST-RCP-INST-889850-SEC-A53869B9-VERIFIED"
+    }
+  },
+  "inst_apex_comp_college_pstk_cbt_apex_c_1794048384438_8na0": {
+    "timestamp": "2026-11-07T10:46:24.439Z",
+    "reference": "pstk_cbt_apex_c_1794048384438_8na0",
+    "provider": "paystack",
+    "result": {
+      "id": "tx_1794048384438_nqh2",
+      "receiptNumber": "RCP-INST-967031",
+      "transactionReference": "pstk_cbt_apex_c_1794048384438_8na0",
+      "instanceId": "apex_comp_college",
+      "feeCategory": "cbt_exam_pass",
+      "amountPaidNGN": 5000,
+      "gatewayFeeNGN": 75,
+      "netSettlementNGN": 4925,
+      "provider": "paystack",
+      "payerName": "Babajide Ogundimu",
+      "payerEmail": "parent@example.com",
+      "cbtExamCode": "MOCK-WAEC-2026-MATH",
+      "cbtPassToken": "CBT-PASS-APEX-577372",
+      "paymentDate": "2026-11-07T10:46:24.438Z",
+      "status": "successful",
+      "verifiedAt": "2026-11-07T10:46:24.438Z",
+      "verifiedBy": "PAYSTACK Automated Settlement Webhook",
+      "qrVerificationCode": "CF-INST-RCP-INST-967031-SEC-D1934C2C-VERIFIED"
+    }
+  },
+  "inst_school_alpha_lagos_alpha_tx_1794048384439": {
+    "timestamp": "2026-11-07T10:46:24.440Z",
+    "reference": "alpha_tx_1794048384439",
+    "provider": "paystack",
+    "result": {
+      "id": "tx_1794048384440_ndto",
+      "receiptNumber": "RCP-INST-615818",
+      "transactionReference": "alpha_tx_1794048384439",
+      "instanceId": "school_alpha_lagos",
+      "feeCategory": "tuition",
+      "amountPaidNGN": 50000,
+      "gatewayFeeNGN": 750,
+      "netSettlementNGN": 49250,
+      "provider": "paystack",
+      "payerName": "Parent / Guardian",
+      "payerEmail": "parent@example.com",
+      "paymentDate": "2026-11-07T10:46:24.440Z",
+      "status": "successful",
+      "verifiedAt": "2026-11-07T10:46:24.440Z",
+      "verifiedBy": "PAYSTACK Automated Settlement Webhook",
+      "qrVerificationCode": "CF-INST-RCP-INST-615818-SEC-C75D61B2-VERIFIED"
+    }
+  }
+}
