@@ -34,7 +34,8 @@ import {
   ArrowUp, 
   ArrowDown, 
   CheckCircle2, 
-  AlertCircle 
+  AlertCircle,
+  Video
 } from 'lucide-react';
 import { homepageClient } from '../services/homepageClient';
 
@@ -211,6 +212,41 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
     setDraftConfig({
       ...draftConfig,
       sections: secs
+    });
+  };
+
+  const handleAddVideoHeroSection = () => {
+    if (!draftConfig) return;
+    const newSec: HomepageSectionConfig = {
+      id: `sec_video_hero_${Date.now()}`,
+      type: 'video_hero',
+      title: 'Virtual Campus Showcase',
+      subtitle: 'Experience Academic & Athletic Excellence',
+      enabled: true,
+      order: draftConfig.sections.length + 1,
+      content: {
+        description: 'Immerse yourself in our cutting-edge STEM laboratories, digital research library, and collaborative learning hubs.',
+        videoUrl: 'https://www.youtube.com/watch?v=ScMzIvxBSi4',
+        videoPosterUrl: 'https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&w=1600&q=80',
+        videoAutoplay: false,
+        videoMuted: false,
+        videoLoop: false
+      }
+    };
+    setDraftConfig({
+      ...draftConfig,
+      sections: [...draftConfig.sections, newSec]
+    });
+  };
+
+  const handleDeleteSection = (secId: string) => {
+    if (!draftConfig) return;
+    const remaining = draftConfig.sections
+      .filter(s => s.id !== secId)
+      .map((s, idx) => ({ ...s, order: idx + 1 }));
+    setDraftConfig({
+      ...draftConfig,
+      sections: remaining
     });
   };
 
@@ -643,6 +679,35 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
                   </div>
                 </div>
 
+                <div className="p-3 bg-purple-950/20 border border-purple-800/40 rounded-xl space-y-3">
+                  <div className="flex items-center gap-2 text-purple-300 text-xs font-bold">
+                    <Video className="w-3.5 h-3.5" />
+                    <span>Hero Banner Custom Video</span>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Hero Background Video URL (Optional Loop Banner)
+                    </label>
+                    <input
+                      type="text"
+                      value={draftConfig.hero.backgroundVideoUrl || ''}
+                      onChange={e => setDraftConfig({
+                        ...draftConfig,
+                        hero: { 
+                          ...draftConfig.hero, 
+                          backgroundVideoUrl: e.target.value,
+                          backgroundType: e.target.value.trim() ? 'video' : draftConfig.hero.backgroundType
+                        }
+                      })}
+                      placeholder="e.g., https://... or YouTube embed / direct .mp4 link"
+                      className="w-full bg-[#070A0F] border border-slate-700 rounded-lg p-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Plays ambient looping background video behind the main headline and portal access cards.
+                    </p>
+                  </div>
+                </div>
+
                 <div className="pt-2">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -662,54 +727,178 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
 
             {/* SUBTAB: SECTIONS */}
             {activeSubTab === 'sections' && draftConfig && (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                  <span className="font-bold text-white">Homepage Sections</span>
-                  <span className="text-[11px] text-slate-400">Toggle & Reorder</span>
+                  <div>
+                    <span className="font-bold text-white text-sm">Homepage Sections</span>
+                    <p className="text-[11px] text-slate-400">Toggle, reorder, and configure custom content</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddVideoHeroSection}
+                    className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ VideoHero</span>
+                  </button>
                 </div>
 
-                {draftConfig.sections.sort((a, b) => a.order - b.order).map((sec, idx) => (
-                  <div key={sec.id} className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={sec.enabled}
-                          onChange={() => toggleSection(sec.id)}
-                          className="rounded bg-slate-800 border-slate-700 text-purple-600 focus:ring-0"
-                        />
-                        <span className="font-bold text-white text-xs">{sec.title}</span>
+                {draftConfig.sections.sort((a, b) => a.order - b.order).map((sec, idx) => {
+                  const isVideoHero = sec.type === 'video_hero';
+                  return (
+                    <div 
+                      key={sec.id} 
+                      className={`p-3.5 bg-slate-900 border rounded-xl space-y-3 transition-colors ${
+                        isVideoHero ? 'border-purple-600/50 bg-slate-900/90' : 'border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={sec.enabled}
+                            onChange={() => toggleSection(sec.id)}
+                            className="rounded bg-slate-800 border-slate-700 text-purple-600 focus:ring-0 cursor-pointer"
+                          />
+                          <div className="flex items-center gap-1.5">
+                            {isVideoHero && <Video className="w-3.5 h-3.5 text-purple-400" />}
+                            <span className="font-bold text-white text-xs">{sec.title}</span>
+                          </div>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 uppercase font-mono">
+                            {sec.type}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => moveSection(sec.id, 'up')}
+                            disabled={idx === 0}
+                            className="p-1 text-slate-400 hover:text-white disabled:opacity-30 cursor-pointer"
+                            title="Move Up"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveSection(sec.id, 'down')}
+                            disabled={idx === draftConfig.sections.length - 1}
+                            className="p-1 text-slate-400 hover:text-white disabled:opacity-30 cursor-pointer"
+                            title="Move Down"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSection(sec.id)}
+                            className="p-1 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
+                            title="Delete Section"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => moveSection(sec.id, 'up')}
-                          disabled={idx === 0}
-                          className="p-1 text-slate-400 hover:text-white disabled:opacity-30"
-                        >
-                          <ArrowUp className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => moveSection(sec.id, 'down')}
-                          disabled={idx === draftConfig.sections.length - 1}
-                          className="p-1 text-slate-400 hover:text-white disabled:opacity-30"
-                        >
-                          <ArrowDown className="w-3.5 h-3.5" />
-                        </button>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-semibold text-slate-400 mb-1">Title</label>
+                          <input
+                            type="text"
+                            value={sec.title}
+                            onChange={e => setDraftConfig({
+                              ...draftConfig,
+                              sections: draftConfig.sections.map(s => s.id === sec.id ? { ...s, title: e.target.value } : s)
+                            })}
+                            className="w-full bg-[#070A0F] border border-slate-800 rounded p-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-slate-400 mb-1">Subtitle</label>
+                          <input
+                            type="text"
+                            value={sec.subtitle || ''}
+                            onChange={e => setDraftConfig({
+                              ...draftConfig,
+                              sections: draftConfig.sections.map(s => s.id === sec.id ? { ...s, subtitle: e.target.value } : s)
+                            })}
+                            placeholder="Optional subtitle"
+                            className="w-full bg-[#070A0F] border border-slate-800 rounded p-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500"
+                          />
+                        </div>
                       </div>
+
+                      {/* VideoHero Custom Video Configuration Fields */}
+                      {isVideoHero && (
+                        <div className="p-3 bg-purple-950/30 border border-purple-800/40 rounded-lg space-y-2.5">
+                          <div className="text-[11px] font-bold text-purple-300 flex items-center gap-1.5">
+                            <Video className="w-3 h-3" />
+                            <span>Custom Video URL Configuration</span>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-300 mb-0.5">
+                              Custom Video URL (YouTube, Vimeo, or MP4/WebM direct link)
+                            </label>
+                            <input
+                              type="text"
+                              value={sec.content.videoUrl || ''}
+                              onChange={e => setDraftConfig({
+                                ...draftConfig,
+                                sections: draftConfig.sections.map(s => s.id === sec.id ? {
+                                  ...s,
+                                  content: { ...s.content, videoUrl: e.target.value }
+                                } : s)
+                              })}
+                              placeholder="https://www.youtube.com/watch?v=... or direct .mp4 link"
+                              className="w-full bg-[#070A0F] border border-slate-700 rounded p-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                            />
+                            <p className="text-[9px] text-slate-400 mt-0.5">
+                              Accepts standard YouTube links (youtu.be or watch?v=), Vimeo links, or direct MP4/WebM stream links.
+                            </p>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-300 mb-0.5">
+                              Video Poster / Thumbnail Image URL
+                            </label>
+                            <input
+                              type="text"
+                              value={sec.content.videoPosterUrl || ''}
+                              onChange={e => setDraftConfig({
+                                ...draftConfig,
+                                sections: draftConfig.sections.map(s => s.id === sec.id ? {
+                                  ...s,
+                                  content: { ...s.content, videoPosterUrl: e.target.value }
+                                } : s)
+                              })}
+                              placeholder="https://images.unsplash.com/... or thumbnail image URL"
+                              className="w-full bg-[#070A0F] border border-slate-700 rounded p-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-300 mb-0.5">
+                              Section Narrative / Description
+                            </label>
+                            <textarea
+                              rows={2}
+                              value={sec.content.description || ''}
+                              onChange={e => setDraftConfig({
+                                ...draftConfig,
+                                sections: draftConfig.sections.map(s => s.id === sec.id ? {
+                                  ...s,
+                                  content: { ...s.content, description: e.target.value }
+                                } : s)
+                              })}
+                              placeholder="Describe the campus tour or institutional highlight..."
+                              className="w-full bg-[#070A0F] border border-slate-700 rounded p-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 resize-none"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
-
-                    <input
-                      type="text"
-                      value={sec.title}
-                      onChange={e => setDraftConfig({
-                        ...draftConfig,
-                        sections: draftConfig.sections.map(s => s.id === sec.id ? { ...s, title: e.target.value } : s)
-                      })}
-                      className="w-full bg-[#070A0F] border border-slate-800 rounded p-1.5 text-xs text-slate-300"
-                    />
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

@@ -43,11 +43,17 @@ export interface HomepageSectionConfig {
   content: {
     description?: string;
     bulletPoints?: string[];
+    videoUrl?: string; // Custom video URL for VideoHero or video banner (MP4, YouTube, Vimeo, CDN)
+    videoPosterUrl?: string;
+    videoAutoplay?: boolean;
+    videoMuted?: boolean;
+    videoLoop?: boolean;
     items?: Array<{
       title: string;
       description?: string;
       iconName?: string;
       imageUrl?: string;
+      videoUrl?: string;
       date?: string;
       badge?: string;
       statValue?: string;
@@ -92,8 +98,9 @@ export interface InstanceHeroConfig {
   ctaPrimaryLink: string;
   ctaSecondaryText?: string;
   ctaSecondaryLink?: string;
-  backgroundType: 'gradient' | 'image' | 'pattern' | 'mesh';
+  backgroundType: 'gradient' | 'image' | 'pattern' | 'mesh' | 'video';
   backgroundImageUrl?: string;
+  backgroundVideoUrl?: string; // Custom video URL for hero banner
   layoutAlignment: 'left' | 'center' | 'split';
   imagePlacement?: 'right' | 'card_cluster' | 'floating_mockup' | 'none';
   badgeText?: string;

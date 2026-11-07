@@ -43,7 +43,8 @@ import {
   Settings,
   Edit3,
   Check,
-  X
+  X,
+  Play
 } from 'lucide-react';
 import { unifiedApiClient } from '../services/unifiedApiClient';
 import { InstallShareModal } from './InstallShareModal';
@@ -99,6 +100,10 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editSubtitle, setEditSubtitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editVideoUrl, setEditVideoUrl] = useState('');
+  const [editVideoPosterUrl, setEditVideoPosterUrl] = useState('');
+  const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
 
   useEffect(() => {
     setMutableConfig(config);
@@ -182,6 +187,22 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
     }
   };
 
+  const getEmbedVideoInfo = (rawUrl?: string): { isEmbed: boolean; url: string; platform: 'youtube' | 'vimeo' | 'direct' } | null => {
+    if (!rawUrl || !rawUrl.trim()) return null;
+    const trimmed = rawUrl.trim();
+    // YouTube detection
+    const ytMatch = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+    if (ytMatch) {
+      return { isEmbed: true, url: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0`, platform: 'youtube' };
+    }
+    // Vimeo detection
+    const vimeoMatch = trimmed.match(/vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/([^\/]*)\/videos\/|album\/(\d+)\/video\/|)(\d+)/);
+    if (vimeoMatch) {
+      return { isEmbed: true, url: `https://player.vimeo.com/video/${vimeoMatch[3]}?autoplay=1`, platform: 'vimeo' };
+    }
+    return { isEmbed: false, url: trimmed, platform: 'direct' };
+  };
+
   const handleStartEditSection = (sec: HomepageSectionConfig) => {
     if (editingSectionId === sec.id) {
       setEditingSectionId(null);
@@ -189,6 +210,9 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
       setEditingSectionId(sec.id);
       setEditTitle(sec.title);
       setEditSubtitle(sec.subtitle || '');
+      setEditDescription(sec.content.description || '');
+      setEditVideoUrl(sec.content.videoUrl || '');
+      setEditVideoPosterUrl(sec.content.videoPosterUrl || '');
     }
   };
 
@@ -198,7 +222,13 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
         return {
           ...s,
           title: editTitle.trim() || s.title,
-          subtitle: editSubtitle.trim()
+          subtitle: editSubtitle.trim(),
+          content: {
+            ...s.content,
+            description: editDescription.trim(),
+            videoUrl: editVideoUrl.trim() || undefined,
+            videoPosterUrl: editVideoPosterUrl.trim() || undefined
+          }
         };
       }
       return s;
@@ -208,15 +238,20 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
   };
 
   const handleAddPredefinedSection = (type: HomepageSectionType, title: string) => {
+    const isVideo = type === 'video_hero';
     const newSec: HomepageSectionConfig = {
       id: `sec_${type}_${Date.now()}`,
       type,
       title,
-      subtitle: `New ${title} Module`,
+      subtitle: isVideo ? 'Virtual Campus Showcase' : `New ${title} Module`,
       enabled: true,
       order: mutableConfig.sections.length + 1,
       content: {
-        description: `Configured description for institutional ${title}.`,
+        description: isVideo 
+          ? 'Explore our modern academic facilities, laboratories, and campus grounds through this high-definition video walkthrough.'
+          : `Configured description for institutional ${title}.`,
+        videoUrl: isVideo ? 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4' : undefined,
+        videoPosterUrl: isVideo ? 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1200&q=80' : undefined,
         bulletPoints: ['Standard curriculum objective 1', 'Standard curriculum objective 2'],
         items: [
           { title: `${title} Item 1`, description: 'Description for item 1' },
@@ -354,8 +389,23 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
       {/* 2. CUSTOMIZED HERO SECTION                                    */}
       {/* ------------------------------------------------------------- */}
       <section className="relative pt-16 pb-20 lg:pt-20 lg:pb-28 overflow-hidden border-b border-slate-800/80">
+        {/* Optional Custom Hero Video Loop Banner */}
+        {hero.backgroundVideoUrl && (
+          <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+            <video
+              autoPlay
+              muted
+              loop
+              playsInline
+              className="w-full h-full object-cover opacity-25"
+              src={hero.backgroundVideoUrl}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0a0e17] via-[#0a0e17]/85 to-[#0a0e17]/60" />
+          </div>
+        )}
+
         <div 
-          className="absolute inset-0 pointer-events-none opacity-20"
+          className="absolute inset-0 pointer-events-none opacity-20 z-0"
           style={{
             background: `radial-gradient(ellipse 70% 60% at 50% 0%, ${primaryColor}, transparent)`
           }}
@@ -705,8 +755,13 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
         }
 
         if (sec.type === 'video_hero') {
+          const videoInfo = getEmbedVideoInfo(sec.content.videoUrl);
+          const isPlaying = playingVideoId === sec.id;
+          const displayVideoUrl = sec.content.videoUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+          const posterUrl = sec.content.videoPosterUrl || 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1200&q=80';
+
           return (
-            <section key={sec.id} id={sec.id} className="py-20 border-b border-slate-800/80 bg-gradient-to-b from-[#0A0F1A] to-[#070A0F]">
+            <section key={sec.id} id={sec.id} className="py-20 border-b border-slate-800/80 bg-gradient-to-b from-[#0A0F1A] to-[#070A0F] relative">
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold uppercase tracking-wider">
                   <Sparkles className="w-3.5 h-3.5" />
@@ -716,15 +771,92 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
                 {sec.content.description && (
                   <p className="max-w-2xl mx-auto text-sm sm:text-base text-slate-300 leading-relaxed">{sec.content.description}</p>
                 )}
+
+                {/* Video Player / Showcase Container */}
                 <div className="max-w-4xl mx-auto aspect-video rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl relative overflow-hidden flex items-center justify-center group">
-                  <div className="absolute inset-0 bg-gradient-to-tr from-emerald-950/60 to-slate-950/40" />
-                  <div className="relative z-10 w-20 h-20 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow-2xl transition-all scale-100 group-hover:scale-110 cursor-pointer">
-                    <span className="text-2xl ml-1 font-bold">▶</span>
-                  </div>
-                  <div className="absolute bottom-6 left-6 right-6 flex items-center justify-between text-xs text-slate-300 font-mono bg-slate-950/80 backdrop-blur px-4 py-3 rounded-2xl border border-slate-800">
-                    <span>{branding.institutionName} — Campus Walkthrough & Facilities</span>
-                    <span className="text-emerald-400">HD 1080p • 60 FPS</span>
-                  </div>
+                  {isPlaying && videoInfo ? (
+                    videoInfo.isEmbed ? (
+                      <iframe
+                        src={videoInfo.url}
+                        title={sec.title}
+                        className="w-full h-full border-0 rounded-3xl"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    ) : (
+                      <video
+                        controls
+                        autoPlay
+                        playsInline
+                        className="w-full h-full object-cover rounded-3xl"
+                        poster={posterUrl}
+                        src={videoInfo.url}
+                      />
+                    )
+                  ) : (
+                    <>
+                      <img
+                        src={posterUrl}
+                        alt={sec.title}
+                        className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:scale-105 transition-all duration-700"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-tr from-slate-950/80 via-slate-950/40 to-emerald-950/40" />
+                      
+                      <button
+                        onClick={() => {
+                          setPlayingVideoId(sec.id);
+                        }}
+                        className="relative z-10 w-20 h-20 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow-2xl transition-all scale-100 group-hover:scale-110 cursor-pointer"
+                        title="Play Campus Tour Video"
+                      >
+                        <Play className="w-8 h-8 ml-1 fill-white" />
+                      </button>
+
+                      <div className="absolute bottom-6 left-6 right-6 flex items-center justify-between text-xs text-slate-300 font-mono bg-slate-950/90 backdrop-blur px-4 py-3 rounded-2xl border border-slate-800">
+                        <div className="flex items-center gap-2 truncate">
+                          <Video className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                          <span className="truncate">{branding.institutionName} — {sec.title}</span>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-emerald-400 font-semibold">
+                            {videoInfo?.platform === 'youtube' ? 'YouTube 4K' : videoInfo?.platform === 'vimeo' ? 'Vimeo HD' : 'HD 1080p MP4'}
+                          </span>
+                          {isAdminUser && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsSectionManagerOpen(true);
+                                handleStartEditSection(sec);
+                              }}
+                              className="px-2 py-1 bg-purple-600/80 hover:bg-purple-600 text-white font-bold text-[10px] rounded-lg transition-all"
+                            >
+                              Edit Video URL
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Video URL Meta & Configuration Bar */}
+                <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-slate-400">
+                  <span className="text-[11px] font-mono bg-slate-900 border border-slate-800 px-3 py-1 rounded-full text-slate-300 flex items-center gap-1.5">
+                    <Video className="w-3 h-3 text-cyan-400" />
+                    <span>Configured Video URL:</span>
+                    <span className="text-cyan-300 font-medium truncate max-w-xs">{displayVideoUrl}</span>
+                  </span>
+                  {isAdminUser && (
+                    <button
+                      onClick={() => {
+                        setIsSectionManagerOpen(true);
+                        handleStartEditSection(sec);
+                      }}
+                      className="text-xs text-purple-400 hover:text-purple-300 font-bold underline cursor-pointer"
+                    >
+                      Change Custom Video URL
+                    </button>
+                  )}
                 </div>
               </div>
             </section>
@@ -960,6 +1092,60 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
                             />
                           </div>
                         </div>
+
+                        {/* VideoHero specific configuration fields */}
+                        {sec.type === 'video_hero' && (
+                          <div className="p-3 bg-purple-950/20 border border-purple-800/40 rounded-xl space-y-3">
+                            <div className="flex items-center gap-2 text-purple-300 text-xs font-bold">
+                              <Video className="w-3.5 h-3.5" />
+                              <span>Custom Video Player Configuration</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                                  Custom Video URL (YouTube, Vimeo, or direct MP4/WebM)
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editVideoUrl}
+                                  onChange={(e) => setEditVideoUrl(e.target.value)}
+                                  placeholder="https://www.youtube.com/watch?v=... or .mp4 link"
+                                  className="w-full bg-[#0B0F17] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-colors"
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">
+                                  Supports YouTube watch/embed links, Vimeo links, and raw MP4 video streams.
+                                </p>
+                              </div>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                                  Video Poster / Thumbnail Image URL
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editVideoPosterUrl}
+                                  onChange={(e) => setEditVideoPosterUrl(e.target.value)}
+                                  placeholder="https://images.unsplash.com/... or thumbnail link"
+                                  className="w-full bg-[#0B0F17] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-colors"
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">
+                                  Displayed before playback begins or when video is paused.
+                                </p>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                                Section Description / Narrative
+                              </label>
+                              <textarea
+                                value={editDescription}
+                                onChange={(e) => setEditDescription(e.target.value)}
+                                rows={2}
+                                placeholder="Describe what viewers will experience in this video showcase..."
+                                className="w-full bg-[#0B0F17] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-colors resize-none"
+                              />
+                            </div>
+                          </div>
+                        )}
                         <div className="flex items-center justify-end gap-2 pt-1">
                           <button
                             type="button"

@@ -250,12 +250,28 @@ export function createDefaultPresetConfiguration(
       }
     },
     {
+      id: 'sec_video_hero',
+      type: 'video_hero',
+      title: 'Virtual Campus Showcase',
+      subtitle: 'Experience Our World-Class Campus Life',
+      enabled: true,
+      order: 3,
+      content: {
+        description: 'Explore our state-of-the-art academic complexes, digital science laboratories, Olympic sports pavilion, and boarding residences.',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+        videoPosterUrl: 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1200&q=80',
+        videoAutoplay: false,
+        videoMuted: true,
+        videoLoop: true
+      }
+    },
+    {
       id: 'sec_stats',
       type: 'statistics',
       title: 'Institutional Highlights',
       subtitle: 'Our Track Record in Numbers',
       enabled: true,
-      order: 3,
+      order: 4,
       content: {
         items: [
           { title: 'Pass Rate', statValue: '99.4%', statLabel: 'WAEC / NECO Distinction Rate' },
