@@ -44,10 +44,14 @@ import {
   Edit3,
   Check,
   X,
-  Play
+  Play,
+  QrCode,
+  Printer,
+  Loader2
 } from 'lucide-react';
 import { unifiedApiClient } from '../services/unifiedApiClient';
 import { InstallShareModal } from './InstallShareModal';
+import { instancePaymentClient } from '../services/instancePaymentClient';
 
 interface InstanceBrandedHomepageProps {
   config: HomepageConfiguration;
@@ -76,6 +80,25 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
   const [applicantGrade, setApplicantGrade] = useState('JSS 1');
   const [guardianEmail, setGuardianEmail] = useState('');
   const [admissionSuccessId, setAdmissionSuccessId] = useState<string | null>(null);
+
+  // Payment Flow State for Instance Services
+  const [selectedGateway, setSelectedGateway] = useState<'paystack' | 'opay' | 'flutterwave' | 'bank_wire'>('paystack');
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [admissionReceipt, setAdmissionReceipt] = useState<any | null>(null);
+
+  // Tuition Fee Checkout State
+  const [feeStudentAdmNo, setFeeStudentAdmNo] = useState('ACC/2026/0142');
+  const [feePayerName, setFeePayerName] = useState('Dr. Kunle Adebayo');
+  const [feePayerEmail, setFeePayerEmail] = useState('adebayo.parent@gmail.com');
+  const [feeTranche, setFeeTranche] = useState<'tranche_1' | 'full'>('tranche_1');
+  const [tuitionReceipt, setTuitionReceipt] = useState<any | null>(null);
+  const [isTuitionCheckoutMode, setIsTuitionCheckoutMode] = useState(false);
+
+  // CBT Exam Pass Checkout State
+  const [cbtCandidateName, setCbtCandidateName] = useState('Babajide Ogundimu');
+  const [cbtCandidateEmail, setCbtCandidateEmail] = useState('candidate.waec@gmail.com');
+  const [cbtPassReceipt, setCbtPassReceipt] = useState<any | null>(null);
+  const [isCbtCheckoutMode, setIsCbtCheckoutMode] = useState(false);
 
   const [cbtAnswer, setCbtAnswer] = useState<string | null>(null);
   const [cbtSubmitted, setCbtSubmitted] = useState(false);
@@ -1673,28 +1696,107 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
               </button>
             </div>
 
-            {admissionSuccessId ? (
-              <div className="text-center space-y-4 py-4">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/40">
-                  <Check className="w-6 h-6" />
+            {admissionReceipt ? (
+              <div className="space-y-4 py-2">
+                <div className="p-4 bg-emerald-950/40 border border-emerald-500/40 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-emerald-800/40">
+                    <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Payment Verified & Application Received</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300">
+                      OFFICIAL E-RECEIPT
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Receipt Number</span>
+                      <strong className="text-white font-mono">{admissionReceipt.receiptNumber}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Applicant Name</span>
+                      <strong className="text-white">{admissionReceipt.payerName}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Class Applied</span>
+                      <strong className="text-emerald-400">{admissionReceipt.targetClass || applicantGrade}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Amount Settled</span>
+                      <strong className="text-white font-mono">₦{admissionReceipt.amountPaidNGN?.toLocaleString()}</strong>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-slate-400 block text-[10px]">PSP Transaction Reference</span>
+                      <strong className="text-slate-300 font-mono text-[10px] truncate block">{admissionReceipt.transactionReference}</strong>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-semibold">
+                      <QrCode className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Tamper-Evident Security QR Code Hash</span>
+                    </div>
+                    <div className="font-mono text-[10px] text-cyan-300 break-all">
+                      {admissionReceipt.qrVerificationCode}
+                    </div>
+                  </div>
                 </div>
-                <h4 className="text-lg font-bold text-white">Application Submitted Successfully!</h4>
-                <p className="text-xs text-slate-300">Your admission application for {applicantName} has been received and logged into the {branding.institutionName} admissions queue.</p>
-                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 font-mono text-emerald-400 text-sm font-bold">
-                  Reference ID: {admissionSuccessId}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Print Receipt</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { 
+                      setAdmissionReceipt(null); 
+                      setAdmissionSuccessId(null); 
+                      setIsAdmissionsModalOpen(false); 
+                    }}
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors"
+                  >
+                    Done
+                  </button>
                 </div>
-                <button
-                  onClick={() => { setAdmissionSuccessId(null); setIsAdmissionsModalOpen(false); }}
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl cursor-pointer"
-                >
-                  Done
-                </button>
               </div>
             ) : (
-              <form onSubmit={(e) => {
+              <form onSubmit={async (e) => {
                 e.preventDefault();
-                const ref = `ADM/2026/${Math.floor(1000 + Math.random() * 9000)}`;
-                setAdmissionSuccessId(ref);
+                setIsProcessingPayment(true);
+                try {
+                  const instId = config.schoolSlug || 'apex_comp_college';
+                  const init = await instancePaymentClient.initializePayment(instId, {
+                    feeCategory: 'admissions_application',
+                    amountNGN: 15000,
+                    payerEmail: guardianEmail,
+                    payerName: applicantName,
+                    targetClass: applicantGrade,
+                    provider: selectedGateway
+                  });
+
+                  const verify = await instancePaymentClient.verifyPayment(instId, {
+                    reference: init.reference,
+                    provider: selectedGateway,
+                    amountNGN: 15000,
+                    feeCategory: 'admissions_application',
+                    payerName: applicantName,
+                    payerEmail: guardianEmail,
+                    targetClass: applicantGrade
+                  });
+
+                  setAdmissionReceipt(verify.transaction);
+                  setAdmissionSuccessId(verify.transaction.receiptNumber);
+                } catch (err: any) {
+                  alert(`Payment error: ${err.message}`);
+                } finally {
+                  setIsProcessingPayment(false);
+                }
               }} className="space-y-4 text-xs">
                 <div>
                   <label className="block text-slate-400 font-medium mb-1">Applicant Full Name</label>
@@ -1733,11 +1835,50 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
+
+                {/* Integrated Payment Rail Selector */}
+                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-300">Application Screening Fee</span>
+                    <strong className="text-emerald-400 font-mono text-sm">₦15,000</strong>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    {[
+                      { id: 'paystack' as const, label: 'Paystack (Card/USSD)', sub: 'Instant' },
+                      { id: 'opay' as const, label: 'OPay Virtual NUBAN', sub: 'Zero Fee' },
+                      { id: 'flutterwave' as const, label: 'Flutterwave Switch', sub: 'Cards' },
+                      { id: 'bank_wire' as const, label: 'Direct Bank Wire', sub: 'NIBSS Instant' }
+                    ].map(g => (
+                      <button
+                        type="button"
+                        key={g.id}
+                        onClick={() => setSelectedGateway(g.id)}
+                        className={`p-2 rounded-lg border text-left cursor-pointer transition-all ${
+                          selectedGateway === g.id
+                            ? 'bg-emerald-950/60 border-emerald-500 text-white font-bold'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <div className="text-[10px] leading-tight">{g.label}</div>
+                        <div className="text-[9px] text-slate-500">{g.sub}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <button
                   type="submit"
-                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer"
+                  disabled={isProcessingPayment}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
-                  Submit Application & Generate ID
+                  {isProcessingPayment ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Processing Payment & Generating ID...</span>
+                    </>
+                  ) : (
+                    <span>Pay ₦15,000 & Submit Application</span>
+                  )}
                 </button>
               </form>
             )}
@@ -1745,47 +1886,295 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
         </div>
       )}
 
-      {/* Fee Schedule Modal */}
+      {/* Fee Schedule & Online Settlement Modal */}
       {isFeesModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="max-w-lg w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 text-slate-100 shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <CreditCard className="w-5 h-5 text-purple-400" />
-                <h3 className="text-base font-bold text-white">2026/2027 Term 1 Fee Schedule</h3>
+                <h3 className="text-base font-bold text-white">2026/2027 Term 1 Fee Schedule & Checkout</h3>
               </div>
-              <button onClick={() => setIsFeesModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button 
+                onClick={() => { 
+                  setIsFeesModalOpen(false); 
+                  setIsTuitionCheckoutMode(false); 
+                  setTuitionReceipt(null); 
+                }} 
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="space-y-3 text-xs text-slate-300">
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
-                <span>Tuition & Academic Development</span>
-                <strong className="text-white font-mono">₦125,000</strong>
+
+            {tuitionReceipt ? (
+              <div className="space-y-4 py-2">
+                <div className="p-4 bg-emerald-950/40 border border-emerald-500/40 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-emerald-800/40">
+                    <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Term Tuition Settled & Verified</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300">
+                      OFFICIAL STUDENT E-RECEIPT
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Receipt Number</span>
+                      <strong className="text-white font-mono">{tuitionReceipt.receiptNumber}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Student Admission No</span>
+                      <strong className="text-emerald-400 font-mono">{tuitionReceipt.admissionNumber || feeStudentAdmNo}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Payer Name</span>
+                      <strong className="text-white">{tuitionReceipt.payerName}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Amount Settled</span>
+                      <strong className="text-white font-mono">₦{tuitionReceipt.amountPaidNGN?.toLocaleString()}</strong>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-slate-400 block text-[10px]">Payment Rail</span>
+                      <span className="text-slate-300 uppercase font-mono">{tuitionReceipt.provider} Gateway</span>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-semibold">
+                      <QrCode className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Tamper-Evident Security Hash</span>
+                    </div>
+                    <div className="font-mono text-[10px] text-cyan-300 break-all">
+                      {tuitionReceipt.qrVerificationCode}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Print Receipt</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { 
+                      setTuitionReceipt(null); 
+                      setIsTuitionCheckoutMode(false); 
+                      setIsFeesModalOpen(false); 
+                    }}
+                    className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
-                <span>ICT & Computer Laboratory Levy</span>
-                <strong className="text-white font-mono">₦25,000</strong>
+            ) : isTuitionCheckoutMode ? (
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                setIsProcessingPayment(true);
+                try {
+                  const instId = config.schoolSlug || 'apex_comp_college';
+                  const amount = feeTranche === 'tranche_1' ? 115000 : 230000;
+                  const init = await instancePaymentClient.initializePayment(instId, {
+                    feeCategory: 'tuition',
+                    amountNGN: amount,
+                    payerEmail: feePayerEmail,
+                    payerName: feePayerName,
+                    admissionNumber: feeStudentAdmNo,
+                    targetClass: 'SS 2',
+                    provider: selectedGateway,
+                    term: 'Term 1'
+                  });
+
+                  const verify = await instancePaymentClient.verifyPayment(instId, {
+                    reference: init.reference,
+                    provider: selectedGateway,
+                    amountNGN: amount,
+                    feeCategory: 'tuition',
+                    payerName: feePayerName,
+                    payerEmail: feePayerEmail,
+                    admissionNumber: feeStudentAdmNo,
+                    targetClass: 'SS 2'
+                  });
+
+                  setTuitionReceipt(verify.transaction);
+                } catch (err: any) {
+                  alert(`Payment error: ${err.message}`);
+                } finally {
+                  setIsProcessingPayment(false);
+                }
+              }} className="space-y-4 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-400 font-medium mb-1">Student Admission No</label>
+                    <input
+                      type="text"
+                      required
+                      value={feeStudentAdmNo}
+                      onChange={e => setFeeStudentAdmNo(e.target.value)}
+                      placeholder="e.g., ACC/2026/0142"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-500 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 font-medium mb-1">Payer Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={feePayerName}
+                      onChange={e => setFeePayerName(e.target.value)}
+                      placeholder="Parent / Guardian Name"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Parent Email for E-Receipt</label>
+                  <input
+                    type="email"
+                    required
+                    value={feePayerEmail}
+                    onChange={e => setFeePayerEmail(e.target.value)}
+                    placeholder="parent@example.com"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                {/* Tranche Selection */}
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1.5">Select Settlement Option</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFeeTranche('tranche_1')}
+                      className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                        feeTranche === 'tranche_1'
+                          ? 'bg-purple-950/60 border-purple-500 text-white font-bold'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <div className="text-[11px]">Tranche 1 (50% Resumption)</div>
+                      <div className="text-purple-400 font-mono font-bold text-sm mt-0.5">₦115,000</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFeeTranche('full')}
+                      className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                        feeTranche === 'full'
+                          ? 'bg-purple-950/60 border-purple-500 text-white font-bold'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <div className="text-[11px]">Full Term Settlement (100%)</div>
+                      <div className="text-purple-400 font-mono font-bold text-sm mt-0.5">₦230,000</div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Payment Gateway Selector */}
+                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                  <div className="text-[11px] font-bold text-slate-300">Choose Payment Rail</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { id: 'paystack' as const, label: 'Paystack (Card/USSD)', sub: 'Instant Clearance' },
+                      { id: 'opay' as const, label: 'OPay Dedicated NUBAN', sub: 'Zero Surcharge' },
+                      { id: 'flutterwave' as const, label: 'Flutterwave Switch', sub: 'Mastercard/Visa' },
+                      { id: 'bank_wire' as const, label: 'Direct Bank Wire', sub: 'Zenith Bank' }
+                    ].map(g => (
+                      <button
+                        type="button"
+                        key={g.id}
+                        onClick={() => setSelectedGateway(g.id)}
+                        className={`p-2 rounded-lg border text-left cursor-pointer transition-all ${
+                          selectedGateway === g.id
+                            ? 'bg-purple-950/60 border-purple-500 text-white font-bold'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <div className="text-[10px] leading-tight">{g.label}</div>
+                        <div className="text-[9px] text-slate-500">{g.sub}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsTuitionCheckoutMode(false)}
+                    className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold cursor-pointer transition-colors"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isProcessingPayment}
+                    className="flex-1 py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {isProcessingPayment ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Clearing Payment & Issuing Receipt...</span>
+                      </>
+                    ) : (
+                      <span>Pay ₦{feeTranche === 'tranche_1' ? '115,000' : '230,000'} Online Now</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-2.5 text-xs text-slate-300">
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <span>Tuition & Academic Development</span>
+                    <strong className="text-white font-mono">₦125,000</strong>
+                  </div>
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <span>ICT & Computer Laboratory Levy</span>
+                    <strong className="text-white font-mono">₦25,000</strong>
+                  </div>
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <span>Sports, Library & Extra-Curricular</span>
+                    <strong className="text-white font-mono">₦15,000</strong>
+                  </div>
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <span>Boarding & Catering (Optional)</span>
+                    <strong className="text-white font-mono">₦65,000</strong>
+                  </div>
+                  <div className="p-3.5 bg-indigo-950/40 rounded-xl border border-indigo-800/60 flex items-center justify-between text-indigo-300 font-bold">
+                    <span>Total Termly Settlement</span>
+                    <strong className="font-mono text-white text-sm">₦230,000</strong>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsTuitionCheckoutMode(true)}
+                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>Pay Online (Installment / Full)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsFeesModalOpen(false)}
+                    className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl cursor-pointer transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
-                <span>Sports, Library & Extra-Curricular</span>
-                <strong className="text-white font-mono">₦15,000</strong>
-              </div>
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
-                <span>Boarding & Catering (Optional)</span>
-                <strong className="text-white font-mono">₦65,000</strong>
-              </div>
-              <div className="p-3 bg-indigo-950/40 rounded-xl border border-indigo-800/60 flex items-center justify-between text-indigo-300 font-bold">
-                <span>Total Termly Settlement</span>
-                <strong className="font-mono text-white">₦230,000</strong>
-              </div>
-            </div>
-            <button
-              onClick={() => setIsFeesModalOpen(false)}
-              className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl cursor-pointer"
-            >
-              Close Schedule
-            </button>
+            )}
           </div>
         </div>
       )}
@@ -1842,16 +2231,216 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
                 <X className="w-5 h-5" />
               </button>
             </div>
-            {cbtSubmitted ? (
+            {cbtPassReceipt ? (
+              <div className="space-y-4 py-2">
+                <div className="p-4 bg-teal-950/40 border border-teal-500/40 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-teal-800/40">
+                    <div className="flex items-center gap-2 text-teal-400 font-bold text-xs">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>CBT All-Access Pass Activated</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-teal-900/60 text-teal-300">
+                      EXAM PASS CERTIFIED
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-slate-950 rounded-xl border border-teal-500/30 text-center space-y-1">
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Your Candidate Kiosk Access Token</span>
+                    <div className="text-lg font-mono font-bold text-teal-300 tracking-wider">
+                      {cbtPassReceipt.cbtPassToken}
+                    </div>
+                    <p className="text-[10px] text-slate-400">Use this token to unlock WAEC, JAMB, NECO mock sessions on any CBT terminal.</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Receipt Number</span>
+                      <strong className="text-white font-mono">{cbtPassReceipt.receiptNumber}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Candidate Name</span>
+                      <strong className="text-white">{cbtPassReceipt.payerName}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Amount Settled</span>
+                      <strong className="text-white font-mono">₦{cbtPassReceipt.amountPaidNGN?.toLocaleString()}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Rail</span>
+                      <span className="text-teal-400 font-mono uppercase">{cbtPassReceipt.provider}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-semibold">
+                      <QrCode className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Tamper-Evident Security Hash</span>
+                    </div>
+                    <div className="font-mono text-[10px] text-cyan-300 break-all">
+                      {cbtPassReceipt.qrVerificationCode}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Print Exam Pass</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { 
+                      setCbtPassReceipt(null); 
+                      setIsCbtCheckoutMode(false); 
+                      setIsCbtModalOpen(false); 
+                    }}
+                    className="flex-1 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors"
+                  >
+                    Start Exam Session
+                  </button>
+                </div>
+              </div>
+            ) : isCbtCheckoutMode ? (
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                setIsProcessingPayment(true);
+                try {
+                  const instId = config.schoolSlug || 'apex_comp_college';
+                  const init = await instancePaymentClient.initializePayment(instId, {
+                    feeCategory: 'cbt_exam_pass',
+                    amountNGN: 5000,
+                    payerEmail: cbtCandidateEmail,
+                    payerName: cbtCandidateName,
+                    cbtExamCode: 'WAEC-JAMB-2026-ALL',
+                    provider: selectedGateway
+                  });
+
+                  const verify = await instancePaymentClient.verifyPayment(instId, {
+                    reference: init.reference,
+                    provider: selectedGateway,
+                    amountNGN: 5000,
+                    feeCategory: 'cbt_exam_pass',
+                    payerName: cbtCandidateName,
+                    payerEmail: cbtCandidateEmail,
+                    cbtExamCode: 'WAEC-JAMB-2026-ALL'
+                  });
+
+                  setCbtPassReceipt(verify.transaction);
+                } catch (err: any) {
+                  alert(`Payment error: ${err.message}`);
+                } finally {
+                  setIsProcessingPayment(false);
+                }
+              }} className="space-y-4 text-xs">
+                <div className="p-3 bg-teal-950/30 border border-teal-800/40 rounded-xl">
+                  <div className="font-bold text-white text-xs mb-1">Full 2026/2027 CBT Exam Pass</div>
+                  <p className="text-[11px] text-slate-300">Unlock unlimited timed exam simulations, full NERDC question banks, instant broadsheet analytics, and offline kiosk pass.</p>
+                  <div className="mt-2 text-teal-400 font-mono font-bold text-sm">Pass Fee: ₦5,000 (Termly Unlimited)</div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Candidate Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={cbtCandidateName}
+                    onChange={e => setCbtCandidateName(e.target.value)}
+                    placeholder="Candidate Name"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Candidate Email for Token Delivery</label>
+                  <input
+                    type="email"
+                    required
+                    value={cbtCandidateEmail}
+                    onChange={e => setCbtCandidateEmail(e.target.value)}
+                    placeholder="candidate@example.com"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+
+                {/* Gateway Selector */}
+                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                  <div className="text-[11px] font-bold text-slate-300">Select Payment Rail</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { id: 'paystack' as const, label: 'Paystack (Card/USSD)', sub: 'Instant Token' },
+                      { id: 'opay' as const, label: 'OPay Virtual NUBAN', sub: 'Zero Fee' },
+                      { id: 'flutterwave' as const, label: 'Flutterwave Switch', sub: 'Cards' },
+                      { id: 'bank_wire' as const, label: 'Direct Bank Wire', sub: 'NIBSS Wire' }
+                    ].map(g => (
+                      <button
+                        type="button"
+                        key={g.id}
+                        onClick={() => setSelectedGateway(g.id)}
+                        className={`p-2 rounded-lg border text-left cursor-pointer transition-all ${
+                          selectedGateway === g.id
+                            ? 'bg-teal-950/60 border-teal-500 text-white font-bold'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <div className="text-[10px] leading-tight">{g.label}</div>
+                        <div className="text-[9px] text-slate-500">{g.sub}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsCbtCheckoutMode(false)}
+                    className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold cursor-pointer transition-colors"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isProcessingPayment}
+                    className="flex-1 py-3 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {isProcessingPayment ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Verifying & Issuing Candidate Token...</span>
+                      </>
+                    ) : (
+                      <span>Pay ₦5,000 & Activate Pass Now</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            ) : cbtSubmitted ? (
               <div className="text-center space-y-4 py-4">
                 <div className="w-12 h-12 rounded-full bg-teal-500/20 text-teal-400 flex items-center justify-center mx-auto border border-teal-500/40">
                   <Check className="w-6 h-6" />
                 </div>
                 <h4 className="text-lg font-bold text-white">Test Submitted Successfully!</h4>
                 <p className="text-xs text-slate-300">Your answer was recorded in the secure CBT sovereign engine.</p>
+                
+                <div className="p-3 bg-teal-950/30 border border-teal-800/40 rounded-xl flex items-center justify-between text-left">
+                  <div>
+                    <div className="font-bold text-white text-xs">Unlock All 2026/2027 Subjects</div>
+                    <div className="text-[11px] text-slate-400">Unlimited mock sessions & broadsheet ranking</div>
+                  </div>
+                  <button
+                    onClick={() => setIsCbtCheckoutMode(true)}
+                    className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-lg cursor-pointer transition-colors shadow"
+                  >
+                    Upgrade Pass (₦5,000)
+                  </button>
+                </div>
+
                 <button
                   onClick={() => { setIsCbtModalOpen(false); setCbtSubmitted(false); setCbtAnswer(null); }}
-                  className="w-full py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl cursor-pointer"
+                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl cursor-pointer"
                 >
                   Close Kiosk
                 </button>
@@ -1879,13 +2468,23 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
                     </button>
                   ))}
                 </div>
-                <button
-                  disabled={!cbtAnswer}
-                  onClick={() => setCbtSubmitted(true)}
-                  className="w-full py-3 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer"
-                >
-                  Submit CBT Answer
-                </button>
+
+                <div className="pt-1 flex items-center gap-2">
+                  <button
+                    disabled={!cbtAnswer}
+                    onClick={() => setCbtSubmitted(true)}
+                    className="flex-1 py-3 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer"
+                  >
+                    Submit Demo Answer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsCbtCheckoutMode(true)}
+                    className="px-3.5 py-3 bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-500/40 font-bold text-xs rounded-xl cursor-pointer transition-colors"
+                  >
+                    Unlock Full Pass (₦5,000)
+                  </button>
+                </div>
               </div>
             )}
           </div>
