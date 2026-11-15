@@ -20,6 +20,10 @@ export interface InstanceArchitectureProfile {
   enabledApplications: string[];
   enabledFeatures: string[];
   deploymentTarget: DeploymentTargetOption;
+  createProject: boolean;
+  projectId?: string;
+  parentOrganizationId?: string;
+  parentFolderId?: string;
   architectureProfileName: string;
   databaseStrategy: 'shared_schema_multitenant' | 'dedicated_postgres_schema' | 'dedicated_cloud_sql_instance' | 'sovereign_spanner_cluster';
   storageStrategy: 'shared_bucket_partition' | 'dedicated_regional_bucket' | 'encrypted_customer_managed_bucket';
@@ -63,4 +67,9 @@ export interface IIAPEAssessmentRequest {
   requiresCustomDomain: boolean;
   securityTier: 'standard' | 'strict' | 'sovereign';
   budgetPreference: 'economy' | 'balanced' | 'performance_unbounded';
+  requestedDeploymentTarget?: DeploymentTargetOption;
+  createProject?: boolean;
+  projectId?: string;
+  parentOrganizationId?: string;
+  parentFolderId?: string;
 }

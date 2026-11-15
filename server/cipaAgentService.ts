@@ -281,14 +281,11 @@ class CipaAgentService {
   }
 
   public piamApprovalAction(requestId: string, action: 'approve' | 'reject', approverEmail: string, notes: string): CipaProvisioningRequestRecord | undefined {
-    const rec = this.requests.get(requestId);
-    if (!rec) return undefined;
-    rec.piamApprovalStatus = action === 'approve' ? 'approved' : 'rejected';
-    rec.approverEmail = approverEmail;
-    rec.approvalNotes = notes;
-    rec.lifecycleState = action === 'approve' ? 'Approved' : 'Cancelled';
-    rec.updatedAt = new Date().toISOString();
-    return rec;
+    void requestId;
+    void action;
+    void approverEmail;
+    void notes;
+    throw new Error('PIAM_UNAVAILABLE: Durable independently verified approval is not configured.');
   }
 }
 

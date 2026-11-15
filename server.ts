@@ -39,9 +39,7 @@ import { instanceLifecycleManager } from './server/instanceLifecycleManager';
 import { costGovernanceManager } from './server/costGovernanceManager';
 import { productionHardeningEngine } from './server/productionHardeningEngine';
 import { homepageEngineManager } from './server/homepageEngineManager';
-import { cipaAgentService } from './server/cipaAgentService';
 import { serverPaymentEngine } from './server/serverPaymentEngine';
-import { serverPaymentReadinessEngine } from './server/serverPaymentReadinessEngine';
 import { MOCK_USERS } from './src/data/curriculumFlowData';
 
 dotenv.config();
@@ -2541,52 +2539,10 @@ app.get('/api/v1/integration/test', (_req: Request, res: Response) => {
 
 // 2. Control Plane Authentication & Operations (/api/v1/server/*)
 app.post('/api/v1/server/auth/login', (req: Request, res: Response) => {
-  const { email, securityKey } = req.body;
-  if (!email || !email.includes('@')) {
-    res.status(400).json({
-      success: false,
-      error: 'Valid email address required for Control Plane login',
-      code: 'VALIDATION_FAILED',
-      correlationId: (req as any).correlationId,
-      timestamp: new Date().toISOString()
-    });
-    return;
-  }
-
-  const adminTenant: any = {
-    id: 'platform-control-plane',
-    appId: 'CF-CONTROL-PLANE-001',
-    schoolName: 'Curriculum Server Control Plane',
-    subscriptionTier: 'Apex Enterprise',
-    status: 'active'
-  };
-
-  const token = TenantSecurityContextManager.issueTenantToken(adminTenant, 'super_admin', 86400, email);
-
-  TamperEvidentAuditService.logPlatformAction({
-    actor: email,
-    actorRole: 'super_admin',
-    tenantId: 'platform_control_plane',
-    action: 'control_plane_login',
-    target: 'session:authenticated',
-    result: 'SUCCESS',
-    outcome: 'SUCCESS',
-    details: 'Super administrator authenticated successfully via control plane login.',
-    ipAddress: req.ip || '127.0.0.1'
-  });
-
-  res.json({
-    success: true,
-    data: {
-      token,
-      expiresIn: 86400,
-      user: {
-        email,
-        role: 'super_admin',
-        name: 'Platform Administrator',
-        permissions: ['read', 'write', 'super_admin', 'control_plane', 'provision_instances']
-      }
-    },
+  res.status(503).json({
+    success: false,
+    error: 'Control-plane authentication is unavailable until a trusted identity and MFA verifier are configured.',
+    code: 'CONTROL_PLANE_AUTH_UNAVAILABLE',
     correlationId: (req as any).correlationId,
     timestamp: new Date().toISOString()
   });
@@ -2706,12 +2662,21 @@ app.post('/api/v1/server/architecture/evaluate', requireSuperAdmin, (req: Reques
 });
 
 app.get('/api/v1/server/infrastructure/jobs', requireSuperAdmin, (req: Request, res: Response) => {
-  res.json({
-    success: true,
-    data: GCPProvisioningOrchestrationEngine.getJobs(),
-    correlationId: (req as any).correlationId,
-    timestamp: new Date().toISOString()
-  });
+  try {
+    res.json({
+      success: true,
+      data: GCPProvisioningOrchestrationEngine.getJobs(),
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(503).json({
+      success: false,
+      code: 'PROVISIONING_PERSISTENCE_UNAVAILABLE',
+      error: error instanceof Error ? error.message : 'Provisioning inventory is unavailable.',
+      correlationId: (req as any).correlationId
+    });
+  }
 });
 
 app.get('/api/v1/server/audit-logs', requireSuperAdmin, (req: Request, res: Response) => {
@@ -2958,12 +2923,17 @@ app.get('/api/v1/server/onboarding/requests', requireSuperAdmin, (_req: Request,
 
 // Technical review gate for custom architecture instances
 app.post('/api/v1/server/onboarding/requests/:id/review', requireSuperAdmin, (req: Request, res: Response) => {
-  const { approved, adminNotes, reviewerEmail } = req.body;
+  const { approved, adminNotes } = req.body;
+  const reviewerEmail = (req as any).tenantContext?.email;
+  if (!reviewerEmail) {
+    res.status(401).json({ success: false, error: 'Authenticated reviewer identity is missing.' });
+    return;
+  }
   const updated = customerOnboardingManager.reviewCustomArchitecture(
     req.params.id, 
     !!approved, 
     adminNotes || '', 
-    reviewerEmail || 'admin@curriculumserver.com.ng'
+    reviewerEmail
   );
   if (!updated) {
     res.status(404).json({ success: false, error: 'Custom architecture request not found or not eligible for review' });
@@ -2976,68 +2946,23 @@ app.post('/api/v1/server/onboarding/requests/:id/review', requireSuperAdmin, (re
 // CURRICULUM SERVER PLATFORM PAYMENT FLOW (PRODUCTION HARDENED)
 // =============================================================================
 
-// Payment Initialization (Paystack, Flutterwave, OPay, Interswitch, Direct Bank Wire)
+// Payment initialization remains unavailable until a trusted provider adapter is configured.
 app.post('/api/v1/server/payments/initialize', (req: Request, res: Response) => {
-  const { provider, amountNGN, customerEmail, organizationName, instanceId, tenantId, purpose, billingModel, callbackUrl } = req.body;
-  if (!provider || !amountNGN || !customerEmail) {
-    res.status(400).json({ success: false, error: 'Missing required payment initialization parameters (provider, amountNGN, customerEmail)' });
-    return;
-  }
-
-  const result = serverPaymentEngine.initializePlatformPayment({
-    instanceId,
-    tenantId,
-    organizationName: organizationName || 'Educational Organization',
-    customerEmail,
-    amountNGN: Number(amountNGN),
-    provider: provider as any,
-    purpose: purpose || 'Curriculum Server Cloud Sovereign Instance License',
-    billingModel: billingModel || 'yearly',
-    callbackUrl
-  });
-
-  res.json({
-    success: true,
-    data: result
+  res.status(503).json({
+    success: false,
+    code: 'PAYMENT_INITIALIZATION_UNAVAILABLE',
+    error: 'Payment checkout is unavailable until a trusted provider integration is configured.',
+    correlationId: (req as any).correlationId
   });
 });
 
 // Payment Verification through official backend verification flow
 app.post('/api/v1/server/payments/verify', (req: Request, res: Response) => {
-  const { reference, provider, amountNGN, instanceId, gatewayResponse } = req.body;
-  if (!reference || !provider) {
-    res.status(400).json({ success: false, error: 'reference and provider are required for payment verification' });
-    return;
-  }
-
-  const result = serverPaymentEngine.verifyPlatformPayment(
-    reference,
-    provider as any,
-    Number(amountNGN) || 250000,
-    instanceId,
-    gatewayResponse
-  );
-
-  if (!result.success) {
-    res.status(400).json({ success: false, error: result.error || 'Payment verification failed' });
-    return;
-  }
-
-  res.json({
-    success: true,
-    data: {
-      verified: true,
-      reference,
-      provider,
-      receiptNumber: result.receipt?.receiptNumber,
-      invoiceNumber: result.receipt?.invoiceNumber,
-      invoiceUrl: `/api/v1/server/payments/invoices/${result.receipt?.invoiceNumber}`,
-      receiptUrl: `/api/v1/server/payments/receipts/${result.receipt?.receiptNumber}`,
-      paidAt: result.receipt?.paidAt,
-      qrVerificationCode: result.receipt?.qrVerificationCode,
-      provisioningTriggered: result.provisioningTriggered,
-      alreadyProcessed: result.alreadyProcessed
-    }
+  res.status(503).json({
+    success: false,
+    code: 'PAYMENT_VERIFICATION_UNAVAILABLE',
+    error: 'Payment verification is unavailable until a trusted provider verification adapter is configured.',
+    correlationId: (req as any).correlationId
   });
 });
 
@@ -3105,22 +3030,22 @@ app.get('/api/v1/server/payments/receipts/:receiptNumber', (req: Request, res: R
 
 // Payment Production Readiness Compliance Audit Report
 app.get('/api/v1/server/payments/readiness-report', async (req: Request, res: Response) => {
-  try {
-    const report = await serverPaymentReadinessEngine.runFullProductionReadinessSuite();
-    res.json({ success: true, data: report });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+  res.status(503).json({
+    success: false,
+    code: 'PAYMENT_READINESS_UNAVAILABLE',
+    error: 'Payment readiness cannot be certified without live provider verification and an integration test environment.',
+    correlationId: (req as any).correlationId
+  });
 });
 
 // Run Payment Test Suite On-Demand
 app.post('/api/v1/server/payments/run-tests', async (req: Request, res: Response) => {
-  try {
-    const report = await serverPaymentReadinessEngine.runFullProductionReadinessSuite();
-    res.json({ success: true, data: report });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+  res.status(503).json({
+    success: false,
+    code: 'PAYMENT_TESTS_UNAVAILABLE',
+    error: 'Payment tests cannot run as production readiness checks without configured providers and an integration environment.',
+    correlationId: (req as any).correlationId
+  });
 });
 
 // =============================================================================
@@ -3256,7 +3181,15 @@ app.post('/api/v1/server/onboarding/requests/:id/provision', requireSuperAdmin, 
     }
     res.json({ success: true, data: updated });
   } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message || 'Provisioning execution failed' });
+    const record = customerOnboardingManager.getInstanceById(req.params.id);
+    const blocked = record?.provisioningStatus === 'blocked';
+    res.status(blocked ? 503 : 400).json({
+      success: false,
+      code: record?.provisioningFailure?.code || 'PROVISIONING_FAILED',
+      error: err.message || 'Provisioning execution failed',
+      correlationId: record?.provisioningFailure?.correlationId || (req as any).correlationId,
+      data: record
+    });
   }
 });
 
@@ -3663,117 +3596,38 @@ app.post('/api/v1/server/homepage/:instanceId/rollback', requireSchoolAuth, (req
 // CURRICULUM INFRASTRUCTURE PROVISIONING AGENT (CIPA) APIS
 // -------------------------------------------------------------
 app.get('/api/v1/agent/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok', service: 'curriculum-provisioning-agent', runtime: 'curriculum-provisioning-agent-runtime', time: new Date().toISOString() });
+  res.json({ status: 'alive', service: 'curriculum-provisioning-agent', time: new Date().toISOString() });
 });
 
 app.get('/api/v1/agent/ready', (req: Request, res: Response) => {
-  res.json({ status: 'ready', database: 'connected', orchestrator: 'active', piam: 'enforced' });
+  res.status(503).json({
+    status: 'not_ready',
+    dependencies: {
+      database: 'not_configured',
+      mfaVerifier: 'not_configured',
+      piam: 'not_enforced',
+      orchestrator: 'not_configured'
+    },
+    correlationId: (req as any).correlationId,
+    timestamp: new Date().toISOString()
+  });
 });
 
-app.get('/api/v1/agent/requests', (req: Request, res: Response) => {
-  try {
-    const list = cipaAgentService.getAllRequests();
-    res.json({ success: true, data: list });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
+app.use('/api/v1/agent/requests', requireSuperAdmin);
 
-app.post('/api/v1/agent/requests', (req: Request, res: Response) => {
-  try {
-    const { prompt } = req.body;
-    if (!prompt) {
-      res.status(400).json({ success: false, error: 'prompt is required' });
-      return;
-    }
-    const created = cipaAgentService.createRequest(prompt);
-    res.json({ success: true, data: created });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
+const respondProvisioningUnavailable = (req: Request, res: Response) => {
+  res.status(503).json({
+    success: false,
+    code: 'PROVISIONING_CONTROL_PLANE_UNAVAILABLE',
+    error: 'Provisioning requests are disabled until durable PostgreSQL persistence, trusted MFA verification, PIAM, and execution adapters are configured.',
+    correlationId: (req as any).correlationId,
+    timestamp: new Date().toISOString()
+  });
+};
 
-app.get('/api/v1/agent/requests/:requestId', (req: Request, res: Response) => {
-  try {
-    const rec = cipaAgentService.getRequest(req.params.requestId);
-    if (!rec) {
-      res.status(404).json({ success: false, error: 'Provisioning request not found' });
-      return;
-    }
-    res.json({ success: true, data: rec });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/v1/agent/requests/:requestId/evaluate', (req: Request, res: Response) => {
-  try {
-    const rec = cipaAgentService.getRequest(req.params.requestId);
-    if (!rec) {
-      res.status(404).json({ success: false, error: 'Provisioning request not found' });
-      return;
-    }
-    cipaAgentService.updateLifecycle(req.params.requestId, 'Architecture Evaluation');
-    res.json({ success: true, data: rec });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/v1/agent/requests/:requestId/plan', (req: Request, res: Response) => {
-  try {
-    const rec = cipaAgentService.getRequest(req.params.requestId);
-    if (!rec) {
-      res.status(404).json({ success: false, error: 'Provisioning request not found' });
-      return;
-    }
-    cipaAgentService.updateLifecycle(req.params.requestId, 'Awaiting Privileged Approval');
-    res.json({ success: true, data: rec });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/v1/agent/requests/:requestId/submit', (req: Request, res: Response) => {
-  try {
-    const rec = cipaAgentService.getRequest(req.params.requestId);
-    if (!rec) {
-      res.status(404).json({ success: false, error: 'Provisioning request not found' });
-      return;
-    }
-    cipaAgentService.updateLifecycle(req.params.requestId, 'Project Creation');
-    res.json({ success: true, data: rec });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/v1/agent/requests/:requestId/piam-approval', (req: Request, res: Response) => {
-  try {
-    const { action, approverEmail, notes } = req.body;
-    const updated = cipaAgentService.piamApprovalAction(req.params.requestId, action, approverEmail || 'superadmin@curriculumserver.com.ng', notes || 'Approved via CIPA PIAM workflow.');
-    if (!updated) {
-      res.status(404).json({ success: false, error: 'Provisioning request not found' });
-      return;
-    }
-    res.json({ success: true, data: updated });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/v1/agent/requests/:requestId/cancel', (req: Request, res: Response) => {
-  try {
-    const updated = cipaAgentService.updateLifecycle(req.params.requestId, 'Cancelled');
-    if (!updated) {
-      res.status(404).json({ success: false, error: 'Provisioning request not found' });
-      return;
-    }
-    res.json({ success: true, data: updated });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
+app.all('/api/v1/agent/requests', respondProvisioningUnavailable);
+app.all('/api/v1/agent/requests/:requestId', respondProvisioningUnavailable);
+app.all('/api/v1/agent/requests/:requestId/:operation', respondProvisioningUnavailable);
 
 // -------------------------------------------------------------
 // PWA REAL-TIME SYNC API ENDPOINTS

@@ -3,25 +3,13 @@ import {
   Bot, 
   Sparkles, 
   Send, 
-  CheckCircle2, 
-  Clock, 
-  AlertTriangle, 
   ShieldCheck, 
-  Layers, 
   Cpu, 
-  Database, 
-  Globe, 
-  ArrowRight, 
   RotateCw, 
-  Check, 
-  X, 
-  FileText, 
-  Play,
-  Building2,
-  Users,
-  HardDrive
+  Users
 } from 'lucide-react';
 import { CipaProvisioningRequestRecord } from '../../server/cipaAgentService';
+import { cipaApiClient, getCipaApiErrorMessage } from '../services/cipaApiClient';
 
 export const CipaProvisioningAgentPortal: React.FC = () => {
   const [requests, setRequests] = useState<CipaProvisioningRequestRecord[]>([]);
@@ -30,20 +18,23 @@ export const CipaProvisioningAgentPortal: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState(true);
 
   const fetchRequests = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/v1/agent/requests');
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        setRequests(json.data);
-        if (!selectedReq && json.data.length > 0) {
-          setSelectedReq(json.data[0]);
-        }
+      const data = await cipaApiClient.getRequests();
+      setUnavailable(false);
+      setFeedback(null);
+      setRequests(data);
+      if (!selectedReq && data.length > 0) {
+        setSelectedReq(data[0]);
       }
     } catch (err) {
-      console.error('Failed to fetch CIPA requests:', err);
+      setUnavailable(true);
+      setFeedback(getCipaApiErrorMessage(err));
+      setRequests([]);
+      setSelectedReq(null);
     } finally {
       setLoading(false);
     }
@@ -60,41 +51,16 @@ export const CipaProvisioningAgentPortal: React.FC = () => {
     try {
       setSubmitting(true);
       setFeedback(null);
-      const res = await fetch('/api/v1/agent/requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: newPrompt.trim() })
-      });
-      const json = await res.json();
-      if (json.success && json.data) {
-        setNewPrompt('');
-        await fetchRequests();
-        setSelectedReq(json.data);
-        setFeedback('Provisioning request successfully analyzed and classified by CIPA.');
-      } else {
-        setFeedback(json.error || 'Failed to create request');
-      }
-    } catch (err: any) {
-      setFeedback(err.message || 'Network error');
+      const request = await cipaApiClient.createRequest(newPrompt.trim());
+      setNewPrompt('');
+      await fetchRequests();
+      setSelectedReq(request);
+      setFeedback('Request received. Architecture assessment and provisioning remain unavailable until the control plane is ready.');
+    } catch (err) {
+      setUnavailable(true);
+      setFeedback(getCipaApiErrorMessage(err));
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handlePiamAction = async (requestId: string, action: 'approve' | 'reject') => {
-    try {
-      const res = await fetch(`/api/v1/agent/requests/${requestId}/piam-approval`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, notes: `PIAM authorized by Super Admin via CIPA portal.` })
-      });
-      const json = await res.json();
-      if (json.success && json.data) {
-        setSelectedReq(json.data);
-        await fetchRequests();
-      }
-    } catch (err) {
-      console.error('PIAM action failed:', err);
     }
   };
 
@@ -107,13 +73,13 @@ export const CipaProvisioningAgentPortal: React.FC = () => {
           <div className="space-y-2 max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold uppercase tracking-wider">
               <Bot className="w-4 h-4 text-purple-400" />
-              <span>Autonomous Infrastructure Agent</span>
+              <span>{unavailable ? 'Provisioning Control Plane Unavailable' : 'Provisioning Request Coordination'}</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
               Curriculum Infrastructure Provisioning Agent (CIPA)
             </h2>
             <p className="text-sm text-slate-300 leading-relaxed">
-              Intelligent infrastructure coordination agent evaluating school provisioning requests, IIAPE recommendations, PIAM human authorisations, and orchestrating execution workflows.
+              CIPA coordinates customer requests. Architecture assessment, PIAM authorization and infrastructure execution are disabled until their trusted control-plane dependencies are configured.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -152,7 +118,7 @@ export const CipaProvisioningAgentPortal: React.FC = () => {
             </span>
             <button
               type="submit"
-              disabled={submitting || !newPrompt.trim()}
+              disabled={unavailable || submitting || !newPrompt.trim()}
               className="px-6 py-2.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-950/50 transition-all flex items-center gap-2 cursor-pointer"
             >
               {submitting ? (
@@ -166,7 +132,9 @@ export const CipaProvisioningAgentPortal: React.FC = () => {
             </button>
           </div>
           {feedback && (
-            <div className="p-3 bg-purple-950/40 border border-purple-800/50 rounded-xl text-xs text-purple-300">
+            <div role="alert" className={`p-3 rounded-xl text-xs ${
+              unavailable ? 'bg-amber-950/40 border border-amber-800/50 text-amber-300' : 'bg-purple-950/40 border border-purple-800/50 text-purple-300'
+            }`}>
               {feedback}
             </div>
           )}
@@ -264,42 +232,20 @@ export const CipaProvisioningAgentPortal: React.FC = () => {
                 </div>
               </div>
 
-              {/* PIAM Approval Box */}
+              {/* PIAM is intentionally unavailable until durable independent authorization exists. */}
               <div className="p-4 bg-indigo-950/40 border border-indigo-900/60 rounded-2xl space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
                     <ShieldCheck className="w-4 h-4 text-indigo-400" />
                     <span>PIAM Human Authorisation Gate</span>
                   </h4>
-                  <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${
-                    selectedReq.piamApprovalStatus === 'approved' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
-                    selectedReq.piamApprovalStatus === 'rejected' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
-                    'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                  }`}>
-                    {selectedReq.piamApprovalStatus.toUpperCase()}
+                  <span className="px-2.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    UNAVAILABLE
                   </span>
                 </div>
                 <p className="text-xs text-slate-300">
-                  Privileged infrastructure actions (GCP project creation, billing association) require verified human authorization.
+                  No approval controls are exposed. Durable PIAM authorization and MFA verification are not configured; project creation and billing association cannot proceed.
                 </p>
-                {selectedReq.piamApprovalStatus === 'pending_approval' && (
-                  <div className="flex items-center gap-3 pt-2">
-                    <button
-                      onClick={() => handlePiamAction(selectedReq.requestId, 'approve')}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Approve & Authorise</span>
-                    </button>
-                    <button
-                      onClick={() => handlePiamAction(selectedReq.requestId, 'reject')}
-                      className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      <span>Reject Request</span>
-                    </button>
-                  </div>
-                )}
               </div>
 
               {/* Provisioning Plan Steps */}

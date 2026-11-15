@@ -8,6 +8,8 @@ import {
   UniversalInstanceRecord
 } from '../types/customerOnboarding';
 import { customerOnboardingClient, CLIENT_FEATURE_DEPENDENCIES } from '../services/customerOnboardingClient';
+import { VerificationCheckStatus } from '../types/customerOnboarding';
+import { DeploymentTargetOption } from '../types/iiapEngine';
 import { 
   X, 
   CheckCircle2, 
@@ -98,7 +100,11 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
   const [dependencyIssues, setDependencyIssues] = useState<{ feature: string; featureName: string; requires: string; requiredName: string }[]>([]);
 
   // Stage 5: Deployment & Architecture Requirements
-  const [deploymentTarget, setDeploymentTarget] = useState<'shared_application_infrastructure' | 'dedicated_cloud_run_service' | 'dedicated_gcp_project'>('dedicated_cloud_run_service');
+  const [deploymentTarget, setDeploymentTarget] = useState<DeploymentTargetOption>('dedicated_cloud_run_service');
+  const [createProject, setCreateProject] = useState(false);
+  const [projectId, setProjectId] = useState('');
+  const [parentResourceType, setParentResourceType] = useState<'organization' | 'folder'>('organization');
+  const [parentResourceId, setParentResourceId] = useState('');
   const [cpuAllocation, setCpuAllocation] = useState('2.0 vCPU');
   const [memoryAllocation, setMemoryAllocation] = useState('4 GiB RAM');
   const [highAvailability, setHighAvailability] = useState(true);
@@ -117,19 +123,22 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
 
   // Stage 8: Architecture Recommendation & Cost Estimate (IIAPE)
   const [estimatedCostNGN, setEstimatedCostNGN] = useState<number>(250000);
-  const [iiapeRationale, setIiapeRationale] = useState('');
+  const [iiapeRationale, setIiapeRationale] = useState(
+    'No backend architecture assessment has been received. The selected target is a request preference, not an approved or executable plan.'
+  );
 
   // Stage 9: Commercial Agreement & Payment Verification
   const [billingModel, setBillingModel] = useState<'monthly' | 'yearly' | 'lease_to_own'>('yearly');
   const [paymentProvider, setPaymentProvider] = useState<'paystack' | 'opay'>('paystack');
-  const [paymentReference, setPaymentReference] = useState(`pstk_${Date.now()}`);
+  const [paymentReference, setPaymentReference] = useState('');
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
   const [paymentVerified, setPaymentVerified] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   // Stage 10: Technical Approval & Provisioning
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [provisioningDone, setProvisioningDone] = useState(false);
-  const [adminReviewApproved, setAdminReviewApproved] = useState(false);
+  const [provisioningError, setProvisioningError] = useState<string | null>(null);
   const [createdInstance, setCreatedInstance] = useState<UniversalInstanceRecord | null>(null);
 
   // Stage 11: Instance Verification & Activation
@@ -139,7 +148,9 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
     activationToken: string;
     expiresAt: string;
   } | null>(null);
+  const [activationError, setActivationError] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [submissionKey] = useState(() => globalThis.crypto?.randomUUID?.() || `onboarding-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
   // Live dependency validation on feature selection change
   useEffect(() => {
@@ -161,13 +172,7 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
     }
     setEstimatedCostNGN(base);
 
-    if (instanceType === 'full_school_management') {
-      setIiapeRationale('IIAPE recommends dedicated Cloud Run service with dedicated PostgreSQL schema and hybrid storage routing for academic compliance.');
-    } else if (instanceType === 'custom_architecture') {
-      setIiapeRationale('IIAPE recommends high-concurrency Cloud SQL Enterprise instance with Cloud Run container fleet and sovereign customer GCP project isolation.');
-    } else {
-      setIiapeRationale('IIAPE recommends microservice container with shared PostgreSQL row-level isolation and platform GCS bucket partition.');
-    }
+    setIiapeRationale('No backend architecture assessment has been received. The selected deployment target and configuration remain a customer request, not an approved or executable plan.');
   }, [instanceType, selectedFeatures, billingModel, databaseStrategy]);
 
   if (!isOpen) return null;
@@ -183,71 +188,112 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
     setSelectedFeatures(prev => Array.from(new Set([...prev, ...requiredToAdd])));
   };
 
+  const getErrorMessage = (error: unknown) => {
+    const failure = error as { error?: string; message?: string; status?: number; correlationId?: string } | null;
+    const message = failure?.error || failure?.message || 'The request could not be completed.';
+    return `${failure?.status ? `HTTP ${failure.status}: ` : ''}${message}${failure?.correlationId ? ` (correlation ID: ${failure.correlationId})` : ''}`;
+  };
+
+  const getProvisioningStatusLabel = () => {
+    if (activationData) return 'Instance activated';
+    if (provisioningDone) return 'Provisioning verified';
+    if (isProvisioning) return 'Provisioning in progress';
+    if (createdInstance?.provisioningStatus === 'pending_review') return 'Awaiting approval';
+    if (createdInstance?.provisioningStatus === 'blocked') return 'Provisioning blocked';
+    if (createdInstance?.provisioningStatus === 'failed') return 'Provisioning failed';
+    if (createdInstance) return 'Request received';
+    return 'Request not submitted';
+  };
+
+  const createRequestPayload = () => ({
+    instanceType,
+    organization: orgInfo,
+    schoolCategory: instanceType === 'full_school_management' ? schoolCategory : undefined,
+    customArchitecture: instanceType === 'custom_architecture' ? {
+      applicationComponents: ['Curriculum Core API', 'Custom LMS Shard', 'Parent Gateway'],
+      existingSystems: ['Legacy SMS'],
+      apiRequirements: { restEnabled: true, graphqlEnabled: true, webhooksEnabled: apiWebhooksEnabled, rateLimitTier: 'high_throughput' as const },
+      databaseRequirements: { isolation: databaseStrategy, engine: 'PostgreSQL 16 LTS' as const, cmekRequired: cmekEnabled, pointInTimeRecovery: true },
+      authenticationRequirements: { authProvider: 'sovereign_jwt' as const, mfaEnforced: true },
+      storageRequirements: { strategy: storageStrategy, primaryProvider: storageProvider, retentionDays: 2555, encryptionAtRest: true },
+      networkingRequirements: { vpcPeering: true, staticEgressIp: true, cloudArmourDDoS: true },
+      domainRequirements: { domainType: customDomain ? 'custom_sch_ng' as const : 'subdomain' as const, requestedDomain: customDomain || `${subdomain}.curriculumflow.com.ng`, sslManagedByPlatform: sslManaged },
+      requiresAdminReview: true,
+      reviewStatus: 'pending_review' as const
+    } : undefined,
+    featureCollection: instanceType === 'feature_collection' ? {
+      primaryUseCase: 'examination_center' as const,
+      selectedFeatures,
+      dependencyValidation: { valid: dependencyIssues.length === 0, missingDependencies: dependencyIssues }
+    } : undefined,
+    selectedModules: selectedFeatures,
+    databaseStrategy,
+    storageStrategy,
+    storageProvider,
+    deploymentTarget,
+    createProject: deploymentTarget === 'dedicated_gcp_project' && createProject,
+    projectId: deploymentTarget === 'dedicated_gcp_project' ? projectId : undefined,
+    parentOrganizationId: deploymentTarget === 'dedicated_gcp_project' && parentResourceType === 'organization' ? parentResourceId : undefined,
+    parentFolderId: deploymentTarget === 'dedicated_gcp_project' && parentResourceType === 'folder' ? parentResourceId : undefined,
+    idempotencyKey: submissionKey,
+    subdomain,
+    customDomain,
+    billingModel,
+    monthlyPriceNGN: estimatedCostNGN,
+    paymentProvider,
+    paymentReference,
+    amountPaidNGN: billingModel === 'yearly' ? estimatedCostNGN * 12 * 0.9 : estimatedCostNGN
+  });
+
   const handleVerifyPayment = async () => {
+    if (!paymentReference.trim()) {
+      setPaymentError('Enter the transaction reference returned by your payment provider.');
+      return;
+    }
+    if (deploymentTarget === 'dedicated_gcp_project' && (!createProject || !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(projectId) || !/^\d+$/.test(parentResourceId))) {
+      setPaymentError('Dedicated project requests require explicit project-creation consent, a valid project ID, and a numeric organization or folder ID.');
+      return;
+    }
     setIsVerifyingPayment(true);
+    setPaymentError(null);
     try {
+      const request = createdInstance || await customerOnboardingClient.submitInstanceRequest(createRequestPayload());
+      setCreatedInstance(request);
       const amountToPay = billingModel === 'yearly' ? estimatedCostNGN * 12 * 0.9 : estimatedCostNGN;
-      // Real backend verification endpoint call
       const res = await customerOnboardingClient.verifyPayment(
-        `inst_${subdomain}`,
+        request.instanceId,
         paymentReference,
         paymentProvider,
         amountToPay
       );
       if (res.verified) {
         setPaymentVerified(true);
+      } else {
+        setPaymentError('Payment verification returned no verified provider evidence.');
       }
-    } catch {
-      // Fallback verification acknowledgment
-      setPaymentVerified(true);
+    } catch (error) {
+      setPaymentError(getErrorMessage(error));
     } finally {
       setIsVerifyingPayment(false);
     }
   };
 
   const handleExecuteProvisioning = async () => {
+    if (!createdInstance) {
+      setProvisioningError('Submit the onboarding request before provisioning.');
+      return;
+    }
     setIsProvisioning(true);
+    setProvisioningError(null);
     try {
-      const payload: any = {
-        instanceType,
-        organization: orgInfo,
-        schoolCategory: instanceType === 'full_school_management' ? schoolCategory : undefined,
-        customArchitecture: instanceType === 'custom_architecture' ? {
-          applicationComponents: ['Curriculum Core API', 'Custom LMS Shard', 'Parent Gateway'],
-          existingSystems: ['Legacy SMS'],
-          apiRequirements: { restEnabled: true, graphqlEnabled: true, webhooksEnabled: apiWebhooksEnabled, rateLimitTier: 'high_throughput' },
-          databaseRequirements: { isolation: databaseStrategy, engine: 'PostgreSQL 16 LTS', cmekRequired: cmekEnabled, pointInTimeRecovery: true },
-          authenticationRequirements: { authProvider: 'sovereign_jwt', mfaEnforced: true },
-          storageRequirements: { strategy: storageStrategy, primaryProvider: storageProvider, retentionDays: 2555, encryptionAtRest: true },
-          networkingRequirements: { vpcPeering: true, staticEgressIp: true, cloudArmourDDoS: true },
-          domainRequirements: { domainType: customDomain ? 'custom_sch_ng' : 'subdomain', requestedDomain: customDomain || `${subdomain}.curriculumflow.com.ng`, sslManagedByPlatform: sslManaged },
-          requiresAdminReview: true,
-          reviewStatus: 'approved'
-        } : undefined,
-        featureCollection: instanceType === 'feature_collection' ? {
-          primaryUseCase: 'examination_center',
-          selectedFeatures,
-          dependencyValidation: { valid: dependencyIssues.length === 0, missingDependencies: dependencyIssues }
-        } : undefined,
-        selectedModules: selectedFeatures,
-        databaseStrategy,
-        storageStrategy,
-        storageProvider,
-        subdomain,
-        customDomain,
-        billingModel,
-        monthlyPriceNGN: estimatedCostNGN,
-        paymentProvider,
-        paymentReference,
-        amountPaidNGN: billingModel === 'yearly' ? estimatedCostNGN * 12 * 0.9 : estimatedCostNGN
-      };
-
-      const record = await customerOnboardingClient.submitInstanceRequest(payload);
+      const record = await customerOnboardingClient.provisionInstance(createdInstance.instanceId);
       setCreatedInstance(record);
-      setProvisioningDone(true);
-    } catch (err: any) {
-      console.error('Provisioning execution error:', err);
-      setProvisioningDone(true);
+      setProvisioningDone(record.provisioningStatus === 'verified');
+      if (record.provisioningStatus !== 'verified') {
+        setProvisioningError(record.provisioningFailure?.message || 'Provisioning did not return independently verified infrastructure evidence.');
+      }
+    } catch (error) {
+      setProvisioningError(getErrorMessage(error));
     } finally {
       setIsProvisioning(false);
     }
@@ -255,8 +301,12 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
 
   const handleActivateInstance = async () => {
     setIsActivating(true);
+    setActivationError(null);
     try {
-      const instId = createdInstance?.instanceId || `inst_${subdomain}_01`;
+      if (!createdInstance || !provisioningDone) {
+        throw new Error('Activation is blocked until provisioning and independent verification succeed.');
+      }
+      const instId = createdInstance.instanceId;
       const res = await customerOnboardingClient.activateInstance(instId);
       if (res.success) {
         setActivationData({
@@ -264,15 +314,10 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
           activationToken: res.activationToken,
           expiresAt: res.expiresAt
         });
+        onSuccess?.(createdInstance);
       }
-    } catch {
-      // Fallback activation token
-      const token = `act_sovereign_token_${Date.now()}`;
-      setActivationData({
-        activationUrl: `https://${subdomain}.curriculumflow.com.ng/activate?token=${token}`,
-        activationToken: token,
-        expiresAt: new Date(Date.now() + 72 * 3600 * 1000).toISOString()
-      });
+    } catch (error) {
+      setActivationError(getErrorMessage(error));
     } finally {
       setIsActivating(false);
     }
@@ -286,6 +331,14 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
     }
   };
 
+  const verificationChecks: { label: string; status: VerificationCheckStatus }[] = [
+    { label: 'PostgreSQL Relational Shard Ping', status: createdInstance?.verification.databaseConnected ?? 'unknown' },
+    { label: 'Customer Storage Read/Write Readiness', status: createdInstance?.verification.storageReady ?? 'unknown' },
+    { label: 'Security Profile', status: createdInstance?.verification.securityProfileApplied ?? 'unknown' },
+    { label: 'Cloud DNS & Subdomain Routing', status: createdInstance?.verification.dnsProvisioned ?? 'unknown' },
+    { label: 'Infrastructure Health Ping', status: createdInstance?.verification.healthPingPassed ?? 'unknown' }
+  ];
+
   const STAGE_TITLES = [
     'Organization Identity',
     'Instance Type',
@@ -294,7 +347,7 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
     'Deployment Architecture',
     'Database & Storage',
     'Domain & Integration',
-    'IIAPE Recommendation',
+    'Architecture Assessment',
     'Payment Verification',
     'Approval & Provisioning',
     'Verification & Activation'
@@ -820,15 +873,17 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
 
               <div className="space-y-3">
                 <label className="block text-xs font-semibold text-slate-300">Target Deployment Infrastructure</label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {[
                     { id: 'shared_application_infrastructure', label: 'Multi-Tenant Cloud Run', desc: 'Shared container fleet with auto-scaling to zero' },
                     { id: 'dedicated_cloud_run_service', label: 'Dedicated Cloud Run Service', desc: 'Isolated container instance with dedicated vCPU/RAM' },
-                    { id: 'dedicated_gcp_project', label: 'Dedicated Sovereign Project', desc: 'Complete GCP project boundary isolation' }
+                    { id: 'dedicated_gcp_project', label: 'Dedicated Sovereign Project', desc: 'Separate customer project; requires independent PIAM authorization' },
+                    { id: 'multiple_cloud_run_services', label: 'Multiple Cloud Run Services', desc: 'Separate services for independently deployed components' },
+                    { id: 'container_workloads', label: 'Container Workloads', desc: 'Container deployment target, not silently mapped to Cloud Run' }
                   ].map(target => (
                     <div
                       key={target.id}
-                      onClick={() => setDeploymentTarget(target.id as any)}
+                      onClick={() => setDeploymentTarget(target.id as DeploymentTargetOption)}
                       className={`p-4 rounded-xl border cursor-pointer transition-all ${
                         deploymentTarget === target.id
                           ? 'bg-indigo-950/50 border-indigo-500'
@@ -841,6 +896,32 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
                   ))}
                 </div>
               </div>
+
+              {deploymentTarget === 'dedicated_gcp_project' && (
+                <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-700/60 space-y-3">
+                  <p className="text-xs text-amber-200">
+                    Project creation is a separate privileged operation. It will remain blocked until an independent PIAM approval and Project Factory adapter are available.
+                  </p>
+                  <label className="flex items-center gap-2 text-xs text-white">
+                    <input type="checkbox" checked={createProject} onChange={(event) => setCreateProject(event.target.checked)} />
+                    I explicitly request creation of a dedicated GCP project.
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="text-xs text-slate-300">
+                      Requested project ID
+                      <input value={projectId} onChange={(event) => setProjectId(event.target.value)} className="mt-1 w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white" />
+                    </label>
+                    <label className="text-xs text-slate-300">
+                      Parent scope
+                      <select value={parentResourceType} onChange={(event) => setParentResourceType(event.target.value as 'organization' | 'folder')} className="mt-1 w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white">
+                        <option value="organization">Organization ID</option>
+                        <option value="folder">Folder ID</option>
+                      </select>
+                      <input aria-label="Parent organization or folder ID" value={parentResourceId} onChange={(event) => setParentResourceId(event.target.value)} className="mt-1 w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white" />
+                    </label>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 <div>
@@ -1037,21 +1118,21 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
             </div>
           )}
 
-          {/* STAGE 8: IIAPE ARCHITECTURE RECOMMENDATION */}
+          {/* STAGE 8: ARCHITECTURE ASSESSMENT */}
           {stage === 8 && (
             <div className="space-y-4">
               <div className="p-5 rounded-2xl bg-gradient-to-r from-indigo-950/60 to-slate-900 border border-indigo-800/60 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="px-2.5 py-0.5 rounded-full bg-indigo-900 text-indigo-300 font-mono text-[10px] font-bold uppercase">
-                    IIAPE Engine Evaluation
+                    IIAPE Assessment Unavailable
                   </span>
                   <span className="text-emerald-400 font-mono font-bold text-sm">
-                    Estimated Cost: ₦{estimatedCostNGN.toLocaleString()}/mo
+                    Indicative estimate (not a quote): ₦{estimatedCostNGN.toLocaleString()}/mo
                   </span>
                 </div>
 
                 <h4 className="font-black text-white text-base">
-                  Recommended Architecture: {instanceType.toUpperCase().replace(/_/g, ' ')}
+                  Requested Architecture: {deploymentTarget.replace(/_/g, ' ')}
                 </h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
                   {iiapeRationale}
@@ -1083,7 +1164,7 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
           {stage === 9 && (
             <div className="space-y-4">
               <p className="text-xs text-slate-400">
-                Official PSP Integration: Payments are verified server-side through Paystack or OPay. Locally generated tokens are never accepted as proof.
+                Provide a real payment-provider reference. Payment verification is unavailable until a trusted server-side provider adapter is configured; a submitted request will remain unverified.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1144,10 +1225,10 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
                 </div>
 
                 <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-mono">
-                  <div>
+                  <label className="flex-1">
                     <span className="text-slate-400 block text-[10px]">PAYMENT REFERENCE</span>
-                    <span className="text-white font-bold">{paymentReference}</span>
-                  </div>
+                    <input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} aria-label="Payment provider transaction reference" className="w-full bg-transparent text-white font-bold outline-none" placeholder="Provider transaction reference" />
+                  </label>
 
                   {paymentVerified ? (
                     <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
@@ -1157,7 +1238,7 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
                   ) : (
                     <button
                       onClick={handleVerifyPayment}
-                      disabled={isVerifyingPayment}
+                      disabled={isVerifyingPayment || !paymentReference.trim()}
                       className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md"
                     >
                       {isVerifyingPayment && <RefreshCw className="w-3 h-3 animate-spin" />}
@@ -1165,6 +1246,10 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
                     </button>
                   )}
                 </div>
+                {createdInstance && (
+                  <p className="text-xs text-amber-300">Request received ({createdInstance.requestId}); payment status: {createdInstance.payment.paymentStatus}. No payment verification has been claimed.</p>
+                )}
+                {paymentError && <p role="alert" className="text-xs text-rose-300">{paymentError}</p>}
               </div>
             </div>
           )}
@@ -1173,35 +1258,29 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
           {stage === 10 && (
             <div className="space-y-4">
               <p className="text-xs text-slate-400">
-                Execute approved infrastructure adapters through IIAPE.
+                Requests are not provisioning. Execution stays blocked until payment, architecture review, any required PIAM approval, and a real target-specific adapter are verified.
+              </p>
+              <p role="status" className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/60 text-xs text-amber-200">
+                Current status: {getProvisioningStatusLabel()}. Provisioning adapters and independent infrastructure verification are unavailable.
               </p>
 
-              {instanceType === 'custom_architecture' && !adminReviewApproved && (
+              {instanceType === 'custom_architecture' && createdInstance?.customArchitecture?.reviewStatus !== 'approved' && (
                 <div className="p-4 rounded-2xl bg-purple-950/40 border border-purple-800/80 space-y-3">
                   <div className="flex items-center gap-2 text-purple-300 font-bold text-xs">
                     <ShieldCheck className="w-4 h-4" />
-                    <span>Technical Review Gate Active</span>
+                    <span>Awaiting Independent Technical Review</span>
                   </div>
                   <p className="text-xs text-slate-300">
-                    Custom architecture requests require formal review by a Solutions Architect before execution. Arbitrary customer code is never automatically deployed.
+                    This request cannot approve itself. A reviewer must act through the authenticated control plane.
                   </p>
-                  <button
-                    onClick={() => setAdminReviewApproved(true)}
-                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Authorize Technical Review (Super Admin)</span>
-                  </button>
                 </div>
               )}
 
               {provisioningDone ? (
                 <div className="p-5 rounded-2xl bg-emerald-950/40 border border-emerald-800/80 text-center space-y-2">
                   <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-                  <h4 className="font-black text-white text-base">Infrastructure Successfully Provisioned</h4>
-                  <p className="text-xs text-slate-300">
-                    GCP project, PostgreSQL database, storage vault, and Cloud Run service are running and ready for verification.
-                  </p>
+                  <h4 className="font-black text-white text-base">Provisioning Verified</h4>
+                  <p className="text-xs text-slate-300">The execution and independent verification APIs reported success.</p>
                 </div>
               ) : (
                 <div className="p-6 rounded-2xl bg-slate-950 border border-slate-800 text-center space-y-4">
@@ -1209,18 +1288,24 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
                     <Cpu className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-white text-sm">Ready to Orchestrate Infrastructure</h4>
+                    <h4 className="font-bold text-white text-sm">{getProvisioningStatusLabel()}</h4>
                     <p className="text-xs text-slate-400 mt-1">
-                      Target: {subdomain}.curriculumflow.com.ng | DB: {databaseStrategy} | Storage: {storageStrategy}
+                      Target: {deploymentTarget.replace(/_/g, ' ')} | DB: {databaseStrategy} | Storage: {storageStrategy}
                     </p>
+                    {createdInstance?.provisioningFailure && (
+                      <p role="alert" className="text-xs text-rose-300 mt-2">
+                        {createdInstance.provisioningFailure.message} (correlation ID: {createdInstance.provisioningFailure.correlationId})
+                      </p>
+                    )}
+                    {provisioningError && <p role="alert" className="text-xs text-rose-300 mt-2">{provisioningError}</p>}
                   </div>
                   <button
                     onClick={handleExecuteProvisioning}
-                    disabled={isProvisioning || (instanceType === 'custom_architecture' && !adminReviewApproved)}
+                    disabled={isProvisioning || !createdInstance || !paymentVerified || (instanceType === 'custom_architecture' && createdInstance.customArchitecture?.reviewStatus !== 'approved') || (deploymentTarget === 'dedicated_gcp_project' && !createProject)}
                     className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs inline-flex items-center gap-2 shadow-lg shadow-indigo-950"
                   >
                     {isProvisioning && <RefreshCw className="w-4 h-4 animate-spin" />}
-                    <span>Execute IIAPE Orchestration</span>
+                    <span>{isProvisioning ? 'Provisioning in progress' : 'Execute provisioning'}</span>
                   </button>
                 </div>
               )}
@@ -1231,23 +1316,16 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
           {stage === 11 && (
             <div className="space-y-4">
               <p className="text-xs text-slate-400">
-                Activate the instance upon successful completion of all mandatory verification checks. Secure, expiring activation invitation links will be issued to the school administrator.
+                Activation requires successful execution and evidence-backed independent verification of every mandatory check. No activation token or URL is generated while any check is unknown or unavailable.
               </p>
 
               {/* Verification Checklist */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
-                {[
-                  { label: 'PostgreSQL Relational Shard Ping', passed: true },
-                  { label: 'Customer Storage Read/Write Readiness', passed: true },
-                  { label: 'HMAC-SHA256 Token Security Profile', passed: true },
-                  { label: 'Cloud DNS & Subdomain Routing', passed: true },
-                  { label: 'Health Ping Diagnostic (GET /api/v1/health)', passed: true }
-                ].map((chk, idx) => (
+                {verificationChecks.map((chk, idx) => (
                   <div key={idx} className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between">
                     <span className="text-slate-300 font-sans">{chk.label}</span>
-                    <span className="text-emerald-400 font-bold flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>PASS</span>
+                    <span className={`font-bold ${chk.status === 'passed' ? 'text-emerald-400' : chk.status === 'failed' ? 'text-rose-400' : 'text-amber-300'}`}>
+                      {chk.status.toUpperCase()}
                     </span>
                   </div>
                 ))}
@@ -1257,12 +1335,13 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
                 <div className="text-center pt-2">
                   <button
                     onClick={handleActivateInstance}
-                    disabled={isActivating}
-                    className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-2 shadow-lg shadow-emerald-950"
+                    disabled={isActivating || !createdInstance || !provisioningDone || !createdInstance.verification.allPassed}
+                    className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs inline-flex items-center gap-2 shadow-lg shadow-emerald-950"
                   >
                     {isActivating && <RefreshCw className="w-4 h-4 animate-spin" />}
-                    <span>Run Verification & Issue Activation Link</span>
+                    <span>Issue Activation Invitation</span>
                   </button>
+                  {activationError && <p role="alert" className="text-xs text-rose-300 mt-3">{activationError}</p>}
                 </div>
               ) : (
                 <div className="p-5 rounded-2xl bg-slate-950 border border-emerald-800/60 space-y-4 animate-fadeIn">

@@ -7,15 +7,14 @@ import {
   FeatureDependencyRule,
   CommercialPaymentVerification 
 } from '../src/types/customerOnboarding';
-import { TenantSecurityContextManager } from '../src/services/tenantSecurityContext';
 import { TamperEvidentAuditService } from '../src/services/tamperEvidentAuditService';
 import { GCPProvisioningOrchestrationEngine } from './gcpProvisioningEngine';
-import { StorageAndDatabaseManager } from './storageAndDatabaseManager';
-import { serverSchoolManager } from './serverSchoolManager';
-import { IIAPEngineService } from '../src/services/iiapEngineService';
+import { IIAPEngineService, validateProjectCreationRequest } from '../src/services/iiapEngineService';
 import { schoolGovernanceManager } from './schoolGovernanceManager';
+import { createProvisioningExecutionPlan, getMissingAdapterDescription } from './provisioningPlan';
+import { DeploymentTargetOption } from '../src/types/iiapEngine';
 
-const ONBOARDING_FILE = path.join(process.cwd(), 'data', 'universal_instances.json');
+const ONBOARDING_FILE = process.env.ONBOARDING_PERSISTENCE_FILE || path.join(process.cwd(), 'data', 'universal_instances.json');
 
 export const FEATURE_DEPENDENCY_RULES: FeatureDependencyRule[] = [
   {
@@ -89,23 +88,18 @@ const INITIAL_UNIVERSAL_INSTANCES: UniversalInstanceRecord[] = [
       provider: 'paystack',
       transactionReference: 'pstk_ref_gw_882910',
       amountNGN: 2160000,
-      paymentStatus: 'verified',
-      verifiedAt: '2025-03-01T10:15:00Z',
+      paymentStatus: 'pending',
       billingModel: 'yearly'
     },
-    provisioningStatus: 'active',
+    provisioningStatus: 'blocked',
     verification: {
-      databaseConnected: true,
-      storageReady: true,
-      securityProfileApplied: true,
-      dnsProvisioned: true,
-      healthPingPassed: true,
-      allPassed: true
+      databaseConnected: 'unknown',
+      storageReady: 'unknown',
+      securityProfileApplied: 'unknown',
+      dnsProvisioned: 'unknown',
+      healthPingPassed: 'unknown',
+      allPassed: false
     },
-    activationToken: 'act_token_gw_verified_99182',
-    activationUrl: 'https://curriculumflow.com.ng/activate?token=act_token_gw_verified_99182',
-    activationExpiresAt: '2027-01-01T00:00:00Z',
-    activatedAt: '2025-03-01T10:30:00Z',
     createdAt: '2025-03-01T09:00:00Z',
     updatedAt: '2025-03-01T10:30:00Z'
   },
@@ -165,7 +159,7 @@ const INITIAL_UNIVERSAL_INSTANCES: UniversalInstanceRecord[] = [
       },
       integrationNotes: 'Requires dedicated VPC connector with high-concurrency Cloud SQL proxy and SAP webhook endpoint.',
       requiresAdminReview: true,
-      reviewStatus: 'approved',
+      reviewStatus: 'pending_review',
       reviewNotes: 'Architecture approved by Principal Solutions Architect on 2025-02-20. Dedicated project budget allocated.'
     },
     selectedModules: ['curriculum_catalog', 'cbt_examination', 'broadsheet_analytics', 'bursary_finance'],
@@ -180,23 +174,18 @@ const INITIAL_UNIVERSAL_INSTANCES: UniversalInstanceRecord[] = [
       provider: 'opay',
       transactionReference: 'opay_txn_leadway_2026_01',
       amountNGN: 650000,
-      paymentStatus: 'verified',
-      verifiedAt: '2025-02-22T14:20:00Z',
+      paymentStatus: 'pending',
       billingModel: 'lease_to_own'
     },
-    provisioningStatus: 'active',
+    provisioningStatus: 'blocked',
     verification: {
-      databaseConnected: true,
-      storageReady: true,
-      securityProfileApplied: true,
-      dnsProvisioned: true,
-      healthPingPassed: true,
-      allPassed: true
+      databaseConnected: 'unknown',
+      storageReady: 'unknown',
+      securityProfileApplied: 'unknown',
+      dnsProvisioned: 'unknown',
+      healthPingPassed: 'unknown',
+      allPassed: false
     },
-    activationToken: 'act_leadway_sovereign_998102',
-    activationUrl: 'https://curriculumserver.com.ng/activate?token=act_leadway_sovereign_998102',
-    activationExpiresAt: '2027-02-22T14:20:00Z',
-    activatedAt: '2025-02-22T15:00:00Z',
     createdAt: '2025-02-18T11:00:00Z',
     updatedAt: '2025-02-22T15:00:00Z'
   },
@@ -238,23 +227,18 @@ const INITIAL_UNIVERSAL_INSTANCES: UniversalInstanceRecord[] = [
       provider: 'paystack',
       transactionReference: 'pstk_ref_apex_cbt_0981',
       amountNGN: 95000,
-      paymentStatus: 'verified',
-      verifiedAt: '2025-03-05T09:12:00Z',
+      paymentStatus: 'pending',
       billingModel: 'monthly'
     },
-    provisioningStatus: 'active',
+    provisioningStatus: 'blocked',
     verification: {
-      databaseConnected: true,
-      storageReady: true,
-      securityProfileApplied: true,
-      dnsProvisioned: true,
-      healthPingPassed: true,
-      allPassed: true
+      databaseConnected: 'unknown',
+      storageReady: 'unknown',
+      securityProfileApplied: 'unknown',
+      dnsProvisioned: 'unknown',
+      healthPingPassed: 'unknown',
+      allPassed: false
     },
-    activationToken: 'act_token_apexcbt_88301',
-    activationUrl: 'https://curriculumflow.com.ng/activate?token=act_token_apexcbt_88301',
-    activationExpiresAt: '2027-03-05T09:12:00Z',
-    activatedAt: '2025-03-05T09:30:00Z',
     createdAt: '2025-03-05T08:30:00Z',
     updatedAt: '2025-03-05T09:30:00Z'
   }
@@ -284,15 +268,49 @@ export class CustomerOnboardingManager {
           if (!inst.instanceId || seen.has(inst.instanceId)) return false;
           seen.add(inst.instanceId);
           return true;
-        });
+        }).map((inst: UniversalInstanceRecord) => this.removeUnverifiedSuccess(inst));
+        this.savePersistence();
       } else {
-        this.instances = [...INITIAL_UNIVERSAL_INSTANCES];
+        this.instances = INITIAL_UNIVERSAL_INSTANCES.map(inst => this.removeUnverifiedSuccess(inst));
         this.savePersistence();
       }
     } catch (e) {
       console.error('Error loading CustomerOnboardingManager persistence:', e);
-      this.instances = [...INITIAL_UNIVERSAL_INSTANCES];
+      this.instances = INITIAL_UNIVERSAL_INSTANCES.map(inst => this.removeUnverifiedSuccess(inst));
     }
+  }
+
+  private removeUnverifiedSuccess(record: UniversalInstanceRecord): UniversalInstanceRecord {
+    if (record.payment?.paymentStatus === 'verified') {
+      record.payment.paymentStatus = 'pending';
+      delete record.payment.verifiedAt;
+      delete record.payment.gatewayResponse;
+      delete record.payment.receiptNumber;
+      delete record.payment.invoiceNumber;
+      delete record.payment.invoiceUrl;
+    }
+    if (['provisioning', 'provisioned', 'activation_ready', 'active', 'verified'].includes(record.provisioningStatus)) {
+      record.provisioningStatus = 'blocked';
+    }
+    record.verification ||= {
+      databaseConnected: 'unknown',
+      storageReady: 'unknown',
+      securityProfileApplied: 'unknown',
+      dnsProvisioned: 'unknown',
+      healthPingPassed: 'unknown',
+      allPassed: false
+    };
+    record.verification.databaseConnected = 'unknown';
+    record.verification.storageReady = 'unknown';
+    record.verification.securityProfileApplied = 'unknown';
+    record.verification.dnsProvisioned = 'unknown';
+    record.verification.healthPingPassed = 'unknown';
+    record.verification.allPassed = false;
+    delete record.activationToken;
+    delete record.activationUrl;
+    delete record.activationExpiresAt;
+    delete record.activatedAt;
+    return record;
   }
 
   private savePersistence(): void {
@@ -358,6 +376,12 @@ export class CustomerOnboardingManager {
     databaseStrategy?: any;
     storageStrategy?: any;
     storageProvider?: any;
+    deploymentTarget: DeploymentTargetOption;
+    createProject?: boolean;
+    projectId?: string;
+    parentOrganizationId?: string;
+    parentFolderId?: string;
+    idempotencyKey?: string;
     subdomain: string;
     customDomain?: string;
     billingModel: 'monthly' | 'yearly' | 'lease_to_own';
@@ -366,6 +390,37 @@ export class CustomerOnboardingManager {
     paymentReference: string;
     amountPaidNGN: number;
   }): UniversalInstanceRecord {
+    if (payload.idempotencyKey) {
+      const existing = this.instances.find(inst => inst.idempotencyKey === payload.idempotencyKey);
+      if (existing) return existing;
+    }
+
+    const supportedTargets: DeploymentTargetOption[] = [
+      'shared_application_infrastructure',
+      'dedicated_cloud_run_service',
+      'dedicated_gcp_project',
+      'multiple_cloud_run_services',
+      'container_workloads',
+      'gke_future_cluster'
+    ];
+    if (!supportedTargets.includes(payload.deploymentTarget)) {
+      throw new Error('DEPLOYMENT_TARGET_REQUIRED: Select a supported architecture target before submitting this request.');
+    }
+    validateProjectCreationRequest({
+      requestedDeploymentTarget: payload.deploymentTarget,
+      createProject: payload.createProject,
+      projectId: payload.projectId,
+      parentOrganizationId: payload.parentOrganizationId,
+      parentFolderId: payload.parentFolderId
+    });
+    if (payload.databaseStrategy === 'dedicated_customer_gcp_project' && payload.deploymentTarget !== 'dedicated_gcp_project') {
+      throw new Error('ARCHITECTURE_TARGET_MISMATCH: Dedicated customer-project storage cannot be silently mapped to another deployment target.');
+    }
+    if (payload.customArchitecture?.databaseRequirements?.isolation &&
+      payload.customArchitecture.databaseRequirements.isolation !== payload.databaseStrategy) {
+      throw new Error('DATABASE_STRATEGY_MISMATCH: Custom architecture and onboarding database strategies must match.');
+    }
+
     // 1. Enforce Provisioning Role Hierarchy Gatekeeper
     // Rule: School proprietors or school principals are able to make or request school provisioning.
     // Rule: ICT technicians cannot single-handedly make a school instance provisioning.
@@ -383,6 +438,9 @@ export class CustomerOnboardingManager {
 
     const isCustomArch = payload.instanceType === 'custom_architecture';
     const requiresAdminReview = isCustomArch;
+    if (payload.deploymentTarget === 'dedicated_gcp_project' && payload.createProject !== true) {
+      throw new Error('PROJECT_CREATION_EXPLICIT_CONSENT_REQUIRED: Set createProject to true for standalone project creation.');
+    }
 
     // Pricing calculation
     let monthlyPriceNGN = payload.monthlyPriceNGN;
@@ -447,6 +505,11 @@ export class CustomerOnboardingManager {
         reviewStatus: requiresAdminReview ? 'pending_review' : 'approved'
       } : undefined,
       featureCollection: payload.featureCollection,
+      deploymentTarget: payload.deploymentTarget,
+      createProject: payload.createProject === true,
+      projectId: payload.projectId,
+      parentOrganizationId: payload.parentOrganizationId,
+      parentFolderId: payload.parentFolderId,
       selectedModules: payload.selectedModules || ['curriculum_catalog'],
       databaseStrategy: payload.databaseStrategy || (payload.instanceType === 'custom_architecture' ? 'dedicated_database' : 'shared_schema_isolated'),
       storageStrategy: payload.storageStrategy || 'platform_storage',
@@ -464,13 +527,15 @@ export class CustomerOnboardingManager {
       },
       provisioningStatus: requiresAdminReview ? 'pending_review' : 'payment_pending',
       verification: {
-        databaseConnected: false,
-        storageReady: false,
-        securityProfileApplied: false,
-        dnsProvisioned: false,
-        healthPingPassed: false,
+        databaseConnected: 'unknown',
+        storageReady: 'unknown',
+        securityProfileApplied: 'unknown',
+        dnsProvisioned: 'unknown',
+        healthPingPassed: 'unknown',
         allPassed: false
       },
+      correlationId: requestId,
+      idempotencyKey: payload.idempotencyKey,
       governanceHierarchy,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -505,63 +570,21 @@ export class CustomerOnboardingManager {
     record?: UniversalInstanceRecord;
     error?: string;
   } {
-    const record = this.getInstanceById(instanceId);
-    if (!record) {
-      return { success: false, verified: false, error: `Instance request '${instanceId}' not found.` };
-    }
-
-    // Official PSP verification check
-    if (!reference || reference.length < 5) {
-      return { success: false, verified: false, error: 'Invalid PSP transaction reference.' };
-    }
-
-    const invoiceNum = `INV-PROV-${record.tenantId.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
-    const receiptNum = `RCP-PROV-${Math.floor(100000 + Math.random() * 900000)}`;
-
-    record.payment.paymentStatus = 'verified';
-    record.payment.transactionReference = reference;
-    record.payment.provider = provider;
-    record.payment.amountNGN = amountPaid;
-    record.payment.verifiedAt = new Date().toISOString();
-    record.payment.invoiceNumber = invoiceNum;
-    record.payment.receiptNumber = receiptNum;
-    record.payment.invoiceUrl = `/api/v1/server/invoices/${invoiceNum}`;
-    record.payment.gatewayResponse = `Approved by ${provider.toUpperCase()} Gateway API. Charge ID: chg_${reference} | Invoice: ${invoiceNum}`;
-    record.provisioningStatus = 'provisioning';
-    record.updatedAt = new Date().toISOString();
-
-    this.savePersistence();
-
-    // 1. Audit Log: Payment Verified
-    TamperEvidentAuditService.logPlatformAction({
-      actor: `${provider}_gateway_webhook`,
-      actorRole: 'payment_processor',
-      tenantId: record.tenantId,
-      action: 'payment_verified',
-      target: `payment:${reference}`,
-      result: 'SUCCESS',
-      outcome: 'SUCCESS',
-      details: `Payment of NGN ${amountPaid.toLocaleString()} verified by ${provider.toUpperCase()} for instance ${record.instanceId}`,
-      ipAddress: '127.0.0.1'
-    });
-
-    // 2. Audit Log: Payment Confirmation Invoicing Issued
-    TamperEvidentAuditService.logPlatformAction({
-      actor: 'curriculum_server_billing_engine',
-      actorRole: 'billing_daemon',
-      tenantId: record.tenantId,
-      action: 'invoice_issued',
-      target: `invoice:${invoiceNum}`,
-      result: 'SUCCESS',
-      outcome: 'SUCCESS',
-      details: `Official tax invoice ${invoiceNum} and payment receipt ${receiptNum} issued and registered for ${record.organization.organizationName}`,
-      ipAddress: '127.0.0.1'
-    });
-
-    return { success: true, verified: true, record };
+    void instanceId;
+    void reference;
+    void provider;
+    void amountPaid;
+    return {
+      success: false,
+      verified: false,
+      error: 'PAYMENT_VERIFICATION_UNAVAILABLE: No trusted payment-provider verification adapter is configured.'
+    };
   }
 
   public reviewCustomArchitecture(requestId: string, approved: boolean, notes: string, reviewerEmail: string): UniversalInstanceRecord | null {
+    if (!reviewerEmail?.includes('@')) {
+      throw new Error('AUTHENTICATED_REVIEWER_REQUIRED: Reviewer identity must come from the authenticated server session.');
+    }
     const record = this.getInstanceById(requestId);
     if (!record || record.instanceType !== 'custom_architecture' || !record.customArchitecture) {
       return null;
@@ -594,109 +617,107 @@ export class CustomerOnboardingManager {
     const record = this.getInstanceById(instanceId);
     if (!record) return null;
 
-    if (record.payment.paymentStatus !== 'verified') {
-      throw new Error('Cannot provision instance before payment verification.');
-    }
-
-    if (record.instanceType === 'custom_architecture' && record.customArchitecture?.reviewStatus !== 'approved') {
-      throw new Error('Cannot provision custom architecture instance before technical review approval.');
-    }
-
-    // 1. Run IIAPE recommendation and register profile
-    IIAPEngineService.evaluateAndRecommend({
-      customerId: record.tenantId,
-      customerName: record.organization.organizationName,
-      instanceType: record.instanceType,
-      expectedStudents: 1000,
-      expectedFaculty: 50,
-      expectedConcurrentUsers: 250,
-      dataVolumeGb: 50,
-      availabilitySla: '99.9',
-      requiresDedicatedDatabase: record.databaseStrategy === 'dedicated_database',
-      requiresCustomDomain: !!record.customDomain,
-      securityTier: 'standard',
-      budgetPreference: 'balanced'
-    });
-
-    // 2. Configure Database Sharding & Storage
-    StorageAndDatabaseManager.configureDatabaseIsolation(
-      record.instanceId,
-      record.tenantId,
-      record.organization.organizationName,
-      record.databaseStrategy as any
-    );
-
-    StorageAndDatabaseManager.configureCustomerStorage(
-      record.instanceId,
-      record.tenantId,
-      record.organization.organizationName,
-      record.storageStrategy as any,
-      record.storageProvider as any,
-      undefined,
-      undefined,
-      100,
-      1095,
-      record.organization.contactEmail
-    );
-
-    // 3. Trigger GCP Adapters
-    await GCPProvisioningOrchestrationEngine.executeProvisioningOrchestration(
-      record.instanceId,
-      1,
-      ['gcp_project', 'postgresql_database', 'cloud_run_service', 'cloud_storage_bucket', 'secret_manager_secret', 'dns_managed_zone', 'ssl_certificate'],
-      record.tenantId
-    );
-
-    // 4. Register Tenant into School Manager
-    const gov = record.governanceHierarchy;
-    serverSchoolManager.provisionTenant({
-      schoolName: record.organization.organizationName,
-      subdomain: record.subdomain.split('.')[0],
-      state: record.organization.state,
-      lga: record.organization.lga,
-      businessModel: record.billingModel,
-      studentCapacity: 1200,
-      principalName: gov?.principal?.name || record.organization.principalName || record.organization.contactPersonName,
-      principalEmail: gov?.principal?.email || record.organization.principalEmail || record.organization.contactEmail,
-      principalPhone: gov?.principal?.phone || record.organization.principalPhone || record.organization.contactPhone,
-      enabledModules: record.selectedModules,
-      storageStrategy: record.storageStrategy as any,
-      databaseStrategy: record.databaseStrategy as any,
-      provisionedByRole: (gov?.provisionedByRole === 'principal' ? 'principal' : 'proprietor'),
-      proprietorName: gov?.proprietor?.name || record.organization.proprietorName,
-      proprietorEmail: gov?.proprietor?.email || record.organization.proprietorEmail,
-      proprietorPhone: gov?.proprietor?.phone || record.organization.proprietorPhone,
-      isPrincipalAlsoIctTechnician: gov?.principal?.isAlsoIctTechnician ?? record.organization.isPrincipalAlsoIctTechnician ?? false,
-      principalAppointedBy: gov?.principal?.appointedBy || (record.organization.provisionerRole === 'proprietor' ? 'proprietor' : 'self_provisioned'),
-      ictTechnicianAppointedBy: gov?.ictTechnician?.appointedBy,
-      ictTechnicianAppointedByName: gov?.ictTechnician?.appointedByName
-    });
-
-    record.provisioningStatus = 'activation_ready';
+    const correlationId = record.correlationId || record.requestId;
+    record.provisioningStatus = 'provisioning';
+    delete record.provisioningFailure;
     record.updatedAt = new Date().toISOString();
     this.savePersistence();
 
-    return record;
+    try {
+      if (record.payment.paymentStatus !== 'verified') {
+        throw new Error('PAYMENT_NOT_VERIFIED: Cannot provision before trusted payment verification.');
+      }
+
+      if (record.instanceType === 'custom_architecture' && record.customArchitecture?.reviewStatus !== 'approved') {
+        throw new Error('ARCHITECTURE_REVIEW_REQUIRED: Custom architecture requires an independent technical review.');
+      }
+
+      const profile = record.architectureProfileId
+        ? IIAPEngineService.getProfiles().find(candidate => candidate.profileId === record.architectureProfileId)
+        : undefined;
+      const selectedProfile = profile || IIAPEngineService.evaluateAndRecommend({
+        customerId: record.tenantId,
+        customerName: record.organization.organizationName,
+        instanceType: record.instanceType,
+        expectedStudents: 1000,
+        expectedFaculty: 50,
+        expectedConcurrentUsers: 250,
+        dataVolumeGb: 50,
+        availabilitySla: '99.9',
+        requiresDedicatedDatabase: record.databaseStrategy === 'dedicated_database',
+        requiresCustomDomain: !!record.customDomain,
+        securityTier: 'standard',
+        budgetPreference: 'balanced',
+        requestedDeploymentTarget: record.deploymentTarget,
+        createProject: record.createProject,
+        projectId: record.projectId,
+        parentOrganizationId: record.parentOrganizationId,
+        parentFolderId: record.parentFolderId
+      });
+      record.architectureProfileId = selectedProfile.profileId;
+
+      const plan = createProvisioningExecutionPlan(selectedProfile);
+      if (plan.requiresProjectCreationApproval) {
+        throw new Error('PIAM_UNAVAILABLE: Independent durable approval for this exact project-creation operation is not configured.');
+      }
+      if (selectedProfile.deploymentTarget === 'shared_application_infrastructure') {
+        throw new Error(`PROVISIONING_ADAPTER_UNAVAILABLE: ${getMissingAdapterDescription(plan)}`);
+      }
+      if (selectedProfile.deploymentTarget === 'multiple_cloud_run_services' || selectedProfile.deploymentTarget === 'container_workloads') {
+        throw new Error(`PROVISIONING_ADAPTER_UNAVAILABLE: ${getMissingAdapterDescription(plan)}`);
+      }
+
+      const adapters = ['postgresql_database', 'cloud_run_service', 'cloud_storage_bucket'];
+      if (selectedProfile.domainStrategy === 'custom_sch_ng_domain') {
+        adapters.push('dns_managed_zone', 'ssl_certificate');
+      }
+      const provisioningJob = await GCPProvisioningOrchestrationEngine.executeProvisioningOrchestration(
+        record.instanceId,
+        selectedProfile.profileVersion,
+        adapters as Array<'postgresql_database' | 'cloud_run_service' | 'cloud_storage_bucket' | 'dns_managed_zone' | 'ssl_certificate'>,
+        record.tenantId
+      );
+      if (provisioningJob.state !== 'verified' || !provisioningJob.verificationStatus) {
+        throw new Error('PROVISIONING_VERIFICATION_FAILED: The execution job did not return verified results.');
+      }
+
+      record.provisioningStatus = 'provisioned';
+      const verification = this.runVerificationChecklist(record.instanceId);
+      if (!verification.allPassed) {
+        throw new Error('INDEPENDENT_VERIFICATION_UNAVAILABLE: Provisioning completed but independent infrastructure verification is not configured.');
+      }
+      record.provisioningStatus = 'verified';
+      record.updatedAt = new Date().toISOString();
+      this.savePersistence();
+      return record;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown provisioning failure';
+      const code = message.split(':', 1)[0] || 'PROVISIONING_FAILED';
+      record.provisioningStatus = /UNAVAILABLE|REQUIRED|NOT_VERIFIED/.test(code) ? 'blocked' : 'failed';
+      record.provisioningFailure = {
+        code,
+        message,
+        correlationId,
+        occurredAt: new Date().toISOString()
+      };
+      record.updatedAt = new Date().toISOString();
+      this.savePersistence();
+      throw new Error(`${message} (correlationId: ${correlationId})`);
+    }
   }
 
   public runVerificationChecklist(instanceId: string) {
     const record = this.getInstanceById(instanceId);
     if (!record) throw new Error(`Instance '${instanceId}' not found for verification.`);
 
-    const dbs = StorageAndDatabaseManager.getDatabaseRecord(record.instanceId);
-    const stg = StorageAndDatabaseManager.getStorageConfig(record.instanceId);
-
-    record.verification.databaseConnected = !!dbs && dbs.healthStatus === 'healthy';
-    record.verification.storageReady = !!stg && stg.connectionHealth === 'healthy';
-    record.verification.securityProfileApplied = true;
-    record.verification.dnsProvisioned = true;
-    record.verification.healthPingPassed = true;
-    record.verification.allPassed = 
-      record.verification.databaseConnected && 
-      record.verification.storageReady && 
-      record.verification.securityProfileApplied && 
-      record.verification.dnsProvisioned && 
-      record.verification.healthPingPassed;
+    record.verification = {
+      databaseConnected: 'unavailable',
+      storageReady: 'unavailable',
+      securityProfileApplied: 'unavailable',
+      dnsProvisioned: 'unavailable',
+      healthPingPassed: 'unavailable',
+      allPassed: false
+    };
 
     this.savePersistence();
     return record.verification;
@@ -712,77 +733,13 @@ export class CustomerOnboardingManager {
   } {
     const record = this.getInstanceById(instanceId);
     if (!record) return { success: false, error: 'Instance not found.' };
-
-    // Mandatory Verification Checks
-    const dbs = StorageAndDatabaseManager.getDatabaseRecord(record.instanceId);
-    const stg = StorageAndDatabaseManager.getStorageConfig(record.instanceId);
-
-    record.verification.databaseConnected = !!dbs && dbs.healthStatus === 'healthy';
-    record.verification.storageReady = !!stg && stg.connectionHealth === 'healthy';
-    record.verification.securityProfileApplied = true;
-    record.verification.dnsProvisioned = true;
-    record.verification.healthPingPassed = true;
-    record.verification.allPassed = 
-      record.verification.databaseConnected && 
-      record.verification.storageReady && 
-      record.verification.securityProfileApplied && 
-      record.verification.dnsProvisioned && 
-      record.verification.healthPingPassed;
-
-    if (!record.verification.allPassed) {
-      return {
-        success: false,
-        error: 'Mandatory verification checks failed. Instance cannot be activated until all subsystems report healthy.'
-      };
+    if (record.provisioningStatus !== 'verified' || !record.verification.allPassed) {
+      return { success: false, error: 'Instance activation is blocked until provisioning has completed and infrastructure has been verified.' };
     }
-
-    // Generate 72-hour secure expiring activation token
-    const tokenPayload = {
-      instanceId: record.instanceId,
-      tenantId: record.tenantId,
-      role: 'administrator_invitee',
-      email: record.organization.contactEmail,
-      issuedAt: Date.now(),
-      expiresAt: Date.now() + 72 * 3600 * 1000
-    };
-
-    const token = TenantSecurityContextManager.issueTenantToken(
-      { id: record.tenantId, schoolName: record.organization.organizationName } as any,
-      'principal',
-      72 * 3600,
-      record.organization.contactEmail
-    );
-
-    const activationUrl = `https://${record.subdomain}/activate?token=${token}&ref=${record.instanceId}`;
-    const expiresAt = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
-
-    record.activationToken = token;
-    record.activationUrl = activationUrl;
-    record.activationExpiresAt = expiresAt;
-    record.activatedAt = new Date().toISOString();
-    record.provisioningStatus = 'active';
-    record.updatedAt = new Date().toISOString();
-
-    this.savePersistence();
-
-    TamperEvidentAuditService.logPlatformAction({
-      actor: 'platform_activation_engine',
-      actorRole: 'system',
-      tenantId: record.tenantId,
-      action: 'instance_activated',
-      target: record.instanceId,
-      result: 'SUCCESS',
-      outcome: 'SUCCESS',
-      details: `Instance ${record.instanceId} activated. Expiring activation invitation link issued for ${record.organization.contactEmail}`,
-      ipAddress: '127.0.0.1'
-    });
-
     return {
-      success: true,
+      success: false,
       record,
-      activationUrl,
-      activationToken: token,
-      expiresAt
+      error: 'Activation invitation issuance is unavailable until a trusted activation service is configured.'
     };
   }
 }

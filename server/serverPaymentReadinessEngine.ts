@@ -325,6 +325,7 @@ export class ServerPaymentReadinessEngine {
           country: 'Nigeria'
         },
         selectedModules: ['curriculum_catalog', 'cbt_examination', 'broadsheet_analytics', 'bursary_finance'],
+        deploymentTarget: 'shared_application_infrastructure',
         subdomain: 'crownheights.curriculumflow.com.ng',
         billingModel: 'yearly',
         monthlyPriceNGN: 250000,

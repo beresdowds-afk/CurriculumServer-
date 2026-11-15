@@ -11,6 +11,7 @@
     "build:all": "npm run build && npm run build:server && npm run build:flow",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
+    "test": "tsx --test server/gcpProvisioningEngine.test.ts server/customerOnboardingManager.test.ts src/services/cipaApiClient.test.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },

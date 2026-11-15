@@ -138,12 +138,21 @@ export interface CommercialPaymentVerification {
 }
 
 export interface InstanceVerificationChecklist {
-  databaseConnected: boolean;
-  storageReady: boolean;
-  securityProfileApplied: boolean;
-  dnsProvisioned: boolean;
-  healthPingPassed: boolean;
+  databaseConnected: VerificationCheckStatus;
+  storageReady: VerificationCheckStatus;
+  securityProfileApplied: VerificationCheckStatus;
+  dnsProvisioned: VerificationCheckStatus;
+  healthPingPassed: VerificationCheckStatus;
   allPassed: boolean;
+}
+
+export type VerificationCheckStatus = 'passed' | 'failed' | 'unknown' | 'unavailable';
+
+export interface ProvisioningFailure {
+  code: string;
+  message: string;
+  correlationId: string;
+  occurredAt: string;
 }
 
 export interface UniversalInstanceRecord {
@@ -157,6 +166,13 @@ export interface UniversalInstanceRecord {
   customArchitecture?: CustomArchitectureSpec;
   featureCollection?: FeatureCollectionSpec;
   architectureProfileId?: string;
+  deploymentTarget?: DeploymentTargetOption;
+  createProject?: boolean;
+  projectId?: string;
+  parentOrganizationId?: string;
+  parentFolderId?: string;
+  correlationId?: string;
+  idempotencyKey?: string;
   selectedModules: string[];
   databaseStrategy: DatabaseIsolationStrategy;
   storageStrategy: StorageStrategyType;
@@ -166,8 +182,9 @@ export interface UniversalInstanceRecord {
   billingModel: 'monthly' | 'yearly' | 'lease_to_own';
   monthlyPriceNGN: number;
   payment: CommercialPaymentVerification;
-  provisioningStatus: 'draft' | 'pending_review' | 'payment_pending' | 'provisioning' | 'provisioned' | 'activation_ready' | 'active' | 'rejected';
+  provisioningStatus: 'draft' | 'pending_review' | 'payment_pending' | 'provisioning' | 'provisioned' | 'activation_ready' | 'active' | 'rejected' | 'blocked' | 'failed' | 'verified';
   verification: InstanceVerificationChecklist;
+  provisioningFailure?: ProvisioningFailure;
   activationToken?: string;
   activationUrl?: string;
   activationExpiresAt?: string;
