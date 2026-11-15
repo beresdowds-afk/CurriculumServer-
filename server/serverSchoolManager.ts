@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { lazySingleton } from './lazySingleton';
 import { TenantSchoolApp } from '../src/types';
 import { INITIAL_PROVISIONED_TENANTS, INITIAL_CLONED_TENANTS, INITIAL_SAAS_METRICS } from '../src/mockCurriculumServerData';
 import { MOCK_STUDENT_PROFILES } from '../src/data/curriculumFlowData';
@@ -429,4 +430,4 @@ export class ServerSchoolManager {
   }
 }
 
-export const serverSchoolManager = ServerSchoolManager.getInstance();
+export const serverSchoolManager = lazySingleton(() => ServerSchoolManager.getInstance());

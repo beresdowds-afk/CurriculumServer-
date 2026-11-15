@@ -14,7 +14,34 @@ import { schoolGovernanceManager } from './schoolGovernanceManager';
 import { createProvisioningExecutionPlan, getMissingAdapterDescription } from './provisioningPlan';
 import { DeploymentTargetOption } from '../src/types/iiapEngine';
 
-const ONBOARDING_FILE = process.env.ONBOARDING_PERSISTENCE_FILE || path.join(process.cwd(), 'data', 'universal_instances.json');
+const ONBOARDING_FILE = process.env.ONBOARDING_PERSISTENCE_FILE ||
+  path.join(process.cwd(), 'data', 'demo', 'universal_instances.json');
+
+export function validateFeatureDependencies(selectedFeatures: string[]): {
+  valid: boolean;
+  missingDependencies: { feature: string; featureName: string; requires: string; requiredName: string }[];
+} {
+  const missing: { feature: string; featureName: string; requires: string; requiredName: string }[] = [];
+  const featureSet = new Set(selectedFeatures);
+
+  for (const rule of FEATURE_DEPENDENCY_RULES) {
+    if (featureSet.has(rule.key)) {
+      for (const req of rule.requires) {
+        if (!featureSet.has(req)) {
+          const reqRule = FEATURE_DEPENDENCY_RULES.find(r => r.key === req);
+          missing.push({
+            feature: rule.key,
+            featureName: rule.name,
+            requires: req,
+            requiredName: reqRule ? reqRule.name : req.replace(/_/g, ' ').toUpperCase()
+          });
+        }
+      }
+    }
+  }
+
+  return { valid: missing.length === 0, missingDependencies: missing };
+}
 
 export const FEATURE_DEPENDENCY_RULES: FeatureDependencyRule[] = [
   {
@@ -341,29 +368,7 @@ export class CustomerOnboardingManager {
     valid: boolean;
     missingDependencies: { feature: string; featureName: string; requires: string; requiredName: string }[];
   } {
-    const missing: { feature: string; featureName: string; requires: string; requiredName: string }[] = [];
-    const featureSet = new Set(selectedFeatures);
-
-    for (const rule of FEATURE_DEPENDENCY_RULES) {
-      if (featureSet.has(rule.key)) {
-        for (const req of rule.requires) {
-          if (!featureSet.has(req)) {
-            const reqRule = FEATURE_DEPENDENCY_RULES.find(r => r.key === req);
-            missing.push({
-              feature: rule.key,
-              featureName: rule.name,
-              requires: req,
-              requiredName: reqRule ? reqRule.name : req.replace(/_/g, ' ').toUpperCase()
-            });
-          }
-        }
-      }
-    }
-
-    return {
-      valid: missing.length === 0,
-      missingDependencies: missing
-    };
+    return validateFeatureDependencies(selectedFeatures);
   }
 
   public createInstanceRequest(payload: {
@@ -744,4 +749,10 @@ export class CustomerOnboardingManager {
   }
 }
 
-export const customerOnboardingManager = CustomerOnboardingManager.getInstance();
+export const customerOnboardingManager = new Proxy({} as CustomerOnboardingManager, {
+  get(_target, property) {
+    const manager = CustomerOnboardingManager.getInstance();
+    const value = Reflect.get(manager, property, manager) as unknown;
+    return typeof value === 'function' ? value.bind(manager) : value;
+  }
+});

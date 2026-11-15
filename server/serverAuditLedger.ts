@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { lazySingleton } from './lazySingleton';
 import crypto from 'crypto';
 import {
   EnterpriseAuditEvent,
@@ -453,4 +454,4 @@ export class ServerAuditLedger implements IServerAuditBackend {
   }
 }
 
-export const serverAuditLedger = new ServerAuditLedger();
+export const serverAuditLedger = lazySingleton(() => new ServerAuditLedger());

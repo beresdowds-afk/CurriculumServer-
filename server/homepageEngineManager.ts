@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { lazySingleton } from './lazySingleton';
 import { 
   HomepageConfiguration, 
   HomepageVersionRecord, 
@@ -490,4 +491,4 @@ export class HomepageEngineManager {
   }
 }
 
-export const homepageEngineManager = HomepageEngineManager.getInstance();
+export const homepageEngineManager = lazySingleton(() => HomepageEngineManager.getInstance());

@@ -34,16 +34,18 @@ import { INITIAL_REGISTERED_APPLICATIONS, INITIAL_REGISTERED_FEATURES } from './
 import { IIAPEngineService } from './src/services/iiapEngineService';
 import { GCPProvisioningOrchestrationEngine } from './server/gcpProvisioningEngine';
 import { UnifiedConnectivityTestSuite } from './server/unifiedConnectivityTests';
-import { customerOnboardingManager } from './server/customerOnboardingManager';
+import { CustomerOnboardingManager, validateFeatureDependencies } from './server/customerOnboardingManager';
 import { instanceLifecycleManager } from './server/instanceLifecycleManager';
 import { costGovernanceManager } from './server/costGovernanceManager';
 import { productionHardeningEngine } from './server/productionHardeningEngine';
 import { homepageEngineManager } from './server/homepageEngineManager';
 import { serverPaymentEngine } from './server/serverPaymentEngine';
 import { MOCK_USERS } from './src/data/curriculumFlowData';
+ 
 import { postgresRuntime, DatabaseFailure } from './server/db/postgres';
 import { ControlPlaneRepository } from './server/db/controlPlaneRepository';
 import { inspectPlatformReadiness } from './server/db/readiness';
+ 
 
 dotenv.config();
 
@@ -52,12 +54,15 @@ TamperEvidentAuditService.setServerBackend(serverAuditLedger);
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+const getCustomerOnboardingManager = () => CustomerOnboardingManager.getInstance();
 
 app.use(express.json());
+
 
 app.get('/healthz', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'alive', timestamp: new Date().toISOString() });
 });
+ 
 
 // Correlation ID & Request Tracing Middleware
 app.use((req: Request, res: Response, next: express.NextFunction) => {
@@ -172,7 +177,7 @@ function requireSuperAdmin(req: Request, res: Response, next: express.NextFuncti
   }
 
   (req as any).tenantContext = verification.context;
-  return next();
+  return productionPersistenceUnavailable(req, res);
 }
 
 function hasSecureControlPlaneSecret(): boolean {
@@ -218,7 +223,7 @@ function requireStorageTenantAuth(req: Request, res: Response, next: express.Nex
     return;
   }
   (req as any).tenantContext = context;
-  next();
+  productionPersistenceUnavailable(req, res);
 }
 
 function requireTrustedDatabaseIdentity(req: Request, res: Response, next: express.NextFunction) {
@@ -334,9 +339,29 @@ function requireSchoolAuth(req: Request, res: Response, next: express.NextFuncti
   }
 
   (req as any).tenantContext = verification.context;
-  return next();
+  return productionPersistenceUnavailable(req, res);
 }
 
+app.use('/api/v1', (req: Request, res: Response, next: express.NextFunction) => {
+  const isLivenessOrReadiness = req.method === 'GET' && [
+    '/health',
+    '/readiness',
+    '/agent/health',
+    '/agent/ready',
+    '/flow/status'
+  ].includes(req.path);
+  const isPublicCurriculumReference = req.method === 'GET' && (
+    req.path === '/curriculum' ||
+    req.path === '/curriculum/stats' ||
+    req.path === '/curriculum/subjects' ||
+    /^\/curriculum\/subject\/[A-Za-z0-9_-]+$/.test(req.path)
+  );
+  if (isLivenessOrReadiness || isPublicCurriculumReference) {
+    next();
+    return;
+  }
+  productionPersistenceUnavailable(req, res);
+});
 
 // Initialize Google Gemini AI SDK on the server side
 // Supports both Application Default Credentials (ADC) on Google Cloud,
@@ -1773,6 +1798,7 @@ app.get('/api/v1/students', requireSchoolAuth, requireTrustedDatabaseIdentity, a
 });
 
 // 6. API v1 - Health & Tenant Container Probe
+ 
 app.get('/api/v1/tenants/:id/health', (req: Request, res: Response) => {
   void inspectPlatformReadiness(
     postgresRuntime.configured ? postgresRuntime.getPool() : undefined,
@@ -1788,6 +1814,7 @@ app.get('/api/v1/tenants/:id/health', (req: Request, res: Response) => {
     });
   }).catch(() => {
     res.status(503).json({ status: 'not_ready', error: 'Database readiness could not be verified.' });
+ 
   });
 });
 
@@ -2613,8 +2640,10 @@ app.get('/api/v1/health', async (_req: Request, res: Response) => {
     status: readiness.ready ? 'ready' : 'not_ready',
     platform: 'Curriculum Unified Platform (Server + Flow)',
     version: '1.4.0',
+
     database: readiness.database,
     provisioning: readiness.provisioning,
+
     timestamp: new Date().toISOString()
   });
 });
@@ -3098,17 +3127,31 @@ app.get('/api/v1/server/storage/verify', requireStorageSuperAdmin, (req: Request
 // PHASE 8 — UNIVERSAL CUSTOMER ONBOARDING & INSTANCE PROVISIONING
 // -------------------------------------------------------------
 
+// This route is the only API surface for the pre-existing sample onboarding records.
+// Its manager reads/writes only the demo store and is lazy-loaded only when enabled.
+app.get('/api/demo/instances', (req: Request, res: Response) => {
+  if (process.env.DEMONSTRATION_MODE !== 'true') {
+    res.status(404).json({ success: false, code: 'DEMONSTRATION_MODE_DISABLED' });
+    return;
+  }
+  res.json({
+    success: true,
+    classification: 'demonstration',
+    data: getCustomerOnboardingManager().getInstances()
+  });
+});
+
 // Validate feature dependencies
 app.post('/api/v1/server/onboarding/validate-features', (req: Request, res: Response) => {
   const { selectedFeatures } = req.body;
-  const result = customerOnboardingManager.validateFeatureDependencies(selectedFeatures || []);
+  const result = validateFeatureDependencies(selectedFeatures || []);
   res.json({ success: true, data: result });
 });
 
 // Create Universal Instance Request (supports all 3 instance types)
 app.post('/api/v1/server/onboarding/request', requireSuperAdmin, (req: Request, res: Response) => {
   try {
-    const record = customerOnboardingManager.createInstanceRequest(req.body);
+    const record = getCustomerOnboardingManager().createInstanceRequest(req.body);
     res.json({ success: true, data: record });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message || 'Failed to create instance request' });
@@ -3117,7 +3160,7 @@ app.post('/api/v1/server/onboarding/request', requireSuperAdmin, (req: Request, 
 
 // List Universal Instance Requests
 app.get('/api/v1/server/onboarding/requests', requireSuperAdmin, (_req: Request, res: Response) => {
-  const records = customerOnboardingManager.getInstances();
+  const records = getCustomerOnboardingManager().getInstances();
   res.json({ success: true, data: records });
 });
 
@@ -3129,7 +3172,7 @@ app.post('/api/v1/server/onboarding/requests/:id/review', requireSuperAdmin, (re
     res.status(401).json({ success: false, error: 'Authenticated reviewer identity is missing.' });
     return;
   }
-  const updated = customerOnboardingManager.reviewCustomArchitecture(
+  const updated = getCustomerOnboardingManager().reviewCustomArchitecture(
     req.params.id, 
     !!approved, 
     adminNotes || '', 
@@ -3374,14 +3417,14 @@ app.get('/api/v1/instances/:instanceId/receipts/:receiptNumber', (req: Request, 
 // Provision Instance via IIAPE & GCP Adapters
 app.post('/api/v1/server/onboarding/requests/:id/provision', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const updated = await customerOnboardingManager.executeProvisioning(req.params.id);
+    const updated = await getCustomerOnboardingManager().executeProvisioning(req.params.id);
     if (!updated) {
       res.status(404).json({ success: false, error: 'Instance request not found' });
       return;
     }
     res.json({ success: true, data: updated });
   } catch (err: any) {
-    const record = customerOnboardingManager.getInstanceById(req.params.id);
+    const record = getCustomerOnboardingManager().getInstanceById(req.params.id);
     const blocked = record?.provisioningStatus === 'blocked';
     res.status(blocked ? 503 : 400).json({
       success: false,
@@ -3395,7 +3438,7 @@ app.post('/api/v1/server/onboarding/requests/:id/provision', requireSuperAdmin, 
 
 // Instance Verification and Activation with Expiring Activation Link
 app.post('/api/v1/server/onboarding/requests/:id/activate', requireSuperAdmin, (req: Request, res: Response) => {
-  const result = customerOnboardingManager.activateInstance(req.params.id);
+  const result = getCustomerOnboardingManager().activateInstance(req.params.id);
   if (!result.success) {
     res.status(400).json({ success: false, error: result.error || 'Activation failed mandatory verification checks' });
     return;

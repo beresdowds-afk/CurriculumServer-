@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { lazySingleton } from './lazySingleton';
 import { 
   UniversalInstanceRecord, 
   InstanceGovernanceHierarchy, 
@@ -399,4 +400,4 @@ export class SchoolGovernanceManager {
   }
 }
 
-export const schoolGovernanceManager = SchoolGovernanceManager.getInstance();
+export const schoolGovernanceManager = lazySingleton(() => SchoolGovernanceManager.getInstance());
