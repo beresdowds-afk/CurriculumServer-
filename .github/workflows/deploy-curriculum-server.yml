@@ -1,83 +1,84 @@
-name: Deploy Curriculum Server (SaaS Control Plane)
+
+name: Deploy Curriculum Server
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'apps/curriculum-server/**'
-      - 'packages/**'
-      - 'src/**'
-      - 'vite.server.config.ts'
-      - '.github/workflows/deploy-curriculum-server.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write
+
 env:
-  PROJECT_ID: curriculum-server-prod
-  REGION: europe-west2
-  SERVICE_NAME: curriculum-server-frontend
-  IMAGE_NAME: gcr.io/curriculum-server-prod/curriculum-server-frontend
+  PROJECT_ID: curious-subject-477114-e4
+  REGION: europe-west1
+  SERVICE_NAME: curriculum-server
+  IMAGE_URI: europe-west1-docker.pkg.dev/curious-subject-477114-e4/curriculum-registry/curriculum-server
+  WIF_PROVIDER: projects/797788066041/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
+  CI_SERVICE_ACCOUNT: curriculum-ci-deployer@curious-subject-477114-e4.iam.gserviceaccount.com
 
 jobs:
   deploy:
-    name: Build & Deploy Curriculum Server to Cloud Run
+    name: Build and deploy Curriculum Server
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Node.js 22
-      uses: actions/setup-node@v4
-      with:
-        node-version: '22'
-        cache: 'npm'
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
 
-    - name: Install Dependencies
-      run: npm install
+      - name: Install dependencies
+        run: npm install
 
-    - name: Run TypeScript Linter & Type Check
-      run: npm run lint
+      - name: TypeScript check
+        run: npm run lint
 
-    - name: Build Curriculum Server Application
-      run: npm run build:server
+      - name: Build application
+        run: npm run build:server
 
-    - name: Authenticate to Google Cloud via OIDC Workload Identity
-      uses: google-github-actions/auth@v2
-      with:
-        workload_identity_provider: 'projects/1234567890/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
-        service_account: 'github-deployer@curriculum-server-prod.iam.gserviceaccount.com'
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.CI_SERVICE_ACCOUNT }}
 
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v2
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
 
-    - name: Configure Docker to use GCR
-      run: gcloud auth configure-docker --quiet
+      - name: Configure Docker authentication
+        run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
 
-    - name: Build and Push Container Image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: apps/curriculum-server/Dockerfile
-        push: true
-        tags: |
-          ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          ${{ env.IMAGE_NAME }}:latest
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/curriculum-server/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_URI }}:${{ github.sha }}
+            ${{ env.IMAGE_URI }}:latest
 
-    - name: Deploy to Cloud Run
-      uses: google-github-actions/deploy-cloudrun@v2
-      with:
-        service: ${{ env.SERVICE_NAME }}
-        image: ${{ env.IMAGE_NAME }}:${{ github.sha }}
-        region: ${{ env.REGION }}
-        flags: '--allow-unauthenticated --min-instances=1 --max-instances=20'
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          service: ${{ env.SERVICE_NAME }}
+          image: ${{ env.IMAGE_URI }}:${{ github.sha }}
+          region: ${{ env.REGION }}
 
-    - name: Verify Deployment Health Check
-      run: |
-        SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')
-        echo "Verifying health check at $SERVICE_URL/healthz..."
-        curl -f "$SERVICE_URL/healthz" || exit 1
-        echo "Deployment successfully verified for revision associated with commit ${{ github.sha }}."
+      - name: Verify deployment health
+        run: |
+          SERVICE_URL=$(gcloud run services describe "$SERVICE_NAME" \
+            --project="$PROJECT_ID" \
+            --region="$REGION" \
+            --format='value(status.url)')
+
+          echo "Checking $SERVICE_URL/healthz"
+          curl --fail --show-error --retry 5 --retry-delay 5 \
+            "$SERVICE_URL/healthz"
