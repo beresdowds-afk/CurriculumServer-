@@ -39,7 +39,6 @@ import { instanceLifecycleManager } from './server/instanceLifecycleManager';
 import { costGovernanceManager } from './server/costGovernanceManager';
 import { productionHardeningEngine } from './server/productionHardeningEngine';
 import { homepageEngineManager } from './server/homepageEngineManager';
-import { cipaAgentService } from './server/cipaAgentService';
 import { serverPaymentEngine } from './server/serverPaymentEngine';
 import { serverPaymentReadinessEngine } from './server/serverPaymentReadinessEngine';
 import { MOCK_USERS } from './src/data/curriculumFlowData';
@@ -2706,12 +2705,21 @@ app.post('/api/v1/server/architecture/evaluate', requireSuperAdmin, (req: Reques
 });
 
 app.get('/api/v1/server/infrastructure/jobs', requireSuperAdmin, (req: Request, res: Response) => {
-  res.json({
-    success: true,
-    data: GCPProvisioningOrchestrationEngine.getJobs(),
-    correlationId: (req as any).correlationId,
-    timestamp: new Date().toISOString()
-  });
+  try {
+    res.json({
+      success: true,
+      data: GCPProvisioningOrchestrationEngine.getJobs(),
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(503).json({
+      success: false,
+      code: 'PROVISIONING_PERSISTENCE_UNAVAILABLE',
+      error: error instanceof Error ? error.message : 'Provisioning inventory is unavailable.',
+      correlationId: (req as any).correlationId
+    });
+  }
 });
 
 app.get('/api/v1/server/audit-logs', requireSuperAdmin, (req: Request, res: Response) => {
@@ -3663,117 +3671,34 @@ app.post('/api/v1/server/homepage/:instanceId/rollback', requireSchoolAuth, (req
 // CURRICULUM INFRASTRUCTURE PROVISIONING AGENT (CIPA) APIS
 // -------------------------------------------------------------
 app.get('/api/v1/agent/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok', service: 'curriculum-provisioning-agent', runtime: 'curriculum-provisioning-agent-runtime', time: new Date().toISOString() });
+  res.json({ status: 'alive', service: 'curriculum-provisioning-agent', time: new Date().toISOString() });
 });
 
 app.get('/api/v1/agent/ready', (req: Request, res: Response) => {
-  res.json({ status: 'ready', database: 'connected', orchestrator: 'active', piam: 'enforced' });
-});
-
-app.get('/api/v1/agent/requests', (req: Request, res: Response) => {
-  try {
-    const list = cipaAgentService.getAllRequests();
-    res.json({ success: true, data: list });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/v1/agent/requests', (req: Request, res: Response) => {
-  try {
-    const { prompt } = req.body;
-    if (!prompt) {
-      res.status(400).json({ success: false, error: 'prompt is required' });
-      return;
+  res.status(503).json({
+    status: 'not_ready',
+    dependencies: {
+      database: 'not_configured',
+      mfaVerifier: 'not_configured',
+      piam: 'not_enforced',
+      orchestrator: 'not_configured'
     }
-    const created = cipaAgentService.createRequest(prompt);
-    res.json({ success: true, data: created });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
+  });
 });
 
-app.get('/api/v1/agent/requests/:requestId', (req: Request, res: Response) => {
-  try {
-    const rec = cipaAgentService.getRequest(req.params.requestId);
-    if (!rec) {
-      res.status(404).json({ success: false, error: 'Provisioning request not found' });
-      return;
-    }
-    res.json({ success: true, data: rec });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
+app.use('/api/v1/agent/requests', requireSuperAdmin);
 
-app.post('/api/v1/agent/requests/:requestId/evaluate', (req: Request, res: Response) => {
-  try {
-    const rec = cipaAgentService.getRequest(req.params.requestId);
-    if (!rec) {
-      res.status(404).json({ success: false, error: 'Provisioning request not found' });
-      return;
-    }
-    cipaAgentService.updateLifecycle(req.params.requestId, 'Architecture Evaluation');
-    res.json({ success: true, data: rec });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
+const respondProvisioningUnavailable = (_req: Request, res: Response) => {
+  res.status(503).json({
+    success: false,
+    code: 'PROVISIONING_CONTROL_PLANE_UNAVAILABLE',
+    error: 'Provisioning requests are disabled until durable PostgreSQL persistence, trusted MFA verification, PIAM, and execution adapters are configured.'
+  });
+};
 
-app.post('/api/v1/agent/requests/:requestId/plan', (req: Request, res: Response) => {
-  try {
-    const rec = cipaAgentService.getRequest(req.params.requestId);
-    if (!rec) {
-      res.status(404).json({ success: false, error: 'Provisioning request not found' });
-      return;
-    }
-    cipaAgentService.updateLifecycle(req.params.requestId, 'Awaiting Privileged Approval');
-    res.json({ success: true, data: rec });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/v1/agent/requests/:requestId/submit', (req: Request, res: Response) => {
-  try {
-    const rec = cipaAgentService.getRequest(req.params.requestId);
-    if (!rec) {
-      res.status(404).json({ success: false, error: 'Provisioning request not found' });
-      return;
-    }
-    cipaAgentService.updateLifecycle(req.params.requestId, 'Project Creation');
-    res.json({ success: true, data: rec });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/v1/agent/requests/:requestId/piam-approval', (req: Request, res: Response) => {
-  try {
-    const { action, approverEmail, notes } = req.body;
-    const updated = cipaAgentService.piamApprovalAction(req.params.requestId, action, approverEmail || 'superadmin@curriculumserver.com.ng', notes || 'Approved via CIPA PIAM workflow.');
-    if (!updated) {
-      res.status(404).json({ success: false, error: 'Provisioning request not found' });
-      return;
-    }
-    res.json({ success: true, data: updated });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/v1/agent/requests/:requestId/cancel', (req: Request, res: Response) => {
-  try {
-    const updated = cipaAgentService.updateLifecycle(req.params.requestId, 'Cancelled');
-    if (!updated) {
-      res.status(404).json({ success: false, error: 'Provisioning request not found' });
-      return;
-    }
-    res.json({ success: true, data: updated });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
+app.all('/api/v1/agent/requests', respondProvisioningUnavailable);
+app.all('/api/v1/agent/requests/:requestId', respondProvisioningUnavailable);
+app.all('/api/v1/agent/requests/:requestId/:operation', respondProvisioningUnavailable);
 
 // -------------------------------------------------------------
 // PWA REAL-TIME SYNC API ENDPOINTS

@@ -602,6 +602,16 @@ export class CustomerOnboardingManager {
       throw new Error('Cannot provision custom architecture instance before technical review approval.');
     }
 
+    const provisioningJob = await GCPProvisioningOrchestrationEngine.executeProvisioningOrchestration(
+      record.instanceId,
+      1,
+      ['gcp_project', 'postgresql_database', 'cloud_run_service', 'cloud_storage_bucket', 'secret_manager_secret', 'dns_managed_zone', 'ssl_certificate'],
+      record.tenantId
+    );
+    if (provisioningJob.state !== 'verified' || !provisioningJob.verificationStatus) {
+      throw new Error('Provisioning failed verification. Customer activation is blocked.');
+    }
+
     // 1. Run IIAPE recommendation and register profile
     IIAPEngineService.evaluateAndRecommend({
       customerId: record.tenantId,
@@ -637,14 +647,6 @@ export class CustomerOnboardingManager {
       100,
       1095,
       record.organization.contactEmail
-    );
-
-    // 3. Trigger GCP Adapters
-    await GCPProvisioningOrchestrationEngine.executeProvisioningOrchestration(
-      record.instanceId,
-      1,
-      ['gcp_project', 'postgresql_database', 'cloud_run_service', 'cloud_storage_bucket', 'secret_manager_secret', 'dns_managed_zone', 'ssl_certificate'],
-      record.tenantId
     );
 
     // 4. Register Tenant into School Manager
@@ -688,9 +690,9 @@ export class CustomerOnboardingManager {
 
     record.verification.databaseConnected = !!dbs && dbs.healthStatus === 'healthy';
     record.verification.storageReady = !!stg && stg.connectionHealth === 'healthy';
-    record.verification.securityProfileApplied = true;
-    record.verification.dnsProvisioned = true;
-    record.verification.healthPingPassed = true;
+    record.verification.securityProfileApplied = false;
+    record.verification.dnsProvisioned = false;
+    record.verification.healthPingPassed = false;
     record.verification.allPassed = 
       record.verification.databaseConnected && 
       record.verification.storageReady && 
@@ -712,6 +714,9 @@ export class CustomerOnboardingManager {
   } {
     const record = this.getInstanceById(instanceId);
     if (!record) return { success: false, error: 'Instance not found.' };
+    if (record.provisioningStatus !== 'activation_ready') {
+      return { success: false, error: 'Instance activation is blocked until provisioning has completed and infrastructure has been verified.' };
+    }
 
     // Mandatory Verification Checks
     const dbs = StorageAndDatabaseManager.getDatabaseRecord(record.instanceId);
@@ -719,9 +724,9 @@ export class CustomerOnboardingManager {
 
     record.verification.databaseConnected = !!dbs && dbs.healthStatus === 'healthy';
     record.verification.storageReady = !!stg && stg.connectionHealth === 'healthy';
-    record.verification.securityProfileApplied = true;
-    record.verification.dnsProvisioned = true;
-    record.verification.healthPingPassed = true;
+    record.verification.securityProfileApplied = false;
+    record.verification.dnsProvisioned = false;
+    record.verification.healthPingPassed = false;
     record.verification.allPassed = 
       record.verification.databaseConnected && 
       record.verification.storageReady && 
