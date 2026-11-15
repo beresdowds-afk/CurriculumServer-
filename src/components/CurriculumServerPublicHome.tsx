@@ -24,7 +24,6 @@ import {
   ExternalLink,
   Laptop
 } from 'lucide-react';
-import { TenantSecurityContextManager } from '../services/tenantSecurityContext';
 
 interface CurriculumServerPublicHomeProps {
   onGetStarted: () => void;
@@ -38,68 +37,31 @@ export const CurriculumServerPublicHome: React.FC<CurriculumServerPublicHomeProp
   onGetStarted,
   onExploreFlow,
   onOpenControlPlaneLogin,
-  onOpenCustomerPortalLogin,
-  onNavigateToConsole
+  onOpenCustomerPortalLogin
 }) => {
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
   const [pricingCycle, setPricingCycle] = useState<'monthly' | 'yearly' | 'lease_to_own'>('yearly');
-  const [authEmail, setAuthEmail] = useState('');
-  const [authRole, setAuthRole] = useState<'super_admin' | 'platform_operator' | 'support_engineer'>('super_admin');
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authMessage, setAuthMessage] = useState<string | null>(null);
-
   const toggleFaq = (idx: number) => {
     setActiveFaq(prev => prev === idx ? null : idx);
   };
 
   const handleQuickPlatformLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setAuthLoading(true);
-    setAuthMessage(null);
-
-    try {
-      const email = authEmail.trim() || 'admin@curriculumserver.com.ng';
-      const token = TenantSecurityContextManager.issueTenantToken(
-        { id: 'platform-control-plane', appId: 'CF-CONTROL-PLANE-001', schoolName: 'Curriculum Server Control Plane', status: 'active' } as any,
-        'super_admin',
-        72 * 3600,
-        email
-      );
-
-      // Verify token immediately
-      const verified = TenantSecurityContextManager.verifyTenantToken(token);
-      if (verified.valid) {
-        setAuthMessage('Authentication successful. Redirecting to Master Control Plane...');
-        setTimeout(() => {
-          if (onNavigateToConsole) {
-            onNavigateToConsole();
-          } else {
-            window.location.hash = '#/platform_overview';
-            window.location.reload();
-          }
-        }, 600);
-      } else {
-        setAuthMessage('Authentication error: cryptographic signature invalid');
-      }
-    } catch (err: any) {
-      setAuthMessage(`Authentication failed: ${err.message}`);
-    } finally {
-      setAuthLoading(false);
-    }
+    onOpenControlPlaneLogin();
   };
 
   const faqItems = [
     {
       q: 'How does Curriculum Server differ from traditional school management software?',
-      a: 'Traditional solutions are monolithic, multi-tenant databases where every school shares the same codebase and fixed database table. Curriculum Server is a multi-architecture SaaS provisioning platform: it deploys sovereign, isolated application instances with dedicated PostgreSQL schemas, customer-selected cloud storage (GCS or Google Drive), and automated NERDC curriculum updates.'
+      a: 'Curriculum Server is designed as a configurable multi-architecture platform. The current school registration workflow stores isolated tenant records in shared PostgreSQL; dedicated databases, projects, and cloud storage are not created by this workflow.'
     },
     {
       q: 'Can our institution transition from shared infrastructure to dedicated cloud servers?',
-      a: 'Yes. Through the Intelligent Instance Architecture & Provisioning Engine (IIAPE), you can start on shared Cloud Run containers and migrate at any time to dedicated containers, dedicated Cloud SQL instances, or a sovereign GCP project without losing any institutional data, domain configurations, or user credentials.'
+      a: 'The instance model records shared-database, dedicated-database, and dedicated-infrastructure deployment choices. Automated migration and dedicated cloud resource provisioning are not available in the current school registration workflow.'
     },
     {
       q: 'How are tenant isolation and institutional security guaranteed?',
-      a: 'Curriculum Server enforces multi-tenant boundaries at the database engine level via isolated schema namespaces and dedicated connection pools. Authentication uses cryptographically signed SHA-256 HMAC tokens with zero trust of client-controlled headers, while all privileged actions are committed to an immutable audit ledger.'
+      a: 'School requests use server-issued signed sessions, an active PostgreSQL membership check, tenant-scoped queries, and PostgreSQL row-level security. The RLS context is set by the trusted application runtime; it does not protect against a compromised runtime or arbitrary SQL execution under its database role.'
     },
     {
       q: 'What is the Lease-to-Own commercial model?',
@@ -242,54 +204,16 @@ export const CurriculumServerPublicHome: React.FC<CurriculumServerPublicHomeProp
                 </div>
 
                 <form onSubmit={handleQuickPlatformLogin} className="mt-5 space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                      Platform Identity / Email
-                    </label>
-                    <input
-                      type="email"
-                      value={authEmail}
-                      onChange={e => setAuthEmail(e.target.value)}
-                      placeholder="admin@curriculumserver.com.ng"
-                      className="w-full bg-[#0B0F17] border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-colors"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                      Access Scope
-                    </label>
-                    <select
-                      value={authRole}
-                      onChange={e => setAuthRole(e.target.value as any)}
-                      className="w-full bg-[#0B0F17] border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500"
-                    >
-                      <option value="super_admin">Super Administrator (Full Fleet Control)</option>
-                      <option value="platform_operator">Platform Operator (Infrastructure & Quotas)</option>
-                      <option value="support_engineer">Technical Support (Instance Diagnostics)</option>
-                    </select>
-                  </div>
-
+                  <p className="text-sm text-slate-300">
+                    Platform access requires a server-verified administrator account. Sign in through the secure control-plane flow.
+                  </p>
                   <button
                     type="submit"
-                    disabled={authLoading}
-                    className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-sm rounded-xl shadow-lg shadow-purple-950/50 transition-all flex items-center justify-center gap-2"
+                    className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-purple-950/50 transition-all flex items-center justify-center gap-2"
                   >
-                    {authLoading ? (
-                      <span>Verifying Cryptographic Tokens...</span>
-                    ) : (
-                      <>
-                        <span>Authenticate to Control Plane</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
+                    <span>Sign in to Control Plane</span>
+                    <ArrowRight className="w-4 h-4" />
                   </button>
-
-                  {authMessage && (
-                    <div className="p-2.5 bg-purple-950/40 border border-purple-800/50 rounded-xl text-xs text-purple-300 text-center">
-                      {authMessage}
-                    </div>
-                  )}
 
                   <p className="text-[11px] text-slate-400 text-center pt-2">
                     Zero trust architecture. Client-supplied headers (x-user-role, x-tenant-id) are strictly ignored and recorded as security violations.

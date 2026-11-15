@@ -29,7 +29,7 @@ import { LeaseToOwnTrackerModal } from '../../../src/components/LeaseToOwnTracke
 import { TenantConnectModal } from '../../../src/components/TenantConnectModal';
 import { ProvisioningTerminalModal } from '../../../src/components/ProvisioningTerminalModal';
 import { VersionRolloutModal } from '../../../src/components/VersionRolloutModal';
-import { UniversalCustomerOnboardingWizard } from '../../../src/components/UniversalCustomerOnboardingWizard';
+import { SchoolRegistrationWizard } from '../../../src/components/SchoolRegistrationWizard';
 import { CurriculumServerPublicHome } from '../../../src/components/CurriculumServerPublicHome';
 import { SchoolGovernanceModal } from '../../../src/components/SchoolGovernanceModal';
 
@@ -184,14 +184,9 @@ export const CurriculumServerApp: React.FC = () => {
         />
 
         {isUniversalWizardOpen && (
-          <UniversalCustomerOnboardingWizard
+          <SchoolRegistrationWizard
             isOpen={isUniversalWizardOpen}
             onClose={() => setIsUniversalWizardOpen(false)}
-            onProvisionSuccess={() => {
-              setIsUniversalWizardOpen(false);
-              setViewMode('control_plane');
-              setActiveTab('tenant_control_center');
-            }}
           />
         )}
       </div>
@@ -497,12 +492,9 @@ export const CurriculumServerApp: React.FC = () => {
       )}
 
       {isUniversalWizardOpen && (
-        <UniversalCustomerOnboardingWizard
+        <SchoolRegistrationWizard
           isOpen={isUniversalWizardOpen}
           onClose={() => setIsUniversalWizardOpen(false)}
-          onSuccess={(_instance) => {
-            setIsUniversalWizardOpen(false);
-          }}
         />
       )}
 

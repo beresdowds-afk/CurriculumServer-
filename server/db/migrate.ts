@@ -1,10 +1,19 @@
 import { discoverMigrations, applyMigrations, inspectMigrations } from './migrations';
-import { postgresRuntime } from './postgres';
+import { PostgresRuntime } from './postgres';
+
+const migrationEnvironment: NodeJS.ProcessEnv = { ...process.env };
+if (migrationEnvironment.MIGRATION_DATABASE_URL) {
+  migrationEnvironment.DATABASE_URL = migrationEnvironment.MIGRATION_DATABASE_URL;
+  for (const name of ['PGHOST', 'PGPORT', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGSSLMODE']) {
+    delete migrationEnvironment[name];
+  }
+}
+const migrationRuntime = new PostgresRuntime(migrationEnvironment);
 
 async function main(): Promise<void> {
   const command = process.argv[2] || 'status';
   const dryRun = process.argv.includes('--dry-run');
-  const pool = postgresRuntime.getPool();
+  const pool = migrationRuntime.getPool();
   const migrations = await discoverMigrations(
     process.env.MIGRATIONS_DIR || `${process.cwd()}/src/db/migrations`
   );
@@ -27,4 +36,4 @@ main()
     console.error(error instanceof Error ? error.message : 'Database migration failed.');
     process.exitCode = 1;
   })
-  .finally(async () => postgresRuntime.close());
+  .finally(async () => migrationRuntime.close());

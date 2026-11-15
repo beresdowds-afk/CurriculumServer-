@@ -3,7 +3,7 @@ import { after, describe, it } from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { TenantSecurityContextManager } from '../src/services/tenantSecurityContext';
+import { ServerTenantTokenService } from './tenantTokenService';
 import { IIAPEngineService } from '../src/services/iiapEngineService';
 import { createProvisioningExecutionPlan } from './provisioningPlan';
 
@@ -219,15 +219,22 @@ describe('customer onboarding fail-closed behavior', () => {
   });
 
   it('preserves tenant identity from the authenticated token claims', () => {
-    const token = TenantSecurityContextManager.issueTenantToken({
-      id: 'tenant-a',
-      appId: 'app-a',
-      schoolName: 'Tenant A',
-      subscriptionTier: 'standard',
-      status: 'active'
-    } as any, 'tenant_admin');
-    const verified = TenantSecurityContextManager.verifyTenantToken(token);
-    assert.equal(verified.valid, true);
-    assert.equal(verified.context?.tenantId, 'tenant-a');
+    const originalSecret = process.env.CONTROL_PLANE_SECRET;
+    process.env.CONTROL_PLANE_SECRET = 'customer-onboarding-test-secret-32-characters';
+    try {
+      const token = ServerTenantTokenService.issueTenantToken({
+        id: 'tenant-a',
+        appId: 'app-a',
+        schoolName: 'Tenant A',
+        subscriptionTier: 'standard',
+        status: 'active'
+      } as any, 'tenant_admin');
+      const verified = ServerTenantTokenService.verifyTenantToken(token);
+      assert.equal(verified.valid, true);
+      assert.equal(verified.context?.tenantId, 'tenant-a');
+    } finally {
+      if (originalSecret === undefined) delete process.env.CONTROL_PLANE_SECRET;
+      else process.env.CONTROL_PLANE_SECRET = originalSecret;
+    }
   });
 });

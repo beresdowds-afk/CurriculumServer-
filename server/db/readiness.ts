@@ -1,6 +1,11 @@
 import type { DatabasePool } from './postgres';
 import { classifyDatabaseError, DatabaseFailure, postgresRuntime } from './postgres';
 import { discoverMigrations, inspectMigrations } from './migrations';
+import {
+  hasConfiguredPlatformAdminAccounts,
+  hasInvitationEmailConfiguration,
+  hasSecureControlPlaneSecret
+} from '../schoolProvisioning';
 
 const REQUIRED_TABLES = [
   'control_plane.customers',
@@ -16,7 +21,23 @@ const REQUIRED_TABLES = [
   'control_plane.architecture_profiles',
   'control_plane.provisioning_job_attempts',
   'curriculum_flow.users',
-  'curriculum_flow.students'
+  'curriculum_flow.students',
+  'production.tenants',
+  'production.organizations',
+  'production.memberships',
+  'production.instances',
+  'production.provisioning_jobs',
+  'production.approvals',
+  'production.audit_events',
+  'production.schools',
+  'production.classes',
+  'production.students',
+  'production.academic_records',
+  'production.users',
+  'production.school_configurations',
+  'production.application_instances',
+  'production.school_provisioning_requests',
+  'production.school_admin_invitations'
 ];
 
 export interface PlatformReadiness {
@@ -27,12 +48,12 @@ export interface PlatformReadiness {
     migrationsCurrent: boolean;
     requiredTablesAvailable: boolean;
     rlsPoliciesAvailable: boolean;
-    trustedTenantContextAvailable: false;
+    trustedTenantContextAvailable: boolean;
     tenantSecurityAvailable: boolean;
     error?: string;
   };
   provisioning: {
-    executionAvailable: false;
+    executionAvailable: boolean;
     reason: string;
   };
   ready: boolean;
@@ -56,7 +77,7 @@ export async function inspectPlatformReadiness(
         tenantSecurityAvailable: false,
         error: configurationError || 'configuration_missing'
       },
-      provisioning: { executionAvailable: false, reason: 'Trusted tenant identity, MFA, PIAM, and execution adapters are unavailable.' },
+      provisioning: { executionAvailable: false, reason: 'PostgreSQL, platform credentials, secure token signing, and invitation email configuration are required.' },
       ready: false
     };
   }
@@ -104,16 +125,32 @@ export async function inspectPlatformReadiness(
       runtimeRole.rows.length === 1 &&
       !runtimeRole.rows[0].superuser &&
       !runtimeRole.rows[0].bypass_rls;
-    tenantSecurityAvailable = false;
+    const trustedTenantContextAvailable = rlsPoliciesAvailable && hasSecureControlPlaneSecret();
+    tenantSecurityAvailable = trustedTenantContextAvailable;
     if (!migrationsCurrent) error = 'migrations_not_current';
     else if (!requiredTablesAvailable) error = 'required_tables_unavailable';
     else if (!rlsPoliciesAvailable) error = 'tenant_security_unavailable';
-    else error = 'trusted_tenant_context_unavailable';
+    else if (!trustedTenantContextAvailable) error = 'trusted_tenant_context_unavailable';
   } catch (failure) {
     error = failure instanceof DatabaseFailure && failure.kind === 'migration'
       ? 'migration_failure'
       : classifyDatabaseError(failure);
   }
+
+  const trustedTenantContextAvailable = rlsPoliciesAvailable && hasSecureControlPlaneSecret();
+  const provisioningReady = connectionVerified && migrationsCurrent &&
+    requiredTablesAvailable && rlsPoliciesAvailable && trustedTenantContextAvailable &&
+    hasConfiguredPlatformAdminAccounts() && hasInvitationEmailConfiguration();
+  const provisioningReason = !connectionVerified || !migrationsCurrent ||
+    !requiredTablesAvailable || !rlsPoliciesAvailable
+    ? 'PostgreSQL connection, current migrations, and tenant RLS policies are required.'
+    : !trustedTenantContextAvailable
+      ? 'Secure server-side token signing is not configured.'
+      : !hasConfiguredPlatformAdminAccounts()
+        ? 'Platform administrator credentials are not configured.'
+        : !hasInvitationEmailConfiguration()
+          ? 'Administrator invitation email configuration is incomplete.'
+          : 'Shared PostgreSQL school records are available; this workflow does not create cloud infrastructure.';
 
   return {
     alive: true,
@@ -123,12 +160,11 @@ export async function inspectPlatformReadiness(
       migrationsCurrent,
       requiredTablesAvailable,
       rlsPoliciesAvailable,
-      trustedTenantContextAvailable: false,
+      trustedTenantContextAvailable,
       tenantSecurityAvailable,
       ...(error ? { error } : {})
     },
-    provisioning: { executionAvailable: false, reason: 'Trusted tenant identity, MFA, PIAM, and execution adapters are unavailable.' },
-    ready: connectionVerified && migrationsCurrent && requiredTablesAvailable &&
-      rlsPoliciesAvailable && tenantSecurityAvailable
+    provisioning: { executionAvailable: provisioningReady, reason: provisioningReason },
+    ready: provisioningReady
   };
 }

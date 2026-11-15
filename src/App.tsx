@@ -7,9 +7,13 @@ import {
 import { CurriculumServerApp } from '../apps/curriculum-server/src/App';
 import { CurriculumFlowApp } from '../apps/curriculum-flow/src/App';
 import { InstanceHomepageContainer } from './components/InstanceHomepageContainer';
+import { SchoolAdminAccessPage } from './components/SchoolAdminAccessPage';
 import { Server, GraduationCap, School, ArrowRightLeft } from 'lucide-react';
 
 export const App: React.FC = () => {
+  const query = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const activationToken = query?.get('school_activation') || undefined;
+  const schoolAdminMode = query?.get('school_admin');
   const [activeApp, setActiveApp] = useState<ActiveApplicationType>(detectActiveApplication());
   const [isDevEnvironment, setIsDevEnvironment] = useState<boolean>(false);
 
@@ -44,6 +48,15 @@ export const App: React.FC = () => {
       window.removeEventListener('popstate', handleLocationChange);
     };
   }, []);
+
+  if (activationToken || schoolAdminMode === 'login') {
+    return (
+      <SchoolAdminAccessPage
+        activationToken={activationToken}
+        initialTenantId={query?.get('tenant') || ''}
+      />
+    );
+  }
 
   const handleToggleApp = (targetApp: ActiveApplicationType) => {
     setActiveApplication(targetApp);

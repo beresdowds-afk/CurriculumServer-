@@ -152,16 +152,13 @@ export async function runAllTenantIsolationTests(
     };
   });
 
-  // Test 9: Cryptographic Token Forgery Rejection
-  runTest('TEST-ISO-09', 'Tamper-Resistant Token: Forged HMAC signature is rejected', 'security', () => {
-    const validTokenA = TenantSecurityContextManager.issueTenantToken(tenantA);
-    const forgedToken = validTokenA.slice(0, -6) + 'abcdef';
-    const validation = TenantSecurityContextManager.verifyTenantToken(forgedToken);
-
+  runTest('TEST-ISO-09', 'Tenant boundary: a tenant cannot address another tenant by ID', 'security', () => {
+    const context = { tenantId: tenantA.id } as any;
+    const allowed = TenantSecurityContextManager.assertTenantBoundary(context, tenantB.id, '/api/v1/students');
     return {
-      passed: !validation.valid,
-      details: `Forged tenant token payload rejected by HMAC-SHA256 signature verifier. Reason: ${validation.error || 'Invalid signature'}.`,
-      proof: 'HMAC-SHA256 constant-time timing-safe comparison failed. Zero access granted to platform control plane.'
+      passed: !allowed,
+      details: `Tenant ${tenantA.id} attempted to address ${tenantB.id}; the boundary check denied access.`,
+      proof: 'The browser-side helper is only a UX check; server authorization remains authoritative.'
     };
   });
 

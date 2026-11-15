@@ -12,7 +12,7 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
  
-    "test": "tsx --test server/gcpProvisioningEngine.test.ts server/customerOnboardingManager.test.ts server/storageAndDatabaseManager.test.ts src/services/cipaApiClient.test.ts server/db/*.test.ts",
+    "test": "tsx --test server/gcpProvisioningEngine.test.ts server/customerOnboardingManager.test.ts server/storageAndDatabaseManager.test.ts server/schoolProvisioning.test.ts server/tenantTokenService.test.ts src/services/cipaApiClient.test.ts server/db/*.test.ts",
     "test:db": "tsx --test server/db/*.test.ts",
     "db:migrate": "tsx server/db/migrate.ts up",
     "db:migrate:status": "tsx server/db/migrate.ts status",
