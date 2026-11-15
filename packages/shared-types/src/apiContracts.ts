@@ -150,13 +150,14 @@ export interface SchoolStudentSummary {
   id: string;
   tenantId: string;
   admissionNumber: string;
-  fullName: string;
-  classGrade: string;
-  gender: string;
-  parentName: string;
-  parentPhone: string;
-  status: 'Active' | 'Withdrawn' | 'Graduated';
-  feeStatus: 'Paid' | 'Partial' | 'Pending';
+  fullName?: string;
+  classGrade?: string;
+  classGroup?: string | null;
+  gender?: string;
+  parentName?: string;
+  parentPhone?: string;
+  status?: 'Active' | 'Withdrawn' | 'Graduated';
+  feeStatus?: 'Paid' | 'Partial' | 'Pending';
 }
 
 export interface SchoolAttendanceRecord {
