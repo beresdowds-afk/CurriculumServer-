@@ -296,16 +296,104 @@ ensure_sa_binding "$CI_SA" \
   "roles/iam.workloadIdentityUser" \
   "$WIF_MEMBER"
 
-log "Reconcile minimum project-scoped CI roles"
+ensure_service_binding() {
+  local service="$1"
+  local role="$2"
+  local member="$3"
+  local policy
 
-ensure_project_binding "roles/artifactregistry.writer" "serviceAccount:${CI_SA}"
-ensure_project_binding "roles/run.developer" "serviceAccount:${CI_SA}"
+  policy="$(gcloud run services get-iam-policy "$service" \
+    --project="$PROJECT_ID" \
+    --region="$REGION" \
+    --format=json)"
+
+  if jq -e --arg role "$role" --arg member "$member" \
+      '.bindings[]? | select(.role==$role and ((.members // []) | index($member)) and (.condition == null))' \
+      <<<"$policy" >/dev/null; then
+    echo "  [PRESENT] Cloud Run $service $role -> $member"
+    return
+  fi
+
+  if jq -e --arg role "$role" --arg member "$member" \
+      '.bindings[]? | select(.role==$role and ((.members // []) | index($member)) and (.condition != null))' \
+      <<<"$policy" >/dev/null; then
+    die "Conditional Cloud Run binding exists for $service / $role / $member."
+  fi
+
+  run gcloud run services add-iam-policy-binding "$service" \
+    --project="$PROJECT_ID" \
+    --region="$REGION" \
+    --role="$role" \
+    --member="$member"
+}
+
+ensure_repository_binding() {
+  local repository="$1"
+  local role="$2"
+  local member="$3"
+  local policy
+
+  if ! gcloud artifacts repositories describe "$repository" \
+      --project="$PROJECT_ID" \
+      --location="$REGION" >/dev/null 2>&1; then
+    echo "  [PENDING] Repository IAM binding after repository creation"
+    run gcloud artifacts repositories add-iam-policy-binding "$repository" \
+      --project="$PROJECT_ID" \
+      --location="$REGION" \
+      --role="$role" \
+      --member="$member"
+    return
+  fi
+
+  policy="$(gcloud artifacts repositories get-iam-policy "$repository" \
+    --project="$PROJECT_ID" \
+    --location="$REGION" \
+    --format=json)"
+
+  if jq -e --arg role "$role" --arg member "$member" \
+      '.bindings[]? | select(.role==$role and ((.members // []) | index($member)) and (.condition == null))' \
+      <<<"$policy" >/dev/null; then
+    echo "  [PRESENT] Repository $repository $role -> $member"
+    return
+  fi
+
+  if jq -e --arg role "$role" --arg member "$member" \
+      '.bindings[]? | select(.role==$role and ((.members // []) | index($member)) and (.condition != null))' \
+      <<<"$policy" >/dev/null; then
+    die "Conditional repository binding exists for $repository / $role / $member."
+  fi
+
+  run gcloud artifacts repositories add-iam-policy-binding "$repository" \
+    --project="$PROJECT_ID" \
+    --location="$REGION" \
+    --role="$role" \
+    --member="$member"
+}
+
+
+log "Reconcile CI permissions on application services"
+
+CI_MEMBER="serviceAccount:${CI_SA}"
+
+for service in curriculum-server curriculum-flow; do
+  ensure_service_binding "$service" \
+    "roles/run.developer" \
+    "$CI_MEMBER"
+done
 
 RUNTIME_SAS=(
   "vertex-express@${PROJECT_ID}.iam.gserviceaccount.com"
   "cf-frontend-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
-  "backend-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
 )
+
+log "Reconcile CI actAs on frontend runtime identities"
+
+for runtime_sa in "${RUNTIME_SAS[@]}"; do
+  ensure_sa_binding "$runtime_sa" \
+    "roles/iam.serviceAccountUser" \
+    "$CI_MEMBER"
+done
+
 
 log "Reconcile CI actAs on application runtime identities"
 
@@ -330,7 +418,10 @@ else
     --repository-format=docker \
     --description="Curriculum Server container images"
 fi
-
+ensure_repository_binding "$ARTIFACT_REPOSITORY" \
+  "roles/artifactregistry.writer" \
+  "serviceAccount:${CI_SA}"
+  
 log "Read-only Cloud Run service inventory"
 
 gcloud run services list \
