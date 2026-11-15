@@ -4,6 +4,28 @@ import {
   DeploymentTargetOption 
 } from '../types/iiapEngine';
 
+export function validateProjectCreationRequest(request: Pick<
+  IIAPEAssessmentRequest,
+  'requestedDeploymentTarget' | 'createProject' | 'projectId' | 'parentOrganizationId' | 'parentFolderId'
+>): void {
+  if (request.requestedDeploymentTarget === 'dedicated_gcp_project' && request.createProject !== true) {
+    throw new Error('PROJECT_CREATION_EXPLICIT_CONSENT_REQUIRED: Set createProject to true for a dedicated GCP project.');
+  }
+  if (request.createProject === true && request.requestedDeploymentTarget !== 'dedicated_gcp_project') {
+    throw new Error('PROJECT_CREATION_TARGET_MISMATCH: Project creation is only valid for a dedicated GCP project architecture.');
+  }
+  if (request.createProject === true) {
+    if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(request.projectId || '')) {
+      throw new Error('PROJECT_ID_INVALID: A valid 6-30 character GCP project ID is required.');
+    }
+    const hasOrganization = Boolean(request.parentOrganizationId);
+    const hasFolder = Boolean(request.parentFolderId);
+    if (hasOrganization === hasFolder || !/^\d+$/.test(request.parentOrganizationId || request.parentFolderId || '')) {
+      throw new Error('PROJECT_PARENT_INVALID: Provide exactly one numeric parent organization or folder ID.');
+    }
+  }
+}
+
 export class IIAPEngineService {
   private static profiles: InstanceArchitectureProfile[] = [
     {
@@ -16,6 +38,7 @@ export class IIAPEngineService {
       enabledApplications: ['app_curriculum_flow'],
       enabledFeatures: ['feat_student_registration', 'feat_exam_management', 'feat_results_processing', 'feat_bursary_billing', 'feat_ai_curriculum_advisor'],
       deploymentTarget: 'dedicated_cloud_run_service',
+      createProject: false,
       architectureProfileName: 'Dedicated Secure Cloud Run Node with Isolated PostgreSQL Schema',
       databaseStrategy: 'dedicated_postgres_schema',
       storageStrategy: 'dedicated_regional_bucket',
@@ -43,6 +66,7 @@ export class IIAPEngineService {
   }
 
   static evaluateAndRecommend(request: IIAPEAssessmentRequest): InstanceArchitectureProfile {
+    validateProjectCreationRequest(request);
     // Decision logic based on concurrent users, data volume, and security tier
     let deploymentTarget: DeploymentTargetOption = 'shared_application_infrastructure';
     let dbStrategy: InstanceArchitectureProfile['databaseStrategy'] = 'shared_schema_multitenant';
@@ -67,6 +91,11 @@ export class IIAPEngineService {
       rationale = 'Moderate-to-high concurrent workload demands dedicated Cloud Run container service and an isolated PostgreSQL schema for high-throughput continuous assessments and bursary processing.';
     }
 
+    if (request.requestedDeploymentTarget) {
+      deploymentTarget = request.requestedDeploymentTarget;
+      rationale = `The customer-selected ${deploymentTarget.replace(/_/g, ' ')} target is preserved. Workload sizing does not silently change the requested deployment target.`;
+    }
+
     const newProfile: InstanceArchitectureProfile = {
       profileId: `prof_${Date.now()}`,
       instanceId: `inst_${Math.random().toString(36).substring(2, 8)}`,
@@ -77,6 +106,10 @@ export class IIAPEngineService {
       enabledApplications: ['app_curriculum_flow'],
       enabledFeatures: ['feat_student_registration', 'feat_exam_management', 'feat_results_processing', 'feat_bursary_billing'],
       deploymentTarget,
+      createProject: request.createProject === true,
+      projectId: request.projectId,
+      parentOrganizationId: request.parentOrganizationId,
+      parentFolderId: request.parentFolderId,
       architectureProfileName: `IIAPE Recommended: ${deploymentTarget.replace(/_/g, ' ').toUpperCase()}`,
       databaseStrategy: dbStrategy,
       storageStrategy: request.dataVolumeGb > 50 ? 'dedicated_regional_bucket' : 'shared_bucket_partition',

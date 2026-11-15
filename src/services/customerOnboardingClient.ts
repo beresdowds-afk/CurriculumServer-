@@ -12,7 +12,8 @@ import {
   PaymentVerificationResponse, 
   InstanceActivationResponse 
 } from '../../packages/shared-types/src/apiContracts';
-import { getSuperAdminAuthHeader } from './controlPlaneToken';
+import { unifiedApiClient } from './unifiedApiClient';
+import { DeploymentTargetOption } from '../types/iiapEngine';
 
 export const CLIENT_FEATURE_DEPENDENCIES = [
   { key: 'cbt_examination', name: 'CBT Examination Engine', requires: ['question_bank'], requiresName: 'Question Bank & Item Authoring' },
@@ -28,7 +29,6 @@ export class CustomerOnboardingClient {
   private instances: UniversalInstanceRecord[] = [];
 
   private constructor() {
-    this.syncFromBackend();
   }
 
   public static getInstance(): CustomerOnboardingClient {
@@ -39,20 +39,12 @@ export class CustomerOnboardingClient {
   }
 
   public async syncFromBackend(): Promise<void> {
-    try {
-      const res = await fetch('/api/v1/server/onboarding/requests', {
-        headers: {
-          ...getSuperAdminAuthHeader()
-        }
-      });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.data && Array.isArray(json.data)) {
-          this.instances = json.data;
-        }
-      }
-    } catch {
-      // In-memory fallback
+    const json = await unifiedApiClient.requestAuthenticatedControlPlane<{ success: boolean; data: UniversalInstanceRecord[] }>(
+      '/api/v1/server/onboarding/requests',
+      { method: 'GET' }
+    );
+    if (Array.isArray(json.data)) {
+      this.instances = json.data;
     }
   }
 
@@ -110,6 +102,12 @@ export class CustomerOnboardingClient {
     databaseStrategy?: string;
     storageStrategy?: string;
     storageProvider?: string;
+    deploymentTarget: DeploymentTargetOption;
+    createProject?: boolean;
+    projectId?: string;
+    parentOrganizationId?: string;
+    parentFolderId?: string;
+    idempotencyKey?: string;
     subdomain: string;
     customDomain?: string;
     billingModel: 'monthly' | 'yearly' | 'lease_to_own';
@@ -118,65 +116,12 @@ export class CustomerOnboardingClient {
     paymentReference: string;
     amountPaidNGN: number;
   }): Promise<UniversalInstanceRecord> {
-    try {
-      const res = await fetch('/api/v1/server/onboarding/request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getSuperAdminAuthHeader()
-        },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        const json = await res.json();
-        this.instances.unshift(json.data);
-        return json.data;
-      }
-    } catch {}
-
-    // Fallback local creation
-    const cleanSubdomain = payload.subdomain.toLowerCase().replace(/[^a-z0-9-]/g, '');
-    const cleanId = cleanSubdomain.replace(/[^a-z0-9]/g, '_');
-    const instanceId = `inst_${cleanId}_${Date.now().toString(16).substring(2, 6)}`;
-    const newRecord: UniversalInstanceRecord = {
-      requestId: `req_${Date.now()}`,
-      instanceId,
-      tenantId: `cust_${cleanId}`,
-      instanceType: payload.instanceType,
-      organization: payload.organization,
-      applicationFamily: payload.instanceType === 'full_school_management' ? 'curriculum_flow_erp' : 'custom_curriculum_stack',
-      schoolCategory: payload.schoolCategory,
-      customArchitecture: payload.customArchitecture,
-      featureCollection: payload.featureCollection,
-      selectedModules: payload.selectedModules,
-      databaseStrategy: (payload.databaseStrategy as any) || 'shared_schema_isolated',
-      storageStrategy: (payload.storageStrategy as any) || 'platform_storage',
-      storageProvider: (payload.storageProvider as any) || 'google_cloud_storage',
-      subdomain: `${cleanSubdomain}.curriculumflow.com.ng`,
-      customDomain: payload.customDomain,
-      billingModel: payload.billingModel,
-      monthlyPriceNGN: payload.monthlyPriceNGN,
-      payment: {
-        provider: payload.paymentProvider,
-        transactionReference: payload.paymentReference,
-        amountNGN: payload.amountPaidNGN,
-        paymentStatus: 'pending',
-        billingModel: payload.billingModel
-      },
-      provisioningStatus: payload.instanceType === 'custom_architecture' ? 'pending_review' : 'payment_pending',
-      verification: {
-        databaseConnected: false,
-        storageReady: false,
-        securityProfileApplied: false,
-        dnsProvisioned: false,
-        healthPingPassed: false,
-        allPassed: false
-      },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    this.instances.unshift(newRecord);
-    return newRecord;
+    const json = await unifiedApiClient.requestAuthenticatedControlPlane<{ success: boolean; data: UniversalInstanceRecord }>(
+      '/api/v1/server/onboarding/request',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    this.instances.unshift(json.data);
+    return json.data;
   }
 
   public async initializePayment(
@@ -209,64 +154,43 @@ export class CustomerOnboardingClient {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...getSuperAdminAuthHeader()
       },
       body: JSON.stringify({ instanceId, reference, provider, amountNGN })
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'Payment verification failed at provider gateway.');
+      throw Object.assign(new Error(err.error || 'Payment verification failed at provider gateway.'), {
+        status: res.status,
+        correlationId: err.correlationId
+      });
     }
     const json = await res.json();
-    await this.syncFromBackend();
     return json.data;
   }
 
   public async reviewInstanceRequest(requestId: string, approved: boolean, notes: string): Promise<UniversalInstanceRecord> {
-    const res = await fetch(`/api/v1/server/onboarding/requests/${requestId}/review`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getSuperAdminAuthHeader()
-      },
-      body: JSON.stringify({ approved, adminNotes: notes, reviewerEmail: 'admin@curriculumserver.com.ng' })
-    });
-    if (!res.ok) {
-      throw new Error('Failed to submit architecture review decision.');
-    }
-    const json = await res.json();
+    const json = await unifiedApiClient.requestAuthenticatedControlPlane<{ success: boolean; data: UniversalInstanceRecord }>(
+      `/api/v1/server/onboarding/requests/${requestId}/review`,
+      { method: 'POST', body: JSON.stringify({ approved, adminNotes: notes }) }
+    );
     await this.syncFromBackend();
     return json.data;
   }
 
   public async provisionInstance(instanceId: string): Promise<UniversalInstanceRecord> {
-    const res = await fetch(`/api/v1/server/onboarding/requests/${instanceId}/provision`, {
-      method: 'POST',
-      headers: {
-        ...getSuperAdminAuthHeader()
-      }
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'Provisioning execution failed.');
-    }
-    const json = await res.json();
+    const json = await unifiedApiClient.requestAuthenticatedControlPlane<{ success: boolean; data: UniversalInstanceRecord }>(
+      `/api/v1/server/onboarding/requests/${instanceId}/provision`,
+      { method: 'POST' }
+    );
     await this.syncFromBackend();
     return json.data;
   }
 
   public async activateInstance(instanceId: string): Promise<InstanceActivationResponse> {
-    const res = await fetch(`/api/v1/server/onboarding/requests/${instanceId}/activate`, {
-      method: 'POST',
-      headers: {
-        ...getSuperAdminAuthHeader()
-      }
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'Instance activation failed mandatory verification checks.');
-    }
-    const json = await res.json();
+    const json = await unifiedApiClient.requestAuthenticatedControlPlane<{ success: boolean; data: InstanceActivationResponse }>(
+      `/api/v1/server/onboarding/requests/${instanceId}/activate`,
+      { method: 'POST' }
+    );
     await this.syncFromBackend();
     return json.data;
   }

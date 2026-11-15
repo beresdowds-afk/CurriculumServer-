@@ -14,7 +14,6 @@ import { RegisteredApplication, RegisteredFeature } from '../types/applicationRe
 import { InstanceArchitectureProfile, IIAPEAssessmentRequest } from '../types/iiapEngine';
 import { DatabaseInstanceRecord, StorageConfigRecord } from '../types/storageAndDatabase';
 import { ProvisioningJob } from '../types/gcpProvisioning';
-import { getSuperAdminAuthHeader } from './controlPlaneToken';
 
 export interface AuthenticatedSessionClaims {
   tenantId: string;
@@ -169,10 +168,6 @@ class UnifiedApiClient {
     if (authType === 'control_plane') {
       if (this.controlPlaneToken) {
         headers['Authorization'] = `Bearer ${this.controlPlaneToken}`;
-      } else {
-        // Fall back to server-signed token generator
-        const fallbackAuth = getSuperAdminAuthHeader();
-        Object.assign(headers, fallbackAuth);
       }
     } else if (authType === 'school_flow') {
       if (this.schoolFlowToken) {
@@ -196,6 +191,7 @@ class UnifiedApiClient {
           success: false,
           error: data.error || `HTTP ${response.status}: ${response.statusText}`,
           code: data.code || 'INTERNAL_ERROR',
+          status: response.status,
           correlationId: data.correlationId || correlationId,
           timestamp: data.timestamp || new Date().toISOString(),
           details: data.details
@@ -213,11 +209,26 @@ class UnifiedApiClient {
         success: false,
         error: err.message || 'Network request failed or backend service unreachable',
         code: 'INTERNAL_ERROR',
+        status: 0,
         correlationId,
         timestamp: new Date().toISOString()
       };
       throw wrappedError;
     }
+  }
+
+  public async requestAuthenticatedControlPlane<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    if (!this.controlPlaneToken || !this.isAuthenticated('control_plane')) {
+      throw {
+        success: false,
+        error: 'A valid authenticated control-plane session is required.',
+        code: 'UNAUTHENTICATED',
+        status: 401,
+        correlationId: this.generateCorrelationId(),
+        timestamp: new Date().toISOString()
+      } satisfies StandardApiErrorResponse;
+    }
+    return this.request<T>(endpoint, options, 'control_plane');
   }
 
   /**

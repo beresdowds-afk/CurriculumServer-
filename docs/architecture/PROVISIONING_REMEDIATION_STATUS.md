@@ -20,8 +20,16 @@ CIPA readiness now reports unavailable dependencies rather than claiming that Po
 
 The application must remain unavailable for privileged provisioning until PostgreSQL persistence, trusted MFA verification, independently enforced PIAM, scoped execution adapters, and resource verification are implemented and tested together. Do not configure production credentials or enable privileged GCP operations as a workaround for these missing controls.
 
+## Follow-up correction
+
+The onboarding UI no longer treats request submission, payment API errors, provisioning API errors, or activation API errors as success. It does not generate activation tokens or links, and verification checks remain `unknown` or `unavailable` without evidence. Persisted legacy onboarding records are downgraded to blocked/unverified and their fabricated payment and activation artifacts are removed.
+
+Architecture requests now carry an explicit IIAPE deployment target. Shared infrastructure plans exclude customer-project creation and are blocked because shared tenant-configuration and verification adapters are missing. Dedicated-project requests require explicit project-creation consent, a validated project ID and parent scope, and are blocked until independent PIAM authorization exists; billing association is not included in that approval. Other supported targets remain distinct and block when their target-specific adapters are absent.
+
+Control-plane login and CIPA request operations remain unavailable: email-only super-admin token issuance has been disabled, CIPA uses only an authenticated session token, and no PIAM approval controls or in-memory approval path can authorize an operation. Payment checkout, verification, and readiness endpoints also return unavailable until trusted provider integrations exist. No production GCP resource, service identity, or IAM configuration was changed.
+
 ## Configuration and validation
 
 No new secret or environment variable was introduced. The repository does not contain a sufficient authentication-provider integration or Cloud Run Job/Workflows execution configuration to specify valid provider settings or verify the listed service identities. The `gcloud` CLI is unavailable in this environment, so live service-account and IAM configuration was not inspected. Production IAM requirements therefore remain unverified and should be assessed read-only before any deployment.
 
-`npm run lint` and `npm run build` passed. Focused automated tests cover fail-closed provisioning, inventory, and decommission behavior. The broader PostgreSQL/MFA/PIAM and end-to-end integration tests were not run because no PostgreSQL instance or authentication-provider test environment is configured. No real GCP operation was attempted.
+`npm run lint`, `npm test` (17 unit tests), and `npm run build` passed. The build reports an existing large JavaScript chunk warning. No PostgreSQL, MFA-provider, PIAM, payment-provider, GCP integration, or end-to-end tests were run because those services and test environments are not configured. No real GCP operation was attempted.

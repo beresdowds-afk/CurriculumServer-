@@ -52,6 +52,7 @@ export async function runAllPspProvisioningTests(): Promise<{
         country: 'Nigeria'
       },
       selectedModules: ['curriculum_catalog', 'cbt_examination', 'broadsheet_analytics', 'bursary_finance'],
+      deploymentTarget: 'shared_application_infrastructure',
       subdomain: `${subdomain}.sch.ng`,
       billingModel: 'yearly',
       monthlyPriceNGN: 250000,

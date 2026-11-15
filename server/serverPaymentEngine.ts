@@ -2,7 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { TamperEvidentAuditService } from '../src/services/tamperEvidentAuditService';
-import { customerOnboardingManager } from './customerOnboardingManager';
 
 export type PaymentGatewayProvider = 'paystack' | 'flutterwave' | 'opay' | 'interswitch' | 'bank_wire';
 
@@ -390,105 +389,15 @@ export class ServerPaymentEngine {
     alreadyProcessed?: boolean;
     error?: string;
   } {
-    // 1. Idempotency Check
-    if (this.idempotencyStore[reference]) {
-      const cached = this.idempotencyStore[reference];
-      return {
-        success: true,
-        receipt: cached.result.receipt,
-        invoice: cached.result.invoice,
-        provisioningTriggered: false,
-        alreadyProcessed: true
-      };
-    }
-
-    // 2. Find matching invoice
-    let matchedInvoice: OfficialPlatformInvoice | undefined;
-    for (const inv of Object.values(this.platformInvoices)) {
-      if ((instanceId && inv.instanceId === instanceId) || inv.status === 'pending') {
-        matchedInvoice = inv;
-        break;
-      }
-    }
-
-    const invNum = matchedInvoice ? matchedInvoice.invoiceNumber : `INV-PROV-${Date.now().toString(36).toUpperCase()}`;
-    const tenantId = matchedInvoice ? matchedInvoice.tenantId : `tenant_${Date.now().toString(36)}`;
-    const orgName = matchedInvoice ? matchedInvoice.organizationName : 'Apex Academic Group';
-
-    if (matchedInvoice) {
-      matchedInvoice.status = 'paid';
-    }
-
-    const receiptNumber = `RCP-PROV-${Math.floor(100000 + Math.random() * 900000)}`;
-    const qrVerificationCode = `CF-PROV-${receiptNumber}-SEC-${crypto.randomBytes(4).toString('hex').toUpperCase()}-VERIFIED`;
-
-    // 3. Immutable audit ledger entry
-    const auditEvent = TamperEvidentAuditService.logPlatformAction({
-      actor: `${provider}_gateway_webhook`,
-      actorRole: 'payment_processor',
-      tenantId,
-      action: 'payment_verified',
-      target: `payment:${reference}`,
-      result: 'SUCCESS',
-      outcome: 'SUCCESS',
-      details: `Platform payment NGN ${amountNGN.toLocaleString()} verified by ${provider.toUpperCase()}. Receipt ${receiptNumber}. Invoice ${invNum}.`,
-      ipAddress: '127.0.0.1'
-    });
-
-    const receipt: OfficialPlatformReceipt = {
-      receiptNumber,
-      invoiceNumber: invNum,
-      transactionReference: reference,
-      provider,
-      instanceId,
-      tenantId,
-      organizationName: orgName,
-      amountPaidNGN: amountNGN,
-      paymentChannel: provider.toUpperCase(),
-      paidAt: new Date().toISOString(),
-      qrVerificationCode,
-      authorizedSignatory: 'Chief Financial Officer & Bursar General, CurriculumServer',
-      gatewayResponse: gatewayResponseText || `Approved by ${provider.toUpperCase()} Switch. Ref: ${reference}`,
-      immutableLedgerSequence: auditEvent.sequenceNumber || 1,
-      immutableLedgerHash: auditEvent.entryHash || crypto.createHash('sha256').update(reference).digest('hex')
+    void reference;
+    void provider;
+    void amountNGN;
+    void instanceId;
+    void gatewayResponseText;
+    return {
+      success: false,
+      error: 'PAYMENT_VERIFICATION_UNAVAILABLE: No trusted provider verification adapter is configured.'
     };
-
-    this.platformTransactions[receiptNumber] = receipt;
-
-    // 4. If instanceId is provided, verify via customerOnboardingManager to trigger auto-provisioning
-    let provisioningTriggered = false;
-    if (instanceId) {
-      try {
-        const onboardVerify = customerOnboardingManager.verifyPayment(instanceId, reference, provider, amountNGN);
-        if (onboardVerify.success && onboardVerify.verified) {
-          customerOnboardingManager.executeProvisioning(instanceId).catch(err => {
-            console.error('Auto provisioning execution deferred error:', err);
-          });
-          provisioningTriggered = true;
-        }
-      } catch (err) {
-        console.warn('Customer onboarding verification hook notice:', err);
-      }
-    }
-
-    // 5. Store in idempotency store
-    const executionResult = {
-      success: true,
-      receipt,
-      invoice: matchedInvoice,
-      provisioningTriggered,
-      alreadyProcessed: false
-    };
-
-    this.idempotencyStore[reference] = {
-      timestamp: new Date().toISOString(),
-      reference,
-      provider,
-      result: executionResult
-    };
-
-    this.savePersistence();
-    return executionResult;
   }
 
   // --------------------------------------------------------------------------

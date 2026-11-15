@@ -24,6 +24,7 @@ export interface StandardApiErrorResponse {
   success: false;
   error: string;
   code: ApiErrorCode;
+  status?: number;
   correlationId: string;
   timestamp: string;
   details?: any;
