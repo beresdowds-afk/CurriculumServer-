@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { lazySingleton } from './lazySingleton';
 import { TamperEvidentAuditService } from '../src/services/tamperEvidentAuditService';
 
 export type PaymentGatewayProvider = 'paystack' | 'flutterwave' | 'opay' | 'interswitch' | 'bank_wire';
@@ -725,4 +726,4 @@ export class ServerPaymentEngine {
   }
 }
 
-export const serverPaymentEngine = ServerPaymentEngine.getInstance();
+export const serverPaymentEngine = lazySingleton(() => ServerPaymentEngine.getInstance());

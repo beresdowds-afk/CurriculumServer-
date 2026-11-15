@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { lazySingleton } from './lazySingleton';
 import { 
   InstanceResourceConsumption, 
   PlatformCostGovernanceSummary 
@@ -290,4 +291,4 @@ export class CostGovernanceManager {
   }
 }
 
-export const costGovernanceManager = CostGovernanceManager.getInstance();
+export const costGovernanceManager = lazySingleton(() => CostGovernanceManager.getInstance());

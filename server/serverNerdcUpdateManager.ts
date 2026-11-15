@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { lazySingleton } from './lazySingleton';
 import {
   CurriculumSourceRegistryEntry,
   PreservedSourceEvidence,
@@ -1154,4 +1155,4 @@ export class ServerNerdcUpdateManager {
   }
 }
 
-export const serverNerdcUpdateManager = ServerNerdcUpdateManager.getInstance();
+export const serverNerdcUpdateManager = lazySingleton(() => ServerNerdcUpdateManager.getInstance());

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { lazySingleton } from './lazySingleton';
 
 export interface StorageArtifactMetadata {
   storageLocation: string;
@@ -156,4 +157,4 @@ export class DurableDiskBackupStorageProvider implements IBackupStorageProvider 
   }
 }
 
-export const defaultBackupStorageProvider = new DurableDiskBackupStorageProvider();
+export const defaultBackupStorageProvider = lazySingleton(() => new DurableDiskBackupStorageProvider());

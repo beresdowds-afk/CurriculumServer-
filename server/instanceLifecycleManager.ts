@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { lazySingleton } from './lazySingleton';
 import { 
   GovernedInstanceRecord, 
   GovernedLifecycleState, 
@@ -855,4 +856,4 @@ export class InstanceLifecycleManager {
   }
 }
 
-export const instanceLifecycleManager = InstanceLifecycleManager.getInstance();
+export const instanceLifecycleManager = lazySingleton(() => InstanceLifecycleManager.getInstance());

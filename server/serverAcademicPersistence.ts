@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { lazySingleton } from './lazySingleton';
 import { Textbook, QuestionItem, AssessmentBlueprint, CurriculumCoverageManifest, GenerationJob, TextbookChapter, TextbookSection } from '../src/types/textbookAndQuestionBank';
 import { NERDC_SUBJECTS_DATABASE } from '../src/data/nerdcDatabase';
 import { ClassGrade } from '../src/types';
@@ -388,4 +389,4 @@ export class ServerAcademicPersistenceEngine {
   }
 }
 
-export const serverAcademicEngine = ServerAcademicPersistenceEngine.getInstance();
+export const serverAcademicEngine = lazySingleton(() => ServerAcademicPersistenceEngine.getInstance());

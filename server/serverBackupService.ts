@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { lazySingleton } from './lazySingleton';
 import crypto from 'crypto';
 import { TenantBackupSnapshot, TenantSchoolApp } from '../src/types';
 import { defaultBackupStorageProvider, IBackupStorageProvider } from './serverBackupStorage';
@@ -425,4 +426,4 @@ export class ServerBackupService {
   }
 }
 
-export const serverBackupService = new ServerBackupService();
+export const serverBackupService = lazySingleton(() => new ServerBackupService());
