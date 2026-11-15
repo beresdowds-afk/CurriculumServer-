@@ -394,15 +394,6 @@ for runtime_sa in "${RUNTIME_SAS[@]}"; do
     "$CI_MEMBER"
 done
 
-
-log "Reconcile CI actAs on application runtime identities"
-
-for runtime_sa in "${RUNTIME_SAS[@]}"; do
-  ensure_sa_binding "$runtime_sa" \
-    "roles/iam.serviceAccountUser" \
-    "serviceAccount:${CI_SA}"
-done
-
 log "Reconcile Artifact Registry"
 
 if gcloud artifacts repositories describe "$ARTIFACT_REPOSITORY" \
