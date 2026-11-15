@@ -1,6 +1,7 @@
-import { TenantSecurityContextManager } from './tenantSecurityContext';
-import { TamperEvidentAuditService } from './tamperEvidentAuditService';
-import { TenantSchoolApp } from '../types';
+import { TenantSecurityContextManager } from '../src/services/tenantSecurityContext';
+import { ServerTenantTokenService } from './tenantTokenService';
+import { TamperEvidentAuditService } from '../src/services/tamperEvidentAuditService';
+import { TenantSchoolApp } from '../src/types';
 
 export interface SecurityTestResult {
   testId: string;
@@ -13,6 +14,8 @@ export interface SecurityTestResult {
 
 export function runSecurityHardeningTestSuite(): SecurityTestResult[] {
   const results: SecurityTestResult[] = [];
+  const originalSecret = process.env.CONTROL_PLANE_SECRET;
+  if (!originalSecret) process.env.CONTROL_PLANE_SECRET = 'security-test-only-secret-32-characters';
 
   const mockTenantA = {
     id: 'tenant-alpha-01',
@@ -37,7 +40,7 @@ export function runSecurityHardeningTestSuite(): SecurityTestResult[] {
   // Test 1: Reject spoofed role headers
   try {
     const tokenWithoutSignature = 'eyJyb2xlIjoic3VwZXJfYWRtaW4ifQ==.fake_signature';
-    const verification = TenantSecurityContextManager.verifyTenantToken(tokenWithoutSignature);
+    const verification = ServerTenantTokenService.verifyTenantToken(tokenWithoutSignature);
     results.push({
       testId: 'SEC-TEST-01',
       testName: 'Spoofed Role Headers & Unsigned Tokens Rejection',
@@ -59,8 +62,8 @@ export function runSecurityHardeningTestSuite(): SecurityTestResult[] {
 
   // Test 2: Valid signed token verification (Positive flow)
   try {
-    const validToken = TenantSecurityContextManager.issueTenantToken(mockTenantA, 'super_admin', 3600);
-    const verification = TenantSecurityContextManager.verifyTenantToken(validToken);
+    const validToken = ServerTenantTokenService.issueTenantToken(mockTenantA, 'super_admin', 3600);
+    const verification = ServerTenantTokenService.verifyTenantToken(validToken);
     results.push({
       testId: 'SEC-TEST-02',
       testName: 'Valid Cryptographically Signed Super-Admin Token',
@@ -82,8 +85,8 @@ export function runSecurityHardeningTestSuite(): SecurityTestResult[] {
 
   // Test 3: Expired token rejection
   try {
-    const expiredToken = TenantSecurityContextManager.issueTenantToken(mockTenantA, 'tenant_admin', -60);
-    const verification = TenantSecurityContextManager.verifyTenantToken(expiredToken);
+    const expiredToken = ServerTenantTokenService.issueTenantToken(mockTenantA, 'tenant_admin', -60);
+    const verification = ServerTenantTokenService.verifyTenantToken(expiredToken);
     results.push({
       testId: 'SEC-TEST-03',
       testName: 'Expired Token Rejection',
@@ -105,8 +108,8 @@ export function runSecurityHardeningTestSuite(): SecurityTestResult[] {
 
   // Test 4: Cross-Tenant access boundary enforcement
   try {
-    const validTokenA = TenantSecurityContextManager.issueTenantToken(mockTenantA, 'tenant_admin', 3600);
-    const verification = TenantSecurityContextManager.verifyTenantToken(validTokenA);
+    const validTokenA = ServerTenantTokenService.issueTenantToken(mockTenantA, 'tenant_admin', 3600);
+    const verification = ServerTenantTokenService.verifyTenantToken(validTokenA);
     const contextA = verification.context!;
     const isBoundaryRespected = TenantSecurityContextManager.assertTenantBoundary(contextA, mockTenantB.id, '/api/v1/students');
 
@@ -164,5 +167,7 @@ export function runSecurityHardeningTestSuite(): SecurityTestResult[] {
     });
   }
 
+  if (originalSecret === undefined) delete process.env.CONTROL_PLANE_SECRET;
+  else process.env.CONTROL_PLANE_SECRET = originalSecret;
   return results;
 }

@@ -1,4 +1,5 @@
 import { TenantSecurityContextManager } from '../src/services/tenantSecurityContext';
+import { ServerTenantTokenService } from './tenantTokenService';
 import { serverSchoolManager } from './serverSchoolManager';
 import { StorageAndDatabaseManager } from './storageAndDatabaseManager';
 import { IIAPEngineService } from '../src/services/iiapEngineService';
@@ -32,6 +33,8 @@ export class UnifiedConnectivityTestSuite {
   static runAllTests(): UnifiedConnectivityTestReport {
     const results: TestResultItem[] = [];
     const startTime = Date.now();
+    const originalSecret = process.env.CONTROL_PLANE_SECRET;
+    if (!originalSecret) process.env.CONTROL_PLANE_SECRET = 'connectivity-test-secret-at-least-32-chars';
 
     // -------------------------------------------------------------
     // GROUP A: CURRICULUM SERVER CONNECTIVITY
@@ -43,8 +46,8 @@ export class UnifiedConnectivityTestSuite {
       schoolName: 'Curriculum Server Control Plane',
       status: 'active'
     };
-    const superAdminToken = TenantSecurityContextManager.issueTenantToken(adminTenant, 'super_admin', 3600, 'admin@curriculumserver.com.ng');
-    const superAdminVerify = TenantSecurityContextManager.verifyTenantToken(superAdminToken);
+    const superAdminToken = ServerTenantTokenService.issueTenantToken(adminTenant, 'super_admin', 3600, 'admin@curriculumserver.com.ng');
+    const superAdminVerify = ServerTenantTokenService.verifyTenantToken(superAdminToken);
     results.push({
       id: 'CS-01',
       category: 'Curriculum Server',
@@ -93,8 +96,8 @@ export class UnifiedConnectivityTestSuite {
     // -------------------------------------------------------------
     const t5Start = Date.now();
     const schoolA = tenants[0];
-    const schoolToken = TenantSecurityContextManager.issueTenantToken(schoolA, 'principal', 3600, schoolA.principalEmail);
-    const schoolVerify = TenantSecurityContextManager.verifyTenantToken(schoolToken);
+    const schoolToken = ServerTenantTokenService.issueTenantToken(schoolA, 'principal', 3600, schoolA.principalEmail);
+    const schoolVerify = ServerTenantTokenService.verifyTenantToken(schoolToken);
     results.push({
       id: 'CF-01',
       category: 'Curriculum Flow',
@@ -144,7 +147,7 @@ export class UnifiedConnectivityTestSuite {
     const t9Start = Date.now();
     // Tampered token test
     const tamperedToken = schoolToken + 'TAMPER';
-    const tamperedVerify = TenantSecurityContextManager.verifyTenantToken(tamperedToken);
+    const tamperedVerify = ServerTenantTokenService.verifyTenantToken(tamperedToken);
     results.push({
       id: 'ID-02',
       category: 'Shared Identity',
@@ -673,6 +676,8 @@ export class UnifiedConnectivityTestSuite {
       durationMs: Date.now() - t33Start
     });
 
+    if (originalSecret === undefined) delete process.env.CONTROL_PLANE_SECRET;
+    else process.env.CONTROL_PLANE_SECRET = originalSecret;
     const passCount = results.filter(r => r.passed).length;
     return {
       timestamp: new Date().toISOString(),

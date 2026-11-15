@@ -9,6 +9,14 @@ import {
   SystemHealthCheckResponse, 
   StandardApiErrorResponse 
 } from '../../packages/shared-types/src/apiContracts';
+import type {
+  SchoolAdministratorLoginResponse,
+  SchoolConfigurationResponse,
+  SchoolDetailsResponse,
+  SchoolMembershipResponse,
+  SchoolProvisioningConfirmation,
+  SchoolProvisioningRequest
+} from '../../packages/shared-types/src/apiContracts';
 import { TenantSchoolApp } from '../types';
 import { RegisteredApplication, RegisteredFeature } from '../types/applicationRegistry';
 import { InstanceArchitectureProfile, IIAPEAssessmentRequest } from '../types/iiapEngine';
@@ -202,7 +210,7 @@ class UnifiedApiClient {
           status: response.status,
           correlationId: data.correlationId || correlationId,
           timestamp: data.timestamp || new Date().toISOString(),
-          details: data.details
+          details: data.data || data.details
         };
         throw errorResponse;
       }
@@ -293,6 +301,77 @@ class UnifiedApiClient {
     if (res.data?.token) {
       this.setControlPlaneToken(res.data.token);
     }
+    return res.data;
+  }
+
+  public async provisionSchool(
+    payload: SchoolProvisioningRequest,
+    idempotencyKey: string
+  ): Promise<SchoolProvisioningConfirmation> {
+    const res = await this.request<{ success: boolean; data: SchoolProvisioningConfirmation }>(
+      '/api/v1/schools/provision',
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify(payload)
+      },
+      'control_plane'
+    );
+    return res.data;
+  }
+
+  public async activateSchoolAdministrator(token: string, password: string): Promise<{ tenantId: string; status: string }> {
+    const res = await this.request<{ success: boolean; data: { tenantId: string; status: string } }>(
+      '/api/v1/schools/activation',
+      { method: 'POST', body: JSON.stringify({ token, password }) },
+      'none'
+    );
+    return res.data;
+  }
+
+  public async loginSchoolAdministrator(
+    tenantId: string,
+    email: string,
+    password: string
+  ): Promise<SchoolAdministratorLoginResponse> {
+    const res = await this.request<{ success: boolean; data: SchoolAdministratorLoginResponse }>(
+      '/api/v1/schools/auth/login',
+      { method: 'POST', body: JSON.stringify({ tenantId, email, password }) },
+      'none'
+    );
+    this.setSchoolFlowToken(res.data.token, res.data.tenantId);
+    return res.data;
+  }
+
+  public async getMySchool(): Promise<SchoolDetailsResponse> {
+    const res = await this.request<{ success: boolean; data: SchoolDetailsResponse }>(
+      '/api/v1/schools/me', { method: 'GET' }, 'school_flow'
+    );
+    return res.data;
+  }
+
+  public async getMySchoolConfiguration(): Promise<SchoolConfigurationResponse> {
+    const res = await this.request<{ success: boolean; data: SchoolConfigurationResponse }>(
+      '/api/v1/schools/me/config', { method: 'GET' }, 'school_flow'
+    );
+    return res.data;
+  }
+
+  public async getMySchoolMembership(): Promise<SchoolMembershipResponse> {
+    const res = await this.request<{ success: boolean; data: SchoolMembershipResponse }>(
+      '/api/v1/schools/me/membership', { method: 'GET' }, 'school_flow'
+    );
+    return res.data;
+  }
+
+  public async updateMySchoolConfiguration(
+    configuration: SchoolConfigurationResponse
+  ): Promise<SchoolConfigurationResponse> {
+    const res = await this.request<{ success: boolean; data: SchoolConfigurationResponse }>(
+      '/api/v1/schools/me/config',
+      { method: 'PUT', body: JSON.stringify(configuration) },
+      'school_flow'
+    );
     return res.data;
   }
 
@@ -480,18 +559,27 @@ class UnifiedApiClient {
     password?: string, 
     roleHint?: string
   ): Promise<SchoolFlowAuthLoginResponse> {
-    const res = await this.request<{ success: boolean; data: SchoolFlowAuthLoginResponse }>(
-      '/api/v1/flow/auth/login',
-      {
-        method: 'POST',
-        body: JSON.stringify({ tenantId, usernameOrEmail, password, roleHint })
+    const session = await this.loginSchoolAdministrator(tenantId, usernameOrEmail, password || '');
+    return {
+      token: session.token,
+      tenantId: session.tenantId,
+      schoolName: session.schoolName,
+      user: {
+        id: session.user.id,
+        name: session.user.name,
+        email: session.user.email,
+        role: session.user.role,
+        title: 'School Administrator',
+        avatar: '',
+        permissions: ['school:read', 'school:configure']
       },
-      'none'
-    );
-    if (res.data?.token) {
-      this.setSchoolFlowToken(res.data.token, res.data.tenantId);
-    }
-    return res.data;
+      entitlements: {
+        features: ['curriculum_flow', 'tests_examinations'],
+        studentCapacity: 0,
+        planTier: 'school',
+        status: 'ACTIVE'
+      }
+    };
   }
 
   public async getSchoolProfile(tenantId?: string): Promise<SchoolInstanceProfileResponse> {

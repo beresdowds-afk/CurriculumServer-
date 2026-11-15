@@ -97,6 +97,103 @@ export interface ProvisionInstanceApiRequest {
   databaseStrategy?: 'shared_schema_isolated' | 'dedicated_database' | 'dedicated_customer_gcp_project';
 }
 
+export interface SchoolProvisioningRequest {
+  school: {
+    name: string;
+    displayName: string;
+    schoolType: string;
+    country: string;
+    stateProvince: string;
+    city: string;
+    physicalAddress: string;
+    officialContactEmail: string;
+    telephone: string;
+  };
+  configuration: {
+    timeZone: string;
+    currency: string;
+    language: string;
+    academicSession: string;
+    academicTermStructure: Array<{ name: string; startMonth?: number; endMonth?: number }>;
+    educationLevels: string[];
+    gradingConfiguration?: Record<string, unknown>;
+  };
+  administrator: {
+    fullName: string;
+    email: string;
+  };
+  applicationId: string;
+}
+
+export interface SchoolProvisioningConfirmation {
+  schoolId: string;
+  tenantId: string;
+  instanceId: string;
+  schoolName: string;
+  instanceStatus: 'provisioning' | 'active' | 'failed';
+  administratorActivationStatus: 'invitation_sent' | 'delivery_pending' | 'activated';
+  applicationId: string;
+  createdAt: string;
+}
+
+export interface SchoolAdministratorLoginResponse {
+  token: string;
+  tenantId: string;
+  schoolName: string;
+  expiresIn: number;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: 'tenant_admin';
+  };
+}
+
+export interface SchoolDetailsResponse {
+  schoolId: string;
+  tenantId: string;
+  slug: string;
+  name: string;
+  displayName: string;
+  schoolType: string;
+  country: string;
+  stateProvince: string;
+  city: string;
+  physicalAddress: string;
+  officialContactEmail: string;
+  telephone: string;
+  timeZone: string;
+  currency: string;
+  language: string;
+  instance: {
+    id: string;
+    applicationId: string;
+    applicationVersion: string | null;
+    status: string;
+    enabledFeatures: string[];
+    createdAt: string;
+    activatedAt: string | null;
+  };
+}
+
+export interface SchoolMembershipResponse {
+  tenantId: string;
+  userId: string;
+  email: string;
+  role: 'tenant_admin';
+  status: 'active';
+}
+
+export interface SchoolConfigurationResponse {
+  timeZone: string;
+  currency: string;
+  language: string;
+  academicSession: string;
+  academicTermStructure: Array<{ name: string; startMonth?: number; endMonth?: number }>;
+  educationLevels: string[];
+  gradingConfiguration: Record<string, unknown>;
+}
+
 // -------------------------------------------------------------
 // CURRICULUM FLOW (SCHOOL ERP) CONTRACTS
 // -------------------------------------------------------------

@@ -11,6 +11,7 @@ import { OPTIONAL_FEATURE_DEFINITIONS, INITIAL_SAAS_METRICS, INITIAL_SAAS_INVOIC
 import { globalBackupService } from '../services/backupRestoreService';
 import { globalAuditLogService } from '../services/auditLogService';
 import { TenantSecurityContextManager } from '../services/tenantSecurityContext';
+import { getSuperAdminAuthHeader } from '../services/controlPlaneToken';
 import { unifiedApiClient } from '../services/unifiedApiClient';
 import { EntitlementEnforcementService, DEFAULT_PLAN_POLICIES } from '../services/entitlementEnforcementService';
 import { TenantLifecycleManager } from '../services/tenantLifecycleManager';
@@ -47,7 +48,6 @@ import {
   Zap,
   RefreshCw,
   Trash2,
-  Copy,
   FileText,
   DollarSign,
   ShieldAlert,
@@ -140,7 +140,6 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
   const [restoreMessageType, setRestoreMessageType] = useState<'success' | 'error'>('success');
   const [featuresState, setFeaturesState] = useState<Record<OptionalFeatureKey, boolean>>(tenant.enabledFeatures);
   const [isSavingFeatures, setIsSavingFeatures] = useState(false);
-  const [copiedToken, setCopiedToken] = useState(false);
   const [ledgerIntegrity, setLedgerIntegrity] = useState<{ isValid: boolean; totalRecords: number; reason?: string } | null>(null);
   const [isVerifyingLedger, setIsVerifyingLedger] = useState(false);
   const [auditTestResults, setAuditTestResults] = useState<any[] | null>(null);
@@ -159,7 +158,6 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
 
   const tenantInvoices = invoicesList;
   const tenantAuditLogs = globalAuditLogService.getLogs({ tenantId: tenant.id });
-  const tenantToken = TenantSecurityContextManager.issueTenantToken(tenant);
   const usageTracker = EntitlementEnforcementService.getUsageTracker(tenant.id);
   const planPolicy = DEFAULT_PLAN_POLICIES[tenant.subscriptionTier] || DEFAULT_PLAN_POLICIES.Starter;
   const leaseToOwnInfo = TenantLifecycleManager.calculateLeaseToOwnStatus(tenant);
@@ -293,12 +291,6 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
     }));
   };
 
-  const handleCopyToken = () => {
-    navigator.clipboard.writeText(tenantToken);
-    setCopiedToken(true);
-    setTimeout(() => setCopiedToken(false), 3000);
-  };
-
   const handleStateChange = (targetState: 'active' | 'suspended' | 'archived') => {
     const updated = TenantLifecycleManager.transitionTenantState(
       tenant,
@@ -323,7 +315,7 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
     setExportingAuditFormat(format);
     try {
       const res = await fetch(`/api/v1/control-plane/audit-ledger/export?tenantId=${encodeURIComponent(tenant.id)}&format=${format}`, {
-        headers: { 'Authorization': `Bearer ${tenantToken}` }
+        headers: getSuperAdminAuthHeader()
       });
       if (res.ok) {
         const blob = await res.blob();
@@ -363,7 +355,7 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
     setIsRunningAuditTests(true);
     try {
       const res = await fetch('/api/v1/control-plane/audit-ledger/tests', {
-        headers: { 'Authorization': `Bearer ${tenantToken}` }
+        headers: getSuperAdminAuthHeader()
       });
       if (res.ok) {
         const data = await res.json();
@@ -698,29 +690,6 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
                   </p>
                 </div>
 
-                {/* Signed Tenant Security Token */}
-                <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-800/60 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-emerald-400 font-bold flex items-center gap-1.5 text-xs">
-                      <ShieldCheck className="w-3.5 h-3.5" />
-                      <span>Signed Security Token (HMAC-SHA256)</span>
-                    </span>
-                    <button
-                      onClick={handleCopyToken}
-                      className="px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
-                    >
-                      {copiedToken ? <Check className="w-3 h-3 text-emerald-200" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedToken ? 'Copied' : 'Copy JWT'}</span>
-                    </button>
-                  </div>
-                  <p className="font-mono text-[10px] text-emerald-300 break-all bg-slate-950/80 p-2 rounded border border-emerald-900/50 max-h-16 overflow-y-auto">
-                    {tenantToken}
-                  </p>
-                  <div className="flex items-center justify-between text-[10px] text-emerald-400/80">
-                    <span>Zero Data Leakage Boundary: Enforced</span>
-                    <span>Payload: {tenant.id} ({tenant.subscriptionTier})</span>
-                  </div>
-                </div>
               </div>
             </div>
           </div>

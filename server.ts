@@ -8,12 +8,13 @@ import { NERDC_SUBJECTS_DATABASE, NERDC_STATS } from './src/data/nerdcDatabase';
 import { ClassGrade } from './src/types';
 import { NerdcAnnualUpdateWorkerService } from './src/services/nerdcAnnualUpdateWorker';
 import { TenantSecurityContextManager } from './src/services/tenantSecurityContext';
+import { ServerTenantTokenService } from './server/tenantTokenService';
 import { EntitlementEnforcementService } from './src/services/entitlementEnforcementService';
 import { TamperEvidentAuditService } from './src/services/tamperEvidentAuditService';
 import { TenantLifecycleManager } from './src/services/tenantLifecycleManager';
 import { textbookDb } from './src/services/textbookQuestionBankService';
 import { textbookGenerationEngine } from './src/services/textbookGenerationEngine';
-import { runSecurityHardeningTestSuite } from './src/services/securityHardeningTests';
+import { runSecurityHardeningTestSuite } from './server/securityHardeningTests';
 import { serverBackupService } from './server/serverBackupService';
 import { defaultBackupStorageProvider } from './server/serverBackupStorage';
 import { runDisasterRecoveryTestSuite } from './server/serverDisasterRecoveryTests';
@@ -40,12 +41,27 @@ import { costGovernanceManager } from './server/costGovernanceManager';
 import { productionHardeningEngine } from './server/productionHardeningEngine';
 import { homepageEngineManager } from './server/homepageEngineManager';
 import { serverPaymentEngine } from './server/serverPaymentEngine';
-import { MOCK_USERS } from './src/data/curriculumFlowData';
- 
+import type { SchoolProvisioningConfirmation, SchoolProvisioningRequest } from './packages/shared-types/src/apiContracts';
 import { postgresRuntime, DatabaseFailure } from './server/db/postgres';
 import { ControlPlaneRepository } from './server/db/controlPlaneRepository';
 import { inspectPlatformReadiness } from './server/db/readiness';
- 
+import { SchoolProvisioningRepository } from './server/db/schoolProvisioningRepository';
+import { createVerifiedTenantPrincipal } from './server/db/tenantContext';
+import {
+  createInvitationToken,
+  hashInvitationToken,
+  hashPassword,
+  hashProvisioningRequest,
+  hasConfiguredPlatformAdminAccounts,
+  hasSecureControlPlaneSecret,
+  isValidEmail,
+  isPlatformAdminEmail,
+  normalizeEmail,
+  platformCredentialsAreValid,
+  sendSchoolAdministratorInvitation,
+  validateSchoolProvisioningRequest,
+  verifyPassword
+} from './server/schoolProvisioning';
 
 dotenv.config();
 
@@ -55,9 +71,19 @@ TamperEvidentAuditService.setServerBackend(serverAuditLedger);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const getCustomerOnboardingManager = () => CustomerOnboardingManager.getInstance();
+const getSchoolProvisioningRepository = () => new SchoolProvisioningRepository(postgresRuntime.getPool());
 
 app.use(express.json());
 
+function productionPersistenceUnavailable(req: Request, res: Response): void {
+  res.status(503).json({
+    success: false,
+    error: 'This operation is unavailable until its production persistence and authorization adapters are configured.',
+    code: 'PRODUCTION_PERSISTENCE_UNAVAILABLE',
+    correlationId: (req as any).correlationId,
+    timestamp: new Date().toISOString()
+  });
+}
 
 app.get('/healthz', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'alive', timestamp: new Date().toISOString() });
@@ -139,7 +165,7 @@ function requireSuperAdmin(req: Request, res: Response, next: express.NextFuncti
     return;
   }
 
-  const verification = TenantSecurityContextManager.verifyTenantToken(token);
+  const verification = ServerTenantTokenService.verifyTenantToken(token);
   if (!verification.valid || !verification.context || verification.context.role !== 'super_admin') {
     TenantSecurityContextManager.recordViolation({
       violationType: 'UNAUTHORIZED_FEATURE_ACCESS',
@@ -180,13 +206,6 @@ function requireSuperAdmin(req: Request, res: Response, next: express.NextFuncti
   return productionPersistenceUnavailable(req, res);
 }
 
-function hasSecureControlPlaneSecret(): boolean {
-  const controlPlaneSecret = (process.env.CONTROL_PLANE_SECRET || process.env.JWT_SECRET || process.env.APP_SECRET || '').trim();
-  return controlPlaneSecret.length >= 32 &&
-    controlPlaneSecret !== 'default_insecure_secret' &&
-    controlPlaneSecret !== 'dev_insecure_fallback_secret_curriculum_server_2026_secure';
-}
-
 function requireStorageTenantAuth(req: Request, res: Response, next: express.NextFunction) {
   if (!hasSecureControlPlaneSecret()) {
     res.status(503).json({
@@ -210,7 +229,7 @@ function requireStorageTenantAuth(req: Request, res: Response, next: express.Nex
     return;
   }
 
-  const verification = TenantSecurityContextManager.verifyTenantToken(token);
+  const verification = ServerTenantTokenService.verifyTenantToken(token);
   const context = verification.context;
   if (!verification.valid || !context || !context.tenantId ||
       !['super_admin', 'tenant_admin'].includes(context.role)) {
@@ -237,6 +256,88 @@ function requireTrustedDatabaseIdentity(req: Request, res: Response, next: expre
     return;
   }
   next();
+}
+
+function requireProvisioningPlatformAdmin(req: Request, res: Response, next: express.NextFunction) {
+  const authorization = req.headers.authorization || '';
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  if (!token || !hasSecureControlPlaneSecret()) {
+    res.status(401).json({
+      success: false,
+      error: 'Platform administrator authentication is required.',
+      code: 'UNAUTHENTICATED',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+  const verification = ServerTenantTokenService.verifyTenantToken(token);
+  const context = verification.context;
+  if (!verification.valid || !context || context.role !== 'super_admin' ||
+      !context.email || !isPlatformAdminEmail(context.email)) {
+    res.status(403).json({
+      success: false,
+      error: 'Platform administrator authorization is required.',
+      code: 'FORBIDDEN',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+  (req as any).tenantContext = context;
+  next();
+}
+
+async function requireSchoolAdministrator(req: Request, res: Response, next: express.NextFunction) {
+  const authorization = req.headers.authorization || '';
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  if (!token || !hasSecureControlPlaneSecret()) {
+    res.status(401).json({
+      success: false,
+      error: 'School administrator authentication is required.',
+      code: 'UNAUTHENTICATED',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+  const verification = ServerTenantTokenService.verifyTenantToken(token);
+  const context = verification.context;
+  if (!verification.valid || !context || context.role !== 'tenant_admin' ||
+      !context.userId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(context.tenantId)) {
+    res.status(403).json({
+      success: false,
+      error: 'School administrator authentication is invalid.',
+      code: 'FORBIDDEN',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+  try {
+    const principal = createVerifiedTenantPrincipal(verification);
+    if (!await getSchoolProvisioningRepository().getMembership(principal, context.userId)) {
+      res.status(403).json({
+        success: false,
+        error: 'School administrator membership is no longer active.',
+        code: 'FORBIDDEN',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    (req as any).tenantContext = context;
+    (req as any).trustedTenantContext = principal;
+    next();
+  } catch {
+    res.status(503).json({
+      success: false,
+      error: 'School administrator authorization is temporarily unavailable.',
+      code: 'DATABASE_UNAVAILABLE',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  }
 }
 
 function requireStorageSuperAdmin(req: Request, res: Response, next: express.NextFunction) {
@@ -286,7 +387,7 @@ function requireSchoolAuth(req: Request, res: Response, next: express.NextFuncti
     return;
   }
 
-  const verification = TenantSecurityContextManager.verifyTenantToken(token);
+  const verification = ServerTenantTokenService.verifyTenantToken(token);
   if (!verification.valid || !verification.context) {
     res.status(403).json({
       success: false,
@@ -356,7 +457,22 @@ app.use('/api/v1', (req: Request, res: Response, next: express.NextFunction) => 
     req.path === '/curriculum/subjects' ||
     /^\/curriculum\/subject\/[A-Za-z0-9_-]+$/.test(req.path)
   );
-  if (isLivenessOrReadiness || isPublicCurriculumReference) {
+  const isSchoolProvisioningApi = (
+    (req.method === 'POST' && [
+      '/server/auth/login',
+      '/schools/provision',
+      '/schools/activation',
+      '/schools/auth/login'
+    ].includes(req.path)) ||
+    (req.method === 'GET' && /^\/schools\/provision\/[0-9a-f-]{36}$/i.test(req.path)) ||
+    (req.method === 'GET' && [
+      '/schools/me',
+      '/schools/me/config',
+      '/schools/me/membership'
+    ].includes(req.path)) ||
+    (req.method === 'PUT' && req.path === '/schools/me/config')
+  );
+  if (isLivenessOrReadiness || isPublicCurriculumReference || isSchoolProvisioningApi) {
     next();
     return;
   }
@@ -1822,15 +1938,12 @@ app.get('/api/v1/tenants/:id/health', (req: Request, res: Response) => {
 // CONTROL PLANE SECURITY, QUOTA & LIFECYCLE MANAGEMENT ENDPOINTS
 // -------------------------------------------------------------
 
-// Security context token issuer
-app.post('/api/v1/control-plane/issue-token', (req: Request, res: Response) => {
-  const { tenant } = req.body;
-  if (!tenant || !tenant.id) {
-    res.status(400).json({ error: 'Missing tenant payload' });
-    return;
-  }
-  const token = TenantSecurityContextManager.issueTenantToken(tenant);
-  res.json({ token, tenantId: tenant.id, issuedAt: new Date().toISOString() });
+app.post('/api/v1/control-plane/issue-token', (_req: Request, res: Response) => {
+  res.status(410).json({
+    success: false,
+    error: 'Client-requested token issuance is retired. Authenticate through the authorized login endpoint.',
+    code: 'TOKEN_ISSUANCE_RETIRED'
+  });
 });
 
 // Control Plane Audit Ledger (Tamper-Evident SHA-256 HMAC Chain with persistent storage & filtering)
@@ -2612,7 +2725,7 @@ app.post('/api/v1/server/auth/verify', (req: Request, res: Response) => {
     res.status(400).json({ error: 'Missing token in request body', valid: false });
     return;
   }
-  const verification = TenantSecurityContextManager.verifyTenantToken(token);
+  const verification = ServerTenantTokenService.verifyTenantToken(token);
   res.json(verification);
 });
 
@@ -2660,10 +2773,62 @@ app.get('/api/v1/integration/test', (_req: Request, res: Response) => {
 
 // 2. Control Plane Authentication & Operations (/api/v1/server/*)
 app.post('/api/v1/server/auth/login', (req: Request, res: Response) => {
-  res.status(503).json({
-    success: false,
-    error: 'Control-plane authentication is unavailable until a trusted identity and MFA verifier are configured.',
-    code: 'CONTROL_PLANE_AUTH_UNAVAILABLE',
+  const { email, securityKey } = req.body || {};
+  const adminEmail = typeof email === 'string' ? normalizeEmail(email) : '';
+  if (!hasSecureControlPlaneSecret() ||
+      !hasConfiguredPlatformAdminAccounts()) {
+    res.status(503).json({
+      success: false,
+      error: 'Platform administrator authentication is not configured.',
+      code: 'AUTH_CONFIGURATION_UNAVAILABLE',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+  if (!platformCredentialsAreValid(adminEmail, typeof securityKey === 'string' ? securityKey : '')) {
+    res.status(401).json({
+      success: false,
+      error: 'Email or security key is invalid.',
+      code: 'INVALID_CREDENTIALS',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+  const adminTenant: any = {
+    id: 'platform-control-plane',
+    appId: 'curriculum-server-control-plane',
+    schoolName: 'Curriculum Server Control Plane',
+    subscriptionTier: 'platform',
+    status: 'active'
+  };
+  const token = ServerTenantTokenService.issueTenantToken(
+    adminTenant, 'super_admin', 3600, adminEmail
+  );
+  TamperEvidentAuditService.logPlatformAction({
+    actor: adminEmail,
+    actorRole: 'super_admin',
+    tenantId: 'platform_control_plane',
+    action: 'control_plane_login',
+    target: 'session:authenticated',
+    result: 'SUCCESS',
+    outcome: 'SUCCESS',
+    details: 'Platform administrator authenticated using the configured email allowlist and security key.',
+    ipAddress: req.ip || '127.0.0.1'
+  });
+  res.json({
+    success: true,
+    data: {
+      token,
+      expiresIn: 3600,
+      user: {
+        email: adminEmail,
+        role: 'super_admin',
+        name: process.env.PLATFORM_ADMIN_DISPLAY_NAME || 'Platform Administrator',
+        permissions: ['read', 'write', 'super_admin', 'control_plane', 'provision_instances']
+      }
+    },
     correlationId: (req as any).correlationId,
     timestamp: new Date().toISOString()
   });
@@ -2809,92 +2974,346 @@ app.get('/api/v1/server/audit-logs', requireSuperAdmin, (req: Request, res: Resp
   });
 });
 
-// 3. School Flow Authentication & Operations (/api/v1/flow/*)
-app.post('/api/v1/flow/auth/login', (req: Request, res: Response) => {
-  const { tenantId, usernameOrEmail, password, roleHint } = req.body;
-  if (!tenantId || !usernameOrEmail) {
+app.post('/api/v1/schools/provision', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  const correlationId = (req as any).correlationId;
+  const rawIdempotencyKey = req.headers['idempotency-key'];
+  const idempotencyKey = typeof rawIdempotencyKey === 'string' ? rawIdempotencyKey.trim() : '';
+  if (!/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
     res.status(400).json({
       success: false,
-      error: 'Missing required login fields: tenantId, usernameOrEmail',
+      error: 'A unique Idempotency-Key header between 8 and 128 characters is required.',
       code: 'VALIDATION_FAILED',
-      correlationId: (req as any).correlationId,
+      correlationId,
       timestamp: new Date().toISOString()
     });
     return;
   }
 
-  const tenant = serverSchoolManager.getTenantById(tenantId);
-  if (!tenant) {
-    res.status(404).json({
+  let request: SchoolProvisioningRequest;
+  try {
+    request = validateSchoolProvisioningRequest(req.body);
+  } catch (error) {
+    res.status(400).json({
       success: false,
-      error: `School instance '${tenantId}' does not exist or has not been provisioned`,
-      code: 'TENANT_NOT_FOUND',
-      correlationId: (req as any).correlationId,
+      error: error instanceof Error ? error.message : 'School registration is invalid.',
+      code: 'VALIDATION_FAILED',
+      correlationId,
       timestamp: new Date().toISOString()
     });
     return;
   }
 
-  if (tenant.status !== 'active') {
-    res.status(403).json({
+  try {
+    const invitation = createInvitationToken();
+    const initiatedBy = (req as any).tenantContext.email as string;
+    const repository = getSchoolProvisioningRepository();
+    const record = await repository.provision(
+      request,
+      initiatedBy,
+      idempotencyKey,
+      hashProvisioningRequest(request),
+      invitation.tokenHash,
+      new Date(Date.now() + 24 * 60 * 60 * 1000)
+    );
+
+    if (record.invitationId && record.invitationEmail &&
+        record.administratorActivationStatus !== 'activated') {
+      try {
+        await sendSchoolAdministratorInvitation(
+          record.invitationEmail,
+          request.administrator.fullName,
+          request.school.displayName,
+          invitation.token
+        );
+        await repository.recordInvitationDelivery(record.invitationId);
+        record.administratorActivationStatus = 'invitation_sent';
+      } catch {
+        await repository.recordInvitationDelivery(record.invitationId, 'email_delivery_failed');
+        record.administratorActivationStatus = 'delivery_pending';
+        const data: SchoolProvisioningConfirmation = {
+          schoolId: record.schoolId,
+          tenantId: record.tenantId,
+          instanceId: record.instanceId,
+          schoolName: record.schoolName,
+          instanceStatus: record.instanceStatus,
+          administratorActivationStatus: 'delivery_pending',
+          applicationId: record.applicationId,
+          createdAt: record.createdAt
+        };
+        res.status(503).json({
+          success: false,
+          error: 'School records are saved, but administrator invitation delivery is pending. Retry with the same Idempotency-Key.',
+          code: 'INVITATION_DELIVERY_PENDING',
+          data,
+          correlationId,
+          timestamp: new Date().toISOString()
+        });
+        return;
+      }
+    }
+
+    const data: SchoolProvisioningConfirmation = {
+      schoolId: record.schoolId,
+      tenantId: record.tenantId,
+      instanceId: record.instanceId,
+      schoolName: record.schoolName,
+      instanceStatus: record.instanceStatus,
+      administratorActivationStatus: record.administratorActivationStatus,
+      applicationId: record.applicationId,
+      createdAt: record.createdAt
+    };
+    res.status(record.idempotentReplay ? 200 : 201).json({
+      success: true,
+      data,
+      correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    const conflict = message === 'IDEMPOTENCY_CONFLICT';
+    const duplicate = (error as { code?: string })?.code === '23505';
+    res.status(conflict || duplicate ? 409 : 503).json({
       success: false,
-      error: `School instance '${tenant.schoolName}' is currently ${tenant.status.toUpperCase()} due to administrative or billing hold.`,
-      code: 'TENANT_SUSPENDED',
+      error: conflict ? 'Idempotency key was already used for a different registration.' :
+        duplicate ? 'A school with this name and official email is already registered.' :
+          'School provisioning is temporarily unavailable.',
+      code: conflict ? 'IDEMPOTENCY_CONFLICT' : duplicate ? 'DUPLICATE_SCHOOL' : 'DATABASE_UNAVAILABLE',
+      correlationId,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+app.get('/api/v1/schools/provision/:instanceId', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const record = await getSchoolProvisioningRepository().getProvisioningStatus(req.params.instanceId);
+    if (!record) {
+      res.status(404).json({ success: false, error: 'School instance was not found.', code: 'RESOURCE_NOT_FOUND' });
+      return;
+    }
+    const data: SchoolProvisioningConfirmation = {
+      schoolId: record.schoolId,
+      tenantId: record.tenantId,
+      instanceId: record.instanceId,
+      schoolName: record.schoolName,
+      instanceStatus: record.instanceStatus,
+      administratorActivationStatus: record.administratorActivationStatus,
+      applicationId: record.applicationId,
+      createdAt: record.createdAt
+    };
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch {
+    res.status(503).json({ success: false, error: 'School provisioning status is unavailable.', code: 'DATABASE_UNAVAILABLE' });
+  }
+});
+
+app.post('/api/v1/schools/activation', async (req: Request, res: Response) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!/^[A-Za-z0-9_-]{40,60}$/.test(token) || password.length < 12 || password.length > 256) {
+    res.status(400).json({ success: false, error: 'A valid invitation token and password are required.', code: 'VALIDATION_FAILED' });
+    return;
+  }
+  try {
+    const repository = getSchoolProvisioningRepository();
+    const tokenHash = hashInvitationToken(token);
+    const invitation = await repository.getInvitation(tokenHash);
+    if (!invitation || invitation.invitation_status !== 'pending' ||
+        invitation.expires_at.getTime() <= Date.now()) {
+      res.status(400).json({ success: false, error: 'Invitation is invalid or expired.', code: 'INVITATION_INVALID' });
+      return;
+    }
+    let passwordHash: string;
+    if (invitation.existing_password_hash) {
+      if (!await verifyPassword(password, invitation.existing_password_hash)) {
+        res.status(401).json({ success: false, error: 'Invitation or account credentials are invalid.', code: 'INVALID_CREDENTIALS' });
+        return;
+      }
+      passwordHash = invitation.existing_password_hash;
+    } else {
+      passwordHash = await hashPassword(password);
+    }
+    const activated = await repository.activateAdministrator(
+      invitation.id, tokenHash, passwordHash, invitation.existing_password_hash
+    );
+    res.json({
+      success: true,
+      data: { tenantId: activated.tenantId, status: 'active', administratorActivationStatus: 'activated' },
       correlationId: (req as any).correlationId,
       timestamp: new Date().toISOString()
     });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    const invalid = message === 'INVITATION_INVALID_OR_EXPIRED' ||
+      message === 'ADMIN_MEMBERSHIP_ALREADY_EXISTS' ||
+      message === 'ACCOUNT_CREDENTIALS_CHANGED';
+    res.status(invalid ? 400 : 503).json({
+      success: false,
+      error: invalid ? 'Invitation is invalid, expired, or already used.' :
+        'Administrator activation is temporarily unavailable.',
+      code: invalid ? 'INVITATION_INVALID' : 'DATABASE_UNAVAILABLE',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+app.post('/api/v1/schools/auth/login', async (req: Request, res: Response) => {
+  const tenantId = typeof req.body?.tenantId === 'string' ? req.body.tenantId : '';
+  const email = typeof req.body?.email === 'string' ? normalizeEmail(req.body.email) : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantId) ||
+      !isValidEmail(email) || !password) {
+    res.status(400).json({ success: false, error: 'Valid school, email, and password are required.', code: 'VALIDATION_FAILED' });
     return;
   }
+  try {
+    const account = await getSchoolProvisioningRepository().authenticateAdministrator(tenantId, email);
+    if (!account || account.role !== 'tenant_admin' ||
+        !await verifyPassword(password, account.passwordHash)) {
+      res.status(401).json({ success: false, error: 'School, email, or password is invalid.', code: 'INVALID_CREDENTIALS' });
+      return;
+    }
+    const token = ServerTenantTokenService.issueTenantToken({
+      id: account.tenantId,
+      appId: 'curriculum-school-application',
+      schoolName: account.schoolName,
+      subscriptionTier: 'standard',
+      status: 'active'
+    } as any, 'tenant_admin', 12 * 60 * 60, account.email, account.userId);
+    res.json({
+      success: true,
+      data: {
+        token,
+        tenantId: account.tenantId,
+        schoolName: account.schoolName,
+        user: { id: account.userId, name: account.fullName, email: account.email, role: account.role },
+        expiresIn: 12 * 60 * 60
+      },
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch {
+    res.status(503).json({ success: false, error: 'School authentication is temporarily unavailable.', code: 'DATABASE_UNAVAILABLE' });
+  }
+});
 
-  // Find user matching username or role hint
-  const user = MOCK_USERS.find(u => 
-    u.id === usernameOrEmail || 
-    (u.email && u.email.toLowerCase() === usernameOrEmail.toLowerCase()) ||
-    (roleHint && u.role === roleHint)
-  ) || MOCK_USERS[0];
+app.get('/api/v1/schools/me', requireSchoolAdministrator, async (req: Request, res: Response) => {
+  try {
+    const principal = (req as any).trustedTenantContext;
+    const school = await getSchoolProvisioningRepository().getSchool(principal);
+    if (!school) {
+      res.status(404).json({ success: false, error: 'School instance was not found.', code: 'RESOURCE_NOT_FOUND' });
+      return;
+    }
+    const data = {
+      schoolId: school.id,
+      tenantId: school.tenant_id,
+      slug: school.school_slug,
+      name: school.name,
+      displayName: school.display_name,
+      schoolType: school.school_type,
+      country: school.country,
+      stateProvince: school.state_province,
+      city: school.city,
+      physicalAddress: school.physical_address,
+      officialContactEmail: school.official_contact_email,
+      telephone: school.telephone,
+      timeZone: school.time_zone,
+      currency: school.currency,
+      language: school.default_language,
+      instance: {
+        id: school.instance_id,
+        applicationId: school.application_id,
+        applicationVersion: school.application_version,
+        status: school.instance_status,
+        enabledFeatures: school.enabled_features,
+        createdAt: school.created_at.toISOString(),
+        activatedAt: school.activated_at?.toISOString() || null
+      }
+    };
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch {
+    res.status(503).json({ success: false, error: 'School details are unavailable.', code: 'DATABASE_UNAVAILABLE' });
+  }
+});
 
-  const token = TenantSecurityContextManager.issueTenantToken(
-    tenant,
-    user.role,
-    43200, // 12 hours
-    user.email
-  );
+app.get('/api/v1/schools/me/config', requireSchoolAdministrator, async (req: Request, res: Response) => {
+  try {
+    const configuration = await getSchoolProvisioningRepository().getConfiguration(
+      (req as any).trustedTenantContext
+    );
+    res.json({ success: true, data: configuration, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch {
+    res.status(503).json({ success: false, error: 'School configuration is unavailable.', code: 'DATABASE_UNAVAILABLE' });
+  }
+});
 
-  TamperEvidentAuditService.logPlatformAction({
-    actor: user.name,
-    actorRole: user.role,
-    tenantId: tenant.id,
-    tenantSchoolName: tenant.schoolName,
-    action: 'school_user_login',
-    target: `user:${user.id}`,
-    result: 'SUCCESS',
-    outcome: 'SUCCESS',
-    details: `School user authenticated into ${tenant.schoolName} as ${user.role}.`,
-    ipAddress: req.ip || '127.0.0.1'
-  });
-
+app.get('/api/v1/schools/me/membership', requireSchoolAdministrator, (req: Request, res: Response) => {
+  const context = (req as any).tenantContext;
+  const principal = (req as any).trustedTenantContext;
   res.json({
     success: true,
     data: {
-      token,
-      tenantId: tenant.id,
-      schoolName: tenant.schoolName,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email || 'user@school.sch.ng',
-        role: user.role,
-        title: user.title,
-        avatar: user.avatar,
-        permissions: ['view_curriculum', 'grade_assessments', 'log_attendance']
-      },
-      entitlements: {
-        features: Object.entries(tenant.enabledFeatures || {}).filter(([_, v]) => v).map(([k]) => k),
-        studentCapacity: tenant.studentCapacity,
-        planTier: tenant.subscriptionTier,
-        status: tenant.status === 'active' ? 'ACTIVE' : 'SUSPENDED'
-      }
+      tenantId: principal.tenantId,
+      userId: context.userId,
+      email: context.email,
+      role: 'tenant_admin',
+      status: 'active'
     },
+    correlationId: (req as any).correlationId,
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.put('/api/v1/schools/me/config', requireSchoolAdministrator, async (req: Request, res: Response) => {
+  try {
+    const repository = getSchoolProvisioningRepository();
+    const principal = (req as any).trustedTenantContext;
+    const school = await repository.getSchool(principal);
+    if (!school) {
+      res.status(404).json({ success: false, error: 'School instance was not found.', code: 'RESOURCE_NOT_FOUND' });
+      return;
+    }
+    const validationRequest = validateSchoolProvisioningRequest({
+      school: {
+        name: school.name,
+        displayName: school.display_name,
+        schoolType: school.school_type,
+        country: school.country,
+        stateProvince: school.state_province,
+        city: school.city,
+        physicalAddress: school.physical_address,
+        officialContactEmail: school.official_contact_email,
+        telephone: school.telephone
+      },
+      configuration: req.body,
+      administrator: { fullName: 'School administrator', email: (req as any).tenantContext.email },
+      applicationId: school.application_id
+    });
+    await repository.updateConfiguration(principal, validationRequest.configuration);
+    res.json({ success: true, data: validationRequest.configuration, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    const databaseFailure = error instanceof DatabaseFailure ||
+      /^[0-9A-Z]{5}$/.test((error as { code?: string })?.code || '');
+    res.status(databaseFailure ? 503 : 400).json({
+      success: false,
+      error: databaseFailure ? 'School configuration is temporarily unavailable.' :
+        message || 'School configuration update failed.',
+      code: databaseFailure ? 'DATABASE_UNAVAILABLE' : 'VALIDATION_FAILED',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// 3. School Flow Authentication & Operations (/api/v1/flow/*)
+app.post('/api/v1/flow/auth/login', (req: Request, res: Response) => {
+  res.status(410).json({
+    success: false,
+    error: 'Demo school login is retired. Use the PostgreSQL-backed school administrator login.',
+    code: 'SCHOOL_LOGIN_RETIRED',
     correlationId: (req as any).correlationId,
     timestamp: new Date().toISOString()
   });
@@ -3461,7 +3880,7 @@ app.post('/api/v1/server/onboarding/requests/:id/activate', requireSuperAdmin, (
 // Public Activation Link Resolver
 app.get('/api/v1/server/onboarding/activate/:token', (req: Request, res: Response) => {
   const token = req.params.token;
-  const verification = TenantSecurityContextManager.verifyTenantToken(token);
+  const verification = ServerTenantTokenService.verifyTenantToken(token);
   if (!verification.valid || !verification.context) {
     res.status(403).json({ success: false, error: 'Activation token is invalid or has expired.' });
     return;
