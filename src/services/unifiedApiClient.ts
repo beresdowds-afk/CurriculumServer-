@@ -12,7 +12,15 @@ import {
 import { TenantSchoolApp } from '../types';
 import { RegisteredApplication, RegisteredFeature } from '../types/applicationRegistry';
 import { InstanceArchitectureProfile, IIAPEAssessmentRequest } from '../types/iiapEngine';
-import { DatabaseInstanceRecord, StorageConfigRecord } from '../types/storageAndDatabase';
+import {
+  DatabaseInstanceRecord,
+  DatabaseIsolationStrategy,
+  StorageConfigRecord,
+  StorageMigrationJob,
+  StoragePlacementRule,
+  StorageProviderType,
+  StorageStrategyType
+} from '../types/storageAndDatabase';
 import { ProvisioningJob } from '../types/gcpProvisioning';
 
 export interface AuthenticatedSessionClaims {
@@ -375,21 +383,82 @@ class UnifiedApiClient {
     return res.data;
   }
 
-  public async getDatabases(): Promise<DatabaseInstanceRecord[]> {
-    const res = await this.request<{ status: string; databases: DatabaseInstanceRecord[] }>(
+  public async getDatabases(): Promise<{ databases: DatabaseInstanceRecord[]; availability: string }> {
+    const res = await this.request<{ status: string; databases: DatabaseInstanceRecord[]; availability?: string }>(
       '/api/v1/server/databases',
       { method: 'GET' },
       'control_plane'
     );
-    return res.databases;
+    return { databases: res.databases, availability: res.availability || 'unavailable' };
   }
 
-  public async getStorageConfigs(): Promise<{ storageConfigs: StorageConfigRecord[]; migrationJobs: any[] }> {
-    return this.request<{ status: string; storageConfigs: StorageConfigRecord[]; migrationJobs: any[] }>(
+  public async getStorageConfigs(): Promise<{
+    storageConfigs: StorageConfigRecord[];
+    migrationJobs: StorageMigrationJob[];
+    availability: string;
+  }> {
+    const res = await this.request<{
+      status: string;
+      storageConfigs: StorageConfigRecord[];
+      migrationJobs: StorageMigrationJob[];
+      availability?: string;
+    }>(
       '/api/v1/server/storage',
       { method: 'GET' },
       'control_plane'
     );
+    return { ...res, availability: res.availability || 'unavailable' };
+  }
+
+  public async configureDatabaseIsolation(input: {
+    instanceId: string;
+    tenantId: string;
+    schoolName: string;
+    strategy: DatabaseIsolationStrategy;
+  }): Promise<unknown> {
+    return this.requestAuthenticatedControlPlane('/api/v1/server/databases/configure', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  public async configureCustomerStorage(input: {
+    instanceId: string;
+    tenantId: string;
+    schoolName: string;
+    strategy: StorageStrategyType;
+    primaryProvider: StorageProviderType;
+    secondaryProvider?: StorageProviderType;
+    quotaGb: number;
+    retentionDays: number;
+    oauthConnectedEmail?: string;
+    placementRules?: StoragePlacementRule[];
+  }): Promise<unknown> {
+    return this.requestAuthenticatedControlPlane('/api/v1/server/storage/configure', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  public async startStorageMigration(input: {
+    instanceId: string;
+    tenantId: string;
+    sourceProvider: StorageProviderType;
+    targetProvider: StorageProviderType;
+    totalFiles: number;
+  }): Promise<unknown> {
+    return this.requestAuthenticatedControlPlane('/api/v1/server/storage/migrate', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  public async getStorageVerification(): Promise<{
+    timestamp: string;
+    allTestsPassed: boolean;
+    results: { testName: string; passed: boolean; message: string }[];
+  }> {
+    return this.requestAuthenticatedControlPlane('/api/v1/server/storage/verify', { method: 'GET' });
   }
 
   public async getAuditLogs(): Promise<any[]> {

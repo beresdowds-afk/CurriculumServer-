@@ -63,9 +63,7 @@ export class TenantLifecycleManager {
     return updatedTenant;
   }
 
-  /**
-   * Creates a genuine, recoverable AES-256-GCM encrypted backup snapshot of a tenant's database and storage namespace
-   */
+  /** Backup creation fails closed until a provider is configured. */
   static createBackupSnapshot(
     tenant: TenantSchoolApp,
     isAutomated: boolean = false,
@@ -74,16 +72,12 @@ export class TenantLifecycleManager {
     return globalBackupService.createManualSnapshot(tenant.id, tenant.schoolName);
   }
 
-  /**
-   * Retrieves all authentic backup snapshots for a given tenant from durable metadata store
-   */
+  /** Retrieves retained backup records; locally seeded records are unverified fixtures. */
   static getSnapshotsForTenant(tenantId: string): TenantBackupSnapshot[] {
     return globalBackupService.getSnapshots(tenantId);
   }
 
-  /**
-   * Executes restoration of a tenant database and storage namespace from a verified backup snapshot
-   */
+  /** Restore requests fail closed unless a provider-backed restore is available. */
   static restoreFromSnapshot(
     tenant: TenantSchoolApp,
     snapshotId: string,

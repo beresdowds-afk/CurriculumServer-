@@ -180,27 +180,34 @@ export class UnifiedConnectivityTestSuite {
     const t11Start = Date.now();
     const dbs = StorageAndDatabaseManager.getDatabaseRecords();
     const stgs = StorageAndDatabaseManager.getStorageConfigs();
-    const postgresVerified = dbs.every(d => d.engine.includes('PostgreSQL'));
+    const postgresVerified = dbs.length > 0 && dbs.every(d =>
+      d.evidenceStatus === 'provider_verified' && d.healthStatus === 'healthy'
+    );
     const zeroFirebase = true; // explicitly verified
     results.push({
       id: 'DB-01',
       category: 'Deployment & Database',
       name: 'PostgreSQL Relational Authority & Zero Firebase Footprint',
-      passed: postgresVerified && zeroFirebase && dbs.length >= 3,
-      message: `All ${dbs.length} database shards operate on PostgreSQL 16 LTS with zero Firebase dependencies.`,
+      passed: postgresVerified && zeroFirebase,
+      message: postgresVerified
+        ? `Provider evidence confirms ${dbs.length} database records and no Firebase dependency.`
+        : 'Database provider state is unavailable; retained records are unverified fixtures.',
       durationMs: Date.now() - t11Start
     });
 
     const t12Start = Date.now();
-    const hasPrivateDrive = stgs.some(s => s.strategy === 'private_drive');
-    const hasPlatformGcs = stgs.some(s => s.strategy === 'platform_storage');
-    const hasHybrid = stgs.some(s => s.strategy === 'hybrid');
+    const verifiedStorage = stgs.filter(s => s.evidenceStatus === 'provider_verified' && s.connectionHealth === 'healthy');
+    const hasPrivateDrive = verifiedStorage.some(s => s.strategy === 'private_drive');
+    const hasPlatformGcs = verifiedStorage.some(s => s.strategy === 'platform_storage');
+    const hasHybrid = verifiedStorage.some(s => s.strategy === 'hybrid');
     results.push({
       id: 'DB-02',
       category: 'Deployment & Database',
       name: 'Provider-Independent Customer Storage Portability',
       passed: hasPrivateDrive && hasPlatformGcs && hasHybrid,
-      message: 'Customer-selectable storage operational across Private Drive (Google Drive/OneDrive), Platform GCS, and Hybrid rules.',
+      message: hasPrivateDrive && hasPlatformGcs && hasHybrid
+        ? 'Provider evidence confirms Private Drive, Platform GCS, and Hybrid storage.'
+        : 'Storage provider state is unavailable; retained configuration records are unverified fixtures.',
       durationMs: Date.now() - t12Start
     });
 

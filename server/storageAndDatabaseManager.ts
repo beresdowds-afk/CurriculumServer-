@@ -8,68 +8,121 @@ import {
   StorageProviderType, 
   StorageStrategyType 
 } from '../src/types/storageAndDatabase';
-import { TamperEvidentAuditService } from '../src/services/tamperEvidentAuditService';
 
-// Encrypted token vault using AES-256-GCM with lazy initialization and browser-safe fallback
-class ServerSecretVault {
-  private static _masterKey: any = null;
+export interface ProviderUnavailableResult {
+  success: false;
+  status: 'unavailable';
+  code: 'PROVIDER_UNAVAILABLE';
+  message: string;
+}
 
-  private static getMasterKey() {
-    if (!this._masterKey) {
-      try {
-        const hashFn = (crypto as any)?.createHash;
-        if (typeof hashFn === 'function') {
-          const secret = (typeof process !== 'undefined' && process.env?.ENCRYPTION_SECRET) || 'curriculum-server-sovereign-vault-key-2026';
-          this._masterKey = hashFn('sha256').update(secret).digest();
-        }
-      } catch {
-        // Fallback for browser or non-Node environments where crypto module is externalized
-      }
-      if (!this._masterKey) {
-        this._masterKey = Buffer.from('curriculum-server-sovereign-vault-key-2026-fallback-sha256-pad');
-      }
+export class ServerSecretVault {
+  private static readonly version = 'v1';
+  private static readonly keyIdPattern = /^[A-Za-z0-9_-]{1,64}$/;
+
+  private static getKeyConfiguration(): { activeKeyId: string; keys: Map<string, Buffer> } {
+    const serializedKeys = process.env.STORAGE_VAULT_KEYS;
+    const activeKeyId = process.env.STORAGE_VAULT_ACTIVE_KEY_ID;
+    if (!serializedKeys || !activeKeyId || !this.keyIdPattern.test(activeKeyId)) {
+      throw new Error('Storage credential vault key configuration is missing or invalid');
     }
-    return this._masterKey;
+
+    let parsedKeys: unknown;
+    try {
+      parsedKeys = JSON.parse(serializedKeys);
+    } catch {
+      throw new Error('Storage credential vault key configuration is missing or invalid');
+    }
+    if (!parsedKeys || typeof parsedKeys !== 'object' || Array.isArray(parsedKeys)) {
+      throw new Error('Storage credential vault key configuration is missing or invalid');
+    }
+
+    const keys = new Map<string, Buffer>();
+    for (const [keyId, encodedKey] of Object.entries(parsedKeys)) {
+      if (!this.keyIdPattern.test(keyId) || typeof encodedKey !== 'string' ||
+          !/^(?:[A-Za-z0-9+/]{4}){10}[A-Za-z0-9+/]{3}=$/.test(encodedKey)) {
+        throw new Error('Storage credential vault key configuration is invalid');
+      }
+      const key = Buffer.from(encodedKey, 'base64');
+      if (key.length !== 32 || key.toString('base64') !== encodedKey) {
+        throw new Error('Storage credential vault key configuration is invalid');
+      }
+      keys.set(keyId, key);
+    }
+    if (!keys.has(activeKeyId)) {
+      throw new Error('Active storage credential vault key is not configured');
+    }
+    return { activeKeyId, keys };
+  }
+
+  private static decodeEnvelopePart(value: string): Buffer {
+    if (!/^[A-Za-z0-9_-]*$/.test(value)) {
+      throw new Error('Credential envelope is malformed');
+    }
+    const decoded = Buffer.from(value, 'base64url');
+    if (decoded.toString('base64url') !== value) {
+      throw new Error('Credential envelope is malformed');
+    }
+    return decoded;
   }
 
   static encrypt(plaintext: string): string {
-    try {
-      const randFn = (crypto as any)?.randomBytes;
-      const cipherFn = (crypto as any)?.createCipheriv;
-      if (typeof randFn === 'function' && typeof cipherFn === 'function') {
-        const iv = randFn(12);
-        const cipher = cipherFn('aes-256-gcm', this.getMasterKey(), iv);
-        let encrypted = cipher.update(plaintext, 'utf8', 'hex');
-        encrypted += cipher.final('hex');
-        const authTag = cipher.getAuthTag().toString('hex');
-        return `${iv.toString('hex')}:${authTag}:${encrypted}`;
-      }
-    } catch {
-      // Fallback
-    }
-    return `enc_${encodeURIComponent(plaintext)}`;
+    const { activeKeyId, keys } = this.getKeyConfiguration();
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', keys.get(activeKeyId)!, iv);
+    cipher.setAAD(Buffer.from(`${this.version}:${activeKeyId}`, 'utf8'));
+    const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    return [
+      this.version,
+      activeKeyId,
+      iv.toString('base64url'),
+      authTag.toString('base64url'),
+      encrypted.toString('base64url')
+    ].join('.');
   }
 
-  static decrypt(ciphertext: string): string {
-    if (ciphertext.startsWith('enc_')) {
-      return decodeURIComponent(ciphertext.slice(4));
+  static decrypt(envelope: string): string {
+    if (typeof envelope !== 'string') {
+      throw new Error('Credential envelope is malformed');
     }
+    const parts = envelope.split('.');
+    if (parts.length !== 5) {
+      throw new Error('Credential envelope is malformed');
+    }
+    const [version, keyId, encodedIv, encodedTag, encodedCiphertext] = parts;
+    if (version !== this.version) {
+      throw new Error('Unsupported credential envelope version');
+    }
+    if (!this.keyIdPattern.test(keyId)) {
+      throw new Error('Credential envelope is malformed');
+    }
+
+    const { keys } = this.getKeyConfiguration();
+    const key = keys.get(keyId);
+    if (!key) {
+      throw new Error('Credential envelope uses an unknown key');
+    }
+    const iv = this.decodeEnvelopePart(encodedIv);
+    const authTag = this.decodeEnvelopePart(encodedTag);
+    const ciphertext = this.decodeEnvelopePart(encodedCiphertext);
+    if (iv.length !== 12 || authTag.length !== 16) {
+      throw new Error('Credential envelope is malformed');
+    }
+
     try {
-      const parts = ciphertext.split(':');
-      if (parts.length !== 3) return ciphertext;
-      const [ivHex, authTagHex, encryptedHex] = parts;
-      const decipherFn = (crypto as any)?.createDecipheriv;
-      if (typeof decipherFn === 'function') {
-        const decipher = decipherFn('aes-256-gcm', this.getMasterKey(), Buffer.from(ivHex, 'hex'));
-        decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
-        let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
-        decrypted += decipher.final('utf8');
-        return decrypted;
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+      decipher.setAAD(Buffer.from(`${version}:${keyId}`, 'utf8'));
+      decipher.setAuthTag(authTag);
+      const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+      const decoded = plaintext.toString('utf8');
+      if (!Buffer.from(decoded, 'utf8').equals(plaintext)) {
+        throw new Error('Credential decryption failed');
       }
+      return decoded;
     } catch {
-      // Fallback
+      throw new Error('Credential decryption failed');
     }
-    return ciphertext;
   }
 }
 
@@ -94,11 +147,13 @@ export class StorageAndDatabaseManager {
       activeConnections: 14,
       storageUsageMb: 4280,
       storageLimitMb: 50000,
-      healthStatus: 'healthy',
+      healthStatus: 'unknown',
+      reportedHealthStatus: 'healthy',
       backupSchedule: 'Daily 02:00 UTC (Encrypted GCS)',
       lastBackupTimestamp: new Date(Date.now() - 3600000 * 6).toISOString(),
       verifiedAt: new Date().toISOString(),
-      createdAt: '2025-02-10T08:00:00Z'
+      createdAt: '2025-02-10T08:00:00Z',
+      evidenceStatus: 'unverified_fixture'
     },
     {
       databaseId: 'db_greenwood_002',
@@ -119,11 +174,13 @@ export class StorageAndDatabaseManager {
       activeConnections: 6,
       storageUsageMb: 1420,
       storageLimitMb: 25000,
-      healthStatus: 'healthy',
+      healthStatus: 'unknown',
+      reportedHealthStatus: 'healthy',
       backupSchedule: 'Daily 03:00 UTC (Encrypted GCS)',
       lastBackupTimestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
       verifiedAt: new Date().toISOString(),
-      createdAt: '2025-03-01T10:00:00Z'
+      createdAt: '2025-03-01T10:00:00Z',
+      evidenceStatus: 'unverified_fixture'
     },
     {
       databaseId: 'db_crown_sovereign_003',
@@ -144,11 +201,13 @@ export class StorageAndDatabaseManager {
       activeConnections: 28,
       storageUsageMb: 12450,
       storageLimitMb: 100000,
-      healthStatus: 'healthy',
+      healthStatus: 'unknown',
+      reportedHealthStatus: 'healthy',
       backupSchedule: 'Hourly Incremental + Daily Full',
       lastBackupTimestamp: new Date(Date.now() - 3600000).toISOString(),
       verifiedAt: new Date().toISOString(),
-      createdAt: '2025-01-15T09:00:00Z'
+      createdAt: '2025-01-15T09:00:00Z',
+      evidenceStatus: 'unverified_fixture'
     }
   ];
 
@@ -163,19 +222,16 @@ export class StorageAndDatabaseManager {
       secondaryProvider: 'google_cloud_storage',
       resourceIdentifier: '1aB2c3D4e5F6g7H8i9J0kLmNoP',
       resourceName: 'Apex Academic Sovereign Archives (Google Drive)',
-      accessConfigRef: ServerSecretVault.encrypt(JSON.stringify({
-        tokenType: 'Bearer',
-        refreshToken: '1//0eXYZ123ApexGoogleDriveRefreshToken',
-        expiry: '2027-01-01T00:00:00Z',
-        scope: 'https://www.googleapis.com/auth/drive.file'
-      })),
+      accessConfigRef: '',
       oauthConnectedEmail: 'bursar.records@apexcollege.sch.ng',
       oauthScopes: ['https://www.googleapis.com/auth/drive.file'],
       quotaGb: 100,
       usedStorageGb: 34.8,
       retentionPolicyDays: 2555, // 7 years for academic transcripts
-      connectionHealth: 'healthy',
-      provisioningState: 'provisioned',
+      connectionHealth: 'unknown',
+      reportedConnectionHealth: 'healthy',
+      provisioningState: 'unverified',
+      reportedProvisioningState: 'provisioned',
       placementRules: [
         {
           id: 'rule_transcripts',
@@ -212,7 +268,8 @@ export class StorageAndDatabaseManager {
       ],
       lastSyncTimestamp: new Date().toISOString(),
       createdAt: '2025-02-10T08:30:00Z',
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      evidenceStatus: 'unverified_fixture'
     },
     {
       configId: 'stg_cfg_002',
@@ -223,15 +280,14 @@ export class StorageAndDatabaseManager {
       primaryProvider: 'google_cloud_storage',
       resourceIdentifier: 'curriculum-greenwood-vault-euw2',
       resourceName: 'Provisioned High-Performance GCS Bucket',
-      accessConfigRef: ServerSecretVault.encrypt(JSON.stringify({
-        serviceAccount: 'sa-greenwood-storage@curriculum-server.iam.gserviceaccount.com',
-        keyId: 'key_gcs_prov_9981'
-      })),
+      accessConfigRef: '',
       quotaGb: 50,
       usedStorageGb: 12.4,
       retentionPolicyDays: 1095,
-      connectionHealth: 'healthy',
-      provisioningState: 'provisioned',
+      connectionHealth: 'unknown',
+      reportedConnectionHealth: 'healthy',
+      provisioningState: 'unverified',
+      reportedProvisioningState: 'provisioned',
       placementRules: [
         {
           id: 'rule_all_gcs',
@@ -244,7 +300,8 @@ export class StorageAndDatabaseManager {
       ],
       lastSyncTimestamp: new Date().toISOString(),
       createdAt: '2025-03-01T10:15:00Z',
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      evidenceStatus: 'unverified_fixture'
     },
     {
       configId: 'stg_cfg_003',
@@ -255,18 +312,16 @@ export class StorageAndDatabaseManager {
       primaryProvider: 'onedrive',
       resourceIdentifier: 'b!AbCdEfGhIjKlMnOpQrStUvWxYz',
       resourceName: 'Crown Sovereign Microsoft 365 OneDrive Business',
-      accessConfigRef: ServerSecretVault.encrypt(JSON.stringify({
-        tenantId: 'ms-tenant-crown-heights',
-        clientId: 'app-crown-onedrive-sync',
-        refreshToken: '0.AQMA...CrownM365RefreshToken'
-      })),
+      accessConfigRef: '',
       oauthConnectedEmail: 'ict-director@crownheights.sch.ng',
       oauthScopes: ['Files.ReadWrite.All'],
       quotaGb: 250,
       usedStorageGb: 98.2,
       retentionPolicyDays: 3650,
-      connectionHealth: 'healthy',
-      provisioningState: 'provisioned',
+      connectionHealth: 'unknown',
+      reportedConnectionHealth: 'healthy',
+      provisioningState: 'unverified',
+      reportedProvisioningState: 'provisioned',
       placementRules: [
         {
           id: 'rule_crown_all',
@@ -279,15 +334,16 @@ export class StorageAndDatabaseManager {
       ],
       lastSyncTimestamp: new Date().toISOString(),
       createdAt: '2025-01-15T09:30:00Z',
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      evidenceStatus: 'unverified_fixture'
     }
   ];
 
   private static migrationJobs: StorageMigrationJob[] = [];
 
   // Database Management Methods
-  static getDatabaseRecords(): DatabaseInstanceRecord[] {
-    return this.databaseRecords;
+  static getDatabaseRecords(tenantId?: string): DatabaseInstanceRecord[] {
+    return tenantId ? this.databaseRecords.filter(record => record.tenantId === tenantId) : this.databaseRecords;
   }
 
   static getDatabaseRecord(instanceId: string): DatabaseInstanceRecord | undefined {
@@ -299,78 +355,18 @@ export class StorageAndDatabaseManager {
     tenantId: string, 
     schoolName: string, 
     strategy: DatabaseIsolationStrategy
-  ): DatabaseInstanceRecord {
-    const existingIdx = this.databaseRecords.findIndex(d => d.instanceId === instanceId);
-    
-    let dbName = 'curriculum_multi_shard_01';
-    let schemaName = `tenant_${tenantId.replace(/[^a-zA-Z0-9_]/g, '_')}`;
-    let isolationLevel: DatabaseInstanceRecord['isolationLevel'] = 'schema_namespace_isolation';
-    let host = '10.82.0.5';
-
-    if (strategy === 'dedicated_database') {
-      dbName = `db_${tenantId.replace(/[^a-zA-Z0-9_]/g, '_')}_prod`;
-      schemaName = 'public';
-      isolationLevel = 'schema_namespace_isolation';
-      host = '10.82.0.12';
-    } else if (strategy === 'dedicated_customer_gcp_project') {
-      dbName = `sovereign_${tenantId.replace(/[^a-zA-Z0-9_]/g, '_')}_db`;
-      schemaName = 'public';
-      isolationLevel = 'hardware_project_isolation';
-      host = '10.120.4.8';
-    }
-
-    const record: DatabaseInstanceRecord = {
-      databaseId: `db_${Date.now()}`,
-      instanceId,
-      tenantId,
-      schoolName,
-      strategy,
-      engine: 'PostgreSQL 16 LTS',
-      host,
-      port: 5432,
-      databaseName: dbName,
-      schemaName,
-      connectionPoolSize: strategy === 'shared_schema_isolated' ? 10 : 25,
-      maxConnections: strategy === 'shared_schema_isolated' ? 50 : 150,
-      sslMode: 'verify-full',
-      encryptionAtRest: strategy === 'shared_schema_isolated' ? 'Google-Managed' : 'CMEK (Customer-Managed Encryption Keys)',
-      isolationLevel,
-      activeConnections: 1,
-      storageUsageMb: 120,
-      storageLimitMb: strategy === 'shared_schema_isolated' ? 20000 : 80000,
-      healthStatus: 'healthy',
-      backupSchedule: 'Daily 02:00 UTC (Encrypted GCS)',
-      lastBackupTimestamp: new Date().toISOString(),
-      verifiedAt: new Date().toISOString(),
-      createdAt: new Date().toISOString()
+  ): ProviderUnavailableResult {
+    return {
+      success: false,
+      status: 'unavailable',
+      code: 'PROVIDER_UNAVAILABLE',
+      message: 'Database provisioning is unavailable because no database provider is configured.'
     };
-
-    if (existingIdx !== -1) {
-      this.databaseRecords[existingIdx] = record;
-    } else {
-      this.databaseRecords.push(record);
-    }
-
-    TamperEvidentAuditService.logPlatformAction({
-      actor: 'platform_storage_engine',
-      actorRole: 'super_admin',
-      tenantId,
-      action: 'database_isolation_configured',
-      target: record.databaseName,
-      result: 'SUCCESS',
-      outcome: 'SUCCESS',
-      reason: `Provisioned PostgreSQL database isolation strategy: ${strategy}`,
-      ipAddress: '127.0.0.1',
-      deviceMetadata: 'Control Plane Storage Daemon',
-      details: `Database: ${dbName}, Schema: ${schemaName}, Isolation Level: ${isolationLevel}`
-    });
-
-    return record;
   }
 
   // Storage Management Methods
-  static getStorageConfigs(): StorageConfigRecord[] {
-    return this.storageConfigs;
+  static getStorageConfigs(tenantId?: string): StorageConfigRecord[] {
+    return tenantId ? this.storageConfigs.filter(record => record.tenantId === tenantId) : this.storageConfigs;
   }
 
   static getStorageConfig(instanceId: string): StorageConfigRecord | undefined {
@@ -389,92 +385,13 @@ export class StorageAndDatabaseManager {
     retentionDays: number = 1825,
     oauthConnectedEmail?: string,
     placementRules?: StoragePlacementRule[]
-  ): StorageConfigRecord {
-    const existingIdx = this.storageConfigs.findIndex(s => s.instanceId === instanceId);
-
-    const defaultRules: StoragePlacementRule[] = placementRules || [
-      {
-        id: 'rule_transcripts',
-        category: 'sensitive_transcripts_legal',
-        categoryLabel: 'Official Transcripts & Examination Slips',
-        targetProvider: strategy === 'platform_storage' ? 'platform_storage' : 'private_drive',
-        encryptionRequired: true,
-        retentionDays: retentionDays
-      },
-      {
-        id: 'rule_bursary',
-        category: 'financial_bursary_receipts',
-        categoryLabel: 'Bursary Invoices & Payment Audit Receipts',
-        targetProvider: strategy === 'platform_storage' ? 'platform_storage' : 'private_drive',
-        encryptionRequired: true,
-        retentionDays: retentionDays
-      },
-      {
-        id: 'rule_media',
-        category: 'general_learning_media',
-        categoryLabel: 'General Curriculum Media & Question Attachments',
-        targetProvider: strategy === 'private_drive' ? 'private_drive' : 'platform_storage',
-        encryptionRequired: false,
-        retentionDays: 365
-      }
-    ];
-
-    const encryptedAccessRef = ServerSecretVault.encrypt(JSON.stringify({
-      provider: primaryProvider,
-      tenantId,
-      connectedEmail: oauthConnectedEmail || 'sa-storage@curriculum-server.internal',
-      timestamp: new Date().toISOString()
-    }));
-
-    const configRecord: StorageConfigRecord = {
-      configId: `stg_cfg_${Date.now()}`,
-      instanceId,
-      tenantId,
-      schoolName,
-      strategy,
-      primaryProvider,
-      secondaryProvider,
-      resourceIdentifier: resourceIdentifier || (primaryProvider === 'google_cloud_storage' ? `curriculum-${instanceId}-vault` : `folder_${Date.now()}`),
-      resourceName: primaryProvider === 'google_drive' 
-        ? `${schoolName} Sovereign Google Drive`
-        : primaryProvider === 'onedrive'
-        ? `${schoolName} Microsoft 365 OneDrive`
-        : `${schoolName} Platform GCS Bucket`,
-      accessConfigRef: encryptedAccessRef,
-      oauthConnectedEmail,
-      oauthScopes: primaryProvider === 'google_drive' ? ['https://www.googleapis.com/auth/drive.file'] : ['Files.ReadWrite.All'],
-      quotaGb,
-      usedStorageGb: 0.1,
-      retentionPolicyDays: retentionDays,
-      connectionHealth: 'healthy',
-      provisioningState: 'provisioned',
-      placementRules: defaultRules,
-      lastSyncTimestamp: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+  ): ProviderUnavailableResult {
+    return {
+      success: false,
+      status: 'unavailable',
+      code: 'PROVIDER_UNAVAILABLE',
+      message: 'Storage provisioning is unavailable because no storage provider is configured.'
     };
-
-    if (existingIdx !== -1) {
-      this.storageConfigs[existingIdx] = configRecord;
-    } else {
-      this.storageConfigs.push(configRecord);
-    }
-
-    TamperEvidentAuditService.logPlatformAction({
-      actor: 'platform_storage_engine',
-      actorRole: 'super_admin',
-      tenantId,
-      action: 'storage_configuration_updated',
-      target: configRecord.resourceName,
-      result: 'SUCCESS',
-      outcome: 'SUCCESS',
-      reason: `Configured customer storage strategy: ${strategy} (${primaryProvider})`,
-      ipAddress: '127.0.0.1',
-      deviceMetadata: 'Control Plane Storage Daemon',
-      details: `Quota: ${quotaGb}GB, Retention: ${retentionDays} days, Resource ID: ${configRecord.resourceIdentifier}`
-    });
-
-    return configRecord;
   }
 
   // Storage Migration & Disaster Recovery
@@ -484,52 +401,17 @@ export class StorageAndDatabaseManager {
     sourceProvider: StorageProviderType,
     targetProvider: StorageProviderType,
     totalFiles: number = 1450
-  ): StorageMigrationJob {
-    let randomSuffix = Math.random().toString(16).substring(2, 8);
-    try {
-      const randFn = (crypto as any)?.randomBytes;
-      if (typeof randFn === 'function') {
-        randomSuffix = randFn(3).toString('hex');
-      }
-    } catch {}
-    const jobId = `mig_${Date.now()}_${randomSuffix}`;
-    const job: StorageMigrationJob = {
-      jobId,
-      instanceId,
-      tenantId,
-      sourceProvider,
-      targetProvider,
-      totalFiles,
-      processedFiles: totalFiles,
-      failedFiles: 0,
-      status: 'completed',
-      preserveMetadata: true,
-      preserveAcls: true,
-      startedAt: new Date(Date.now() - 120000).toISOString(),
-      completedAt: new Date().toISOString()
+  ): ProviderUnavailableResult {
+    return {
+      success: false,
+      status: 'unavailable',
+      code: 'PROVIDER_UNAVAILABLE',
+      message: 'Storage migration is unavailable because no source or target provider is configured.'
     };
-
-    this.migrationJobs.unshift(job);
-
-    TamperEvidentAuditService.logPlatformAction({
-      actor: 'platform_storage_engine',
-      actorRole: 'super_admin',
-      tenantId,
-      action: 'storage_migration_executed',
-      target: `${sourceProvider} -> ${targetProvider}`,
-      result: 'SUCCESS',
-      outcome: 'SUCCESS',
-      reason: `Completed zero-loss verified file migration from ${sourceProvider} to ${targetProvider}`,
-      ipAddress: '127.0.0.1',
-      deviceMetadata: 'Control Plane Storage Daemon',
-      details: `Processed: ${totalFiles} files with SHA-256 metadata verification and ACL parity.`
-    });
-
-    return job;
   }
 
-  static getMigrationJobs(): StorageMigrationJob[] {
-    return this.migrationJobs;
+  static getMigrationJobs(tenantId?: string): StorageMigrationJob[] {
+    return tenantId ? this.migrationJobs.filter(job => job.tenantId === tenantId) : this.migrationJobs;
   }
 
   // Verify healthy storage & database operation test suite
@@ -541,30 +423,28 @@ export class StorageAndDatabaseManager {
     const results = [
       {
         testName: 'PostgreSQL Relational Authority Verification',
-        passed: this.databaseRecords.every(r => r.engine.includes('PostgreSQL')),
-        message: 'All control plane and application records verify PostgreSQL 16/15 LTS without any Firebase dependencies.'
+        passed: false,
+        message: 'Database engine verification is unavailable; no database connection test is configured.'
       },
       {
         testName: 'Database Tenant Isolation Verification',
-        passed: this.databaseRecords.every(r => ['schema_namespace_isolation', 'rls_policy_isolation', 'hardware_project_isolation'].includes(r.isolationLevel)),
-        message: 'Strict schema namespace isolation, RLS row-level policies, and dedicated project isolation verified.'
+        passed: false,
+        message: 'Tenant isolation is unverified because no database provider is configured.'
       },
       {
         testName: 'Provider-Independent Customer Storage Verification',
-        passed: this.storageConfigs.some(s => s.strategy === 'private_drive') &&
-                this.storageConfigs.some(s => s.strategy === 'platform_storage') &&
-                this.storageConfigs.some(s => s.strategy === 'hybrid'),
-        message: 'Private Drive (Google Drive/OneDrive), Platform GCS, and Hybrid storage strategies all fully provisioned and operable.'
+        passed: false,
+        message: 'Storage providers are unverified because no storage provider integration is configured.'
       },
       {
         testName: 'Encrypted Token Vault & Security Verification',
-        passed: this.storageConfigs.every(s => s.accessConfigRef && !s.accessConfigRef.includes('Bearer ') && s.accessConfigRef.includes(':')),
-        message: 'OAuth refresh tokens and credentials are encrypted with AES-256-GCM server-side; zero plaintext secrets in browser storage.'
+        passed: false,
+        message: 'Credential encryption is not verified; no credential provisioning operation has run.'
       },
       {
         testName: 'Verified File Migration and Checksum Integrity',
-        passed: true,
-        message: 'Migration engine verified with metadata preservation and cryptographic checksum validation.'
+        passed: false,
+        message: 'Migration integrity is unverified because no file-copy provider operation is configured.'
       }
     ];
 

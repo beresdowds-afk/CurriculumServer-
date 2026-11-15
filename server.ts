@@ -54,7 +54,11 @@ app.use(express.json());
 
 // Correlation ID & Request Tracing Middleware
 app.use((req: Request, res: Response, next: express.NextFunction) => {
-  const correlationId = (req.headers['x-correlation-id'] as string) || `req_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+  const requestedCorrelationId = req.headers['x-correlation-id'];
+  const correlationId = typeof requestedCorrelationId === 'string' &&
+    /^[A-Za-z0-9_-]{1,128}$/.test(requestedCorrelationId)
+    ? requestedCorrelationId
+    : `req_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
   (req as any).correlationId = correlationId;
   res.setHeader('X-Correlation-ID', correlationId);
 
@@ -162,6 +166,65 @@ function requireSuperAdmin(req: Request, res: Response, next: express.NextFuncti
 
   (req as any).tenantContext = verification.context;
   return next();
+}
+
+function hasSecureControlPlaneSecret(): boolean {
+  const controlPlaneSecret = (process.env.CONTROL_PLANE_SECRET || process.env.JWT_SECRET || process.env.APP_SECRET || '').trim();
+  return controlPlaneSecret.length >= 32 &&
+    controlPlaneSecret !== 'default_insecure_secret' &&
+    controlPlaneSecret !== 'dev_insecure_fallback_secret_curriculum_server_2026_secure';
+}
+
+function requireStorageTenantAuth(req: Request, res: Response, next: express.NextFunction) {
+  if (!hasSecureControlPlaneSecret()) {
+    res.status(503).json({
+      success: false,
+      error: 'Storage and database authentication is unavailable.',
+      code: 'AUTH_CONFIGURATION_UNAVAILABLE',
+      correlationId: (req as any).correlationId
+    });
+    return;
+  }
+
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
+  if (!token) {
+    res.status(401).json({
+      success: false,
+      error: 'Authentication is required.',
+      code: 'UNAUTHENTICATED',
+      correlationId: (req as any).correlationId
+    });
+    return;
+  }
+
+  const verification = TenantSecurityContextManager.verifyTenantToken(token);
+  const context = verification.context;
+  if (!verification.valid || !context || !context.tenantId ||
+      !['super_admin', 'tenant_admin'].includes(context.role)) {
+    res.status(403).json({
+      success: false,
+      error: 'Storage and database access is not authorized.',
+      code: 'FORBIDDEN',
+      correlationId: (req as any).correlationId
+    });
+    return;
+  }
+  (req as any).tenantContext = context;
+  next();
+}
+
+function requireStorageSuperAdmin(req: Request, res: Response, next: express.NextFunction) {
+  if (!hasSecureControlPlaneSecret()) {
+    res.status(503).json({
+      success: false,
+      error: 'Storage and database authentication is unavailable.',
+      code: 'AUTH_CONFIGURATION_UNAVAILABLE',
+      correlationId: (req as any).correlationId
+    });
+    return;
+  }
+  requireSuperAdmin(req, res, next);
 }
 
 // School Application Authorization Guard with strict server-side tenant validation
@@ -2832,38 +2895,89 @@ app.post('/api/v1/flow/school/:tenantId/attendance', requireSchoolAuth, (req: Re
 // -------------------------------------------------------------
 // PHASE 7 — POSTGRESQL & CUSTOMER STORAGE MANAGEMENT API ENDPOINTS
 // -------------------------------------------------------------
-app.get('/api/v1/server/databases', requireSuperAdmin, (_req: Request, res: Response) => {
+app.get('/api/v1/server/databases', requireStorageTenantAuth, (req: Request, res: Response) => {
+  const context = (req as any).tenantContext;
+  const tenantId = context.role === 'super_admin' ? undefined : context.tenantId;
   res.json({
     status: 'ok',
-    databases: StorageAndDatabaseManager.getDatabaseRecords()
+    availability: 'unavailable',
+    databases: StorageAndDatabaseManager.getDatabaseRecords(tenantId),
+    correlationId: (req as any).correlationId
   });
 });
 
-app.post('/api/v1/server/databases/configure', requireSuperAdmin, (req: Request, res: Response) => {
-  const { instanceId, tenantId, schoolName, strategy } = req.body;
-  if (!instanceId || !tenantId || !schoolName || !strategy) {
-    res.status(400).json({ error: 'Missing required fields: instanceId, tenantId, schoolName, strategy' });
+app.post('/api/v1/server/databases/configure', requireStorageSuperAdmin, (req: Request, res: Response) => {
+  const body = req.body;
+  const isString = (value: unknown, maxLength: number) =>
+    typeof value === 'string' && value.trim().length > 0 && value.length <= maxLength;
+  const { instanceId, tenantId, schoolName, strategy } = body || {};
+  if (!body || !isString(instanceId, 128) || !isString(tenantId, 128) ||
+      !isString(schoolName, 256) ||
+      !['shared_schema_isolated', 'dedicated_database', 'dedicated_customer_gcp_project'].includes(strategy)) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid database configuration.',
+      code: 'INVALID_INPUT',
+      correlationId: (req as any).correlationId
+    });
     return;
   }
-  const record = StorageAndDatabaseManager.configureDatabaseIsolation(instanceId, tenantId, schoolName, strategy);
-  res.json({ success: true, record });
+  const result = StorageAndDatabaseManager.configureDatabaseIsolation(instanceId, tenantId, schoolName, strategy);
+  res.status(503).json({ ...result, correlationId: (req as any).correlationId });
 });
 
-app.get('/api/v1/server/storage', requireSuperAdmin, (_req: Request, res: Response) => {
+app.get('/api/v1/server/storage', requireStorageTenantAuth, (req: Request, res: Response) => {
+  const context = (req as any).tenantContext;
+  const tenantId = context.role === 'super_admin' ? undefined : context.tenantId;
+  const storageConfigs = StorageAndDatabaseManager.getStorageConfigs(tenantId)
+    .map(({ accessConfigRef: _accessConfigRef, ...record }) => record);
   res.json({
     status: 'ok',
-    storageConfigs: StorageAndDatabaseManager.getStorageConfigs(),
-    migrationJobs: StorageAndDatabaseManager.getMigrationJobs()
+    availability: 'unavailable',
+    storageConfigs,
+    migrationJobs: StorageAndDatabaseManager.getMigrationJobs(tenantId),
+    correlationId: (req as any).correlationId
   });
 });
 
-app.post('/api/v1/server/storage/configure', requireSuperAdmin, (req: Request, res: Response) => {
-  const { instanceId, tenantId, schoolName, strategy, primaryProvider, secondaryProvider, quotaGb, retentionDays, oauthConnectedEmail, placementRules } = req.body;
-  if (!instanceId || !tenantId || !schoolName || !strategy || !primaryProvider) {
-    res.status(400).json({ error: 'Missing required fields: instanceId, tenantId, schoolName, strategy, primaryProvider' });
+app.post('/api/v1/server/storage/configure', requireStorageSuperAdmin, (req: Request, res: Response) => {
+  const body = req.body;
+  const isString = (value: unknown, maxLength: number) =>
+    typeof value === 'string' && value.trim().length > 0 && value.length <= maxLength;
+  const validProviders = ['google_drive', 'onedrive', 'dropbox', 'google_cloud_storage', 'hybrid'];
+  const validCategories = [
+    'sensitive_transcripts_legal',
+    'financial_bursary_receipts',
+    'student_cbt_recordings',
+    'general_learning_media',
+    'system_backups'
+  ];
+  const { instanceId, tenantId, schoolName, strategy, primaryProvider, secondaryProvider, quotaGb, retentionDays,
+    oauthConnectedEmail, placementRules } = body || {};
+  const validRules = placementRules === undefined || (Array.isArray(placementRules) &&
+    placementRules.every((rule: any) => rule && isString(rule.id, 128) &&
+      isString(rule.categoryLabel, 256) && validCategories.includes(rule.category) &&
+      ['private_drive', 'platform_storage'].includes(rule.targetProvider) &&
+      typeof rule.encryptionRequired === 'boolean' && Number.isInteger(rule.retentionDays) &&
+      rule.retentionDays > 0 && rule.retentionDays <= 36500));
+  if (!body || !isString(instanceId, 128) || !isString(tenantId, 128) || !isString(schoolName, 256) ||
+      !['private_drive', 'platform_storage', 'hybrid'].includes(strategy) ||
+      !validProviders.includes(primaryProvider) ||
+      (secondaryProvider !== undefined && !validProviders.includes(secondaryProvider)) ||
+      (quotaGb !== undefined && (!Number.isFinite(quotaGb) || quotaGb <= 0 || quotaGb > 1000000)) ||
+      (retentionDays !== undefined && (!Number.isInteger(retentionDays) || retentionDays <= 0 || retentionDays > 36500)) ||
+      (oauthConnectedEmail !== undefined && (typeof oauthConnectedEmail !== 'string' ||
+        oauthConnectedEmail.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(oauthConnectedEmail))) ||
+      !validRules) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid storage configuration.',
+      code: 'INVALID_INPUT',
+      correlationId: (req as any).correlationId
+    });
     return;
   }
-  const config = StorageAndDatabaseManager.configureCustomerStorage(
+  const result = StorageAndDatabaseManager.configureCustomerStorage(
     instanceId,
     tenantId,
     schoolName,
@@ -2876,22 +2990,32 @@ app.post('/api/v1/server/storage/configure', requireSuperAdmin, (req: Request, r
     oauthConnectedEmail,
     placementRules
   );
-  res.json({ success: true, config });
+  res.status(503).json({ ...result, correlationId: (req as any).correlationId });
 });
 
-app.post('/api/v1/server/storage/migrate', requireSuperAdmin, (req: Request, res: Response) => {
-  const { instanceId, tenantId, sourceProvider, targetProvider, totalFiles } = req.body;
-  if (!instanceId || !tenantId || !sourceProvider || !targetProvider) {
-    res.status(400).json({ error: 'Missing required fields: instanceId, tenantId, sourceProvider, targetProvider' });
+app.post('/api/v1/server/storage/migrate', requireStorageSuperAdmin, (req: Request, res: Response) => {
+  const body = req.body;
+  const { instanceId, tenantId, sourceProvider, targetProvider, totalFiles } = body || {};
+  const validProviders = ['google_drive', 'onedrive', 'dropbox', 'google_cloud_storage', 'hybrid'];
+  if (!body || typeof instanceId !== 'string' || !instanceId.trim() || instanceId.length > 128 ||
+      typeof tenantId !== 'string' || !tenantId.trim() || tenantId.length > 128 ||
+      !validProviders.includes(sourceProvider) || !validProviders.includes(targetProvider) ||
+      (totalFiles !== undefined && (!Number.isInteger(totalFiles) || totalFiles < 0 || totalFiles > 10000000))) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid migration request.',
+      code: 'INVALID_INPUT',
+      correlationId: (req as any).correlationId
+    });
     return;
   }
-  const job = StorageAndDatabaseManager.startStorageMigration(instanceId, tenantId, sourceProvider, targetProvider, totalFiles);
-  res.json({ success: true, job });
+  const result = StorageAndDatabaseManager.startStorageMigration(instanceId, tenantId, sourceProvider, targetProvider, totalFiles);
+  res.status(503).json({ ...result, correlationId: (req as any).correlationId });
 });
 
-app.get('/api/v1/server/storage/verify', requireSuperAdmin, (_req: Request, res: Response) => {
+app.get('/api/v1/server/storage/verify', requireStorageSuperAdmin, (req: Request, res: Response) => {
   const testResults = StorageAndDatabaseManager.runPhase7VerificationSuite();
-  res.json(testResults);
+  res.json({ ...testResults, correlationId: (req as any).correlationId });
 });
 
 // -------------------------------------------------------------

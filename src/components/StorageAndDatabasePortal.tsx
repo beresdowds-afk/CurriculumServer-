@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   DatabaseInstanceRecord, 
   DatabaseIsolationStrategy, 
@@ -36,7 +36,19 @@ export const StorageAndDatabasePortal: React.FC = () => {
   const [databases, setDatabases] = useState<DatabaseInstanceRecord[]>(storageAndDatabaseClient.getDatabaseRecords());
   const [storageConfigs, setStorageConfigs] = useState<StorageConfigRecord[]>(storageAndDatabaseClient.getStorageConfigs());
   const [migrationJobs, setMigrationJobs] = useState<StorageMigrationJob[]>(storageAndDatabaseClient.getMigrationJobs());
+  const [serviceAvailable, setServiceAvailable] = useState(storageAndDatabaseClient.getAvailable());
+  const [serviceError, setServiceError] = useState(storageAndDatabaseClient.getUnavailableReason());
   const [activeTab, setActiveTab] = useState<'databases' | 'storage' | 'placement' | 'migration' | 'verification'>('storage');
+
+  useEffect(() => {
+    void storageAndDatabaseClient.syncFromBackend().then(() => {
+      setDatabases(storageAndDatabaseClient.getDatabaseRecords());
+      setStorageConfigs(storageAndDatabaseClient.getStorageConfigs());
+      setMigrationJobs(storageAndDatabaseClient.getMigrationJobs());
+      setServiceAvailable(storageAndDatabaseClient.getAvailable());
+      setServiceError(storageAndDatabaseClient.getUnavailableReason());
+    });
+  }, []);
   
   // Verification State
   const [verificationResults, setVerificationResults] = useState<{
@@ -70,61 +82,81 @@ export const StorageAndDatabasePortal: React.FC = () => {
   const [migFileCount, setMigFileCount] = useState(850);
   const [isMigrating, setIsMigrating] = useState(false);
 
-  const handleRunVerification = () => {
+  const handleRunVerification = async () => {
     setIsRunningVerification(true);
-    setTimeout(() => {
-      const res = storageAndDatabaseClient.runPhase7VerificationSuite();
-      setVerificationResults(res);
+    try {
+      setVerificationResults(await storageAndDatabaseClient.runPhase7VerificationSuite());
+    } catch (error) {
+      setServiceAvailable(false);
+      setServiceError(error instanceof Error ? error.message : 'Storage verification is unavailable.');
+    } finally {
       setIsRunningVerification(false);
-    }, 500);
+    }
   };
 
-  const handleSaveStorageConfig = (e: React.FormEvent) => {
+  const handleSaveStorageConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    storageAndDatabaseClient.configureCustomerStorage(
-      selectedInstanceId,
-      `cust_${selectedInstanceId}`,
-      newSchoolName,
-      newStrategy,
-      newPrimaryProvider,
-      newStrategy === 'hybrid' ? newSecondaryProvider : undefined,
-      undefined,
-      newQuotaGb,
-      newRetentionDays,
-      newConnectedEmail
-    );
-    setStorageConfigs([...storageAndDatabaseClient.getStorageConfigs()]);
-    setIsStorageModalOpen(false);
+    try {
+      await storageAndDatabaseClient.configureCustomerStorage(
+        selectedInstanceId,
+        `cust_${selectedInstanceId}`,
+        newSchoolName,
+        newStrategy,
+        newPrimaryProvider,
+        newStrategy === 'hybrid' ? newSecondaryProvider : undefined,
+        undefined,
+        newQuotaGb,
+        newRetentionDays,
+        newConnectedEmail
+      );
+      await storageAndDatabaseClient.syncFromBackend();
+      setStorageConfigs(storageAndDatabaseClient.getStorageConfigs());
+      setIsStorageModalOpen(false);
+    } catch (error) {
+      setServiceAvailable(false);
+      setServiceError(error instanceof Error ? error.message : 'Storage provisioning is unavailable.');
+    }
   };
 
-  const handleSaveDbConfig = (e: React.FormEvent) => {
+  const handleSaveDbConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    storageAndDatabaseClient.configureDatabaseIsolation(
-      targetDbInstance,
-      `cust_${targetDbInstance}`,
-      targetDbSchool,
-      newDbStrategy
-    );
-    setDatabases([...storageAndDatabaseClient.getDatabaseRecords()]);
-    setIsDbModalOpen(false);
+    try {
+      await storageAndDatabaseClient.configureDatabaseIsolation(
+        targetDbInstance,
+        `cust_${targetDbInstance}`,
+        targetDbSchool,
+        newDbStrategy
+      );
+      await storageAndDatabaseClient.syncFromBackend();
+      setDatabases(storageAndDatabaseClient.getDatabaseRecords());
+      setIsDbModalOpen(false);
+    } catch (error) {
+      setServiceAvailable(false);
+      setServiceError(error instanceof Error ? error.message : 'Database provisioning is unavailable.');
+    }
   };
 
-  const handleStartMigration = (e: React.FormEvent) => {
+  const handleStartMigration = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsMigrating(true);
-    setTimeout(() => {
-      storageAndDatabaseClient.startStorageMigration(
+    try {
+      await storageAndDatabaseClient.startStorageMigration(
         selectedInstanceId,
         `cust_${selectedInstanceId}`,
         migSource,
         migTarget,
         migFileCount
       );
-      setMigrationJobs([...storageAndDatabaseClient.getMigrationJobs()]);
-      setIsMigrating(false);
+      await storageAndDatabaseClient.syncFromBackend();
+      setMigrationJobs(storageAndDatabaseClient.getMigrationJobs());
       setIsMigrationModalOpen(false);
       setActiveTab('migration');
-    }, 600);
+    } catch (error) {
+      setServiceAvailable(false);
+      setServiceError(error instanceof Error ? error.message : 'Storage migration is unavailable.');
+    } finally {
+      setIsMigrating(false);
+    }
   };
 
   return (
@@ -136,20 +168,20 @@ export const StorageAndDatabasePortal: React.FC = () => {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700/60 font-mono text-[10px] font-bold uppercase tracking-wider">
-                Phase 7 Architecture
-              </span>
-              <span className="px-2.5 py-0.5 rounded-full bg-sky-950 text-sky-300 border border-sky-700/60 font-mono text-[10px] font-bold uppercase tracking-wider">
-                PostgreSQL Relational Authority
-              </span>
-              <span className="px-2.5 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-700/60 font-mono text-[10px] font-bold uppercase tracking-wider">
-                Zero Firebase Dependency
+                Historical records
               </span>
             </div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-white">PostgreSQL Database Isolation & Customer-Selectable Storage</h1>
+            <h1 className="text-2xl font-extrabold tracking-tight text-white">Database & Customer Storage</h1>
             <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-              PostgreSQL relational authority with schema namespace & RLS isolation. Customer-selectable storage architecture supporting Private Drive (Google Drive, OneDrive, Dropbox), Platform GCS, and Hybrid storage with encrypted token vaults.
+              Historical resource records are retained for audit. Provider provisioning and verification are unavailable until integrations are configured.
             </p>
           </div>
+
+          {!serviceAvailable && (
+            <div role="status" className="rounded-xl border border-amber-700 bg-amber-950/40 p-4 text-sm text-amber-200">
+              Storage and database service unavailable. {serviceError}
+            </div>
+          )}
 
           <div className="flex items-center gap-3">
             <button
@@ -174,7 +206,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
           }`}
         >
           <HardDrive className="w-4 h-4" />
-          <span>Customer Storage Architecture ({storageConfigs.length})</span>
+          <span>Historical Storage Records ({storageConfigs.length})</span>
         </button>
 
         <button
@@ -186,7 +218,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
           }`}
         >
           <Database className="w-4 h-4" />
-          <span>PostgreSQL Isolation Strategy ({databases.length})</span>
+          <span>Historical Database Records ({databases.length})</span>
         </button>
 
         <button
@@ -246,15 +278,17 @@ export const StorageAndDatabasePortal: React.FC = () => {
                       }`}>
                         {cfg.strategy.replace(/_/g, ' ')}
                       </span>
-                      <span className="flex items-center gap-1.5 text-xs font-mono text-emerald-400">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{cfg.connectionHealth}</span>
+                      <span className="flex items-center gap-1.5 text-xs font-mono text-amber-300">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>{cfg.evidenceStatus === 'provider_verified' ? cfg.connectionHealth : 'Unverified fixture'}</span>
                       </span>
                     </div>
 
                     <div>
                       <h3 className="text-sm font-bold text-white">{cfg.schoolName}</h3>
-                      <p className="text-xs text-slate-400 mt-0.5 font-mono truncate">{cfg.resourceName}</p>
+                      <p className="text-xs text-slate-400 mt-0.5 font-mono truncate">
+                        Historical claim (unverified): {cfg.resourceName}
+                      </p>
                     </div>
 
                     <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-2 text-xs">
@@ -280,9 +314,9 @@ export const StorageAndDatabasePortal: React.FC = () => {
                       </div>
                       <div className="flex items-center justify-between text-slate-400">
                         <span>Token Vault Security:</span>
-                        <span className="text-emerald-400 font-mono text-[10px] flex items-center gap-1">
+                        <span className="text-amber-300 font-mono text-[10px] flex items-center gap-1">
                           <Lock className="w-3 h-3" />
-                          <span>AES-256-GCM Encrypted</span>
+                          <span>Encryption not verified</span>
                         </span>
                       </div>
                     </div>
@@ -327,7 +361,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-xs text-slate-400">
-              Authoritative PostgreSQL 16 LTS instances with strict tenant isolation levels (Schema Namespace, RLS, Dedicated Project).
+              Database values below are retained historical records and are not evidence of a live or healthy database.
             </p>
             <button
               onClick={() => setIsDbModalOpen(true)}
@@ -346,9 +380,9 @@ export const StorageAndDatabasePortal: React.FC = () => {
                     <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono text-[10px] font-bold uppercase">
                       {db.strategy.replace(/_/g, ' ')}
                     </span>
-                    <span className="flex items-center gap-1 text-xs font-mono text-emerald-400">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>{db.healthStatus}</span>
+                    <span className="flex items-center gap-1 text-xs font-mono text-amber-300">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>{db.evidenceStatus === 'provider_verified' ? db.healthStatus : 'Unverified fixture'}</span>
                     </span>
                   </div>
 
@@ -376,7 +410,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
                     </div>
                     <div className="flex items-center justify-between text-slate-400">
                       <span>Encryption at Rest:</span>
-                      <span className="text-emerald-400 text-[10px]">{db.encryptionAtRest}</span>
+                      <span className="text-amber-300 text-[10px]">Unverified: {db.encryptionAtRest}</span>
                     </div>
                     <div className="flex items-center justify-between text-slate-400">
                       <span>SSL Enforcement:</span>
@@ -399,7 +433,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
                 </div>
 
                 <div className="pt-3 border-t border-slate-800 text-[11px] text-slate-500 font-mono">
-                  Backup: {db.backupSchedule}
+                  Historical backup claim (unverified): {db.backupSchedule}
                 </div>
               </div>
             ))}
@@ -411,9 +445,9 @@ export const StorageAndDatabasePortal: React.FC = () => {
       {activeTab === 'placement' && (
         <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-5">
           <div>
-            <h2 className="text-base font-bold text-white mb-1">Hybrid Document & Media Placement Engine</h2>
+            <h2 className="text-base font-bold text-white mb-1">Document & Media Placement Rules</h2>
             <p className="text-xs text-slate-400">
-              Automatically routes school files based on institutional sensitivity, compliance guidelines, and storage costs.
+              Historical placement rules are retained as unverified configuration data; no provider routing is active.
             </p>
           </div>
 
@@ -426,7 +460,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
                     {rule.encryptionRequired && (
                       <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 font-mono text-[10px] font-bold flex items-center gap-1 border border-emerald-800">
                         <Lock className="w-2.5 h-2.5" />
-                        <span>Encrypted at Rest</span>
+                        <span>Encryption requirement (unverified)</span>
                       </span>
                     )}
                   </div>
@@ -454,9 +488,9 @@ export const StorageAndDatabasePortal: React.FC = () => {
         <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h2 className="text-base font-bold text-white mb-1">Provider-Independent File Migration & Disaster Recovery</h2>
+              <h2 className="text-base font-bold text-white mb-1">File Migration & Disaster Recovery</h2>
               <p className="text-xs text-slate-400">
-                Execute lossless bulk migration between Google Drive, Microsoft OneDrive, Dropbox, and Google Cloud Storage while preserving file metadata and permissions.
+                Migration is unavailable until source and target storage providers are configured.
               </p>
             </div>
             <button
@@ -464,14 +498,14 @@ export const StorageAndDatabasePortal: React.FC = () => {
               className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-950/40"
             >
               <FolderSync className="w-4 h-4" />
-              <span>Initiate Zero-Loss Migration</span>
+              <span>Request Migration</span>
             </button>
           </div>
 
           <div className="space-y-3">
             {migrationJobs.length === 0 ? (
               <div className="p-8 text-center bg-slate-950 rounded-2xl border border-slate-800 text-slate-400 text-xs">
-                No storage migrations recorded yet. Initiate a migration job above to test provider-independent portability.
+                No verified migration jobs are recorded. Migration requests remain unavailable until provider operations are configured.
               </div>
             ) : (
               migrationJobs.map((job) => (
@@ -487,7 +521,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
                       Route: <strong className="text-sky-300">{job.sourceProvider}</strong> <ArrowRight className="w-3 h-3 inline mx-1" /> <strong className="text-emerald-300">{job.targetProvider}</strong>
                     </p>
                     <p className="text-slate-500 text-[10px]">
-                      Files: {job.processedFiles} / {job.totalFiles} verified (0 failures) | SHA-256 Checksums Verified
+                      Files processed: {job.processedFiles} / {job.totalFiles}
                     </p>
                   </div>
 
@@ -507,9 +541,9 @@ export const StorageAndDatabasePortal: React.FC = () => {
         <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h2 className="text-base font-bold text-white mb-1">Phase 7 Technical Acceptance & Audit Suite</h2>
+              <h2 className="text-base font-bold text-white mb-1">Provider Verification Results</h2>
               <p className="text-xs text-slate-400">
-                End-to-end verification of PostgreSQL authority, tenant isolation levels, provider-independent storage, AES-256-GCM token security, and zero Firebase footprint.
+                Verification results reflect only checks backed by configured providers and evidence.
               </p>
             </div>
             <button
@@ -530,10 +564,18 @@ export const StorageAndDatabasePortal: React.FC = () => {
                   : 'bg-rose-950/40 border-rose-800 text-rose-200'
               }`}>
                 <div className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                  {verificationResults.allTestsPassed
+                    ? <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    : <AlertTriangle className="w-5 h-5 text-amber-300" />}
                   <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wider">Phase 7 Acceptance Status: 100% Passed</h3>
-                    <p className="text-[11px] text-slate-300">All 5 critical PostgreSQL and customer storage security gates passed successfully.</p>
+                    <h3 className="text-xs font-bold uppercase tracking-wider">
+                      Verification status: {verificationResults.allTestsPassed ? 'Passed' : 'Not verified'}
+                    </h3>
+                    <p className="text-[11px] text-slate-300">
+                      {verificationResults.allTestsPassed
+                        ? 'All reported checks passed with provider evidence.'
+                        : 'One or more checks are unavailable or lack verification evidence.'}
+                    </p>
                   </div>
                 </div>
                 <span className="font-mono text-xs">{new Date(verificationResults.timestamp).toLocaleTimeString()}</span>
@@ -542,8 +584,10 @@ export const StorageAndDatabasePortal: React.FC = () => {
               <div className="space-y-3">
                 {verificationResults.results.map((t, idx) => (
                   <div key={idx} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex items-start gap-3">
-                    <div className="p-1.5 rounded-xl bg-emerald-950 text-emerald-400 border border-emerald-800 shrink-0 mt-0.5">
-                      <Check className="w-3.5 h-3.5" />
+                    <div className={`p-1.5 rounded-xl shrink-0 mt-0.5 ${t.passed
+                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                      : 'bg-amber-950 text-amber-300 border border-amber-800'}`}>
+                      {t.passed ? <Check className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-white">{t.testName}</h4>
@@ -564,7 +608,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <HardDrive className="w-4 h-4 text-emerald-400" />
-                <span>Configure Customer-Selectable Storage</span>
+                <span>Request Customer-Selectable Storage</span>
               </h3>
               <button onClick={() => setIsStorageModalOpen(false)} className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800">
                 <X className="w-5 h-5" />
@@ -591,7 +635,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
                 >
                   <option value="private_drive">A. Private Drive (Customer-owned Google Drive / OneDrive)</option>
-                  <option value="platform_storage">B. Platform Storage (Provisioned GCS Bucket)</option>
+                  <option value="platform_storage">B. Platform Storage (GCS provider request)</option>
                   <option value="hybrid">C. Hybrid (Private Drive for Legal/Transcripts + GCS for Media)</option>
                 </select>
               </div>
@@ -669,7 +713,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
                 >
-                  Save & Provision Storage
+                  Submit Storage Request
                 </button>
               </div>
             </form>
@@ -684,7 +728,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Database className="w-4 h-4 text-emerald-400" />
-                <span>Configure PostgreSQL Isolation Strategy</span>
+                <span>Request Database Isolation</span>
               </h3>
               <button onClick={() => setIsDbModalOpen(false)} className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800">
                 <X className="w-5 h-5" />
@@ -717,10 +761,10 @@ export const StorageAndDatabasePortal: React.FC = () => {
               </div>
 
               <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 text-xs text-slate-400 space-y-1">
-                <div className="text-slate-300 font-bold">Relational Architecture Guarantee:</div>
-                <p>• Authoritative PostgreSQL 16 LTS with encrypted connection pooling</p>
-                <p>• CMEK encryption at rest support with daily automated backup</p>
-                <p>• Zero Firebase or non-relational database dependencies</p>
+                <div className="text-slate-300 font-bold">Current availability:</div>
+                <p>• Database provisioning is unavailable; no provider is configured.</p>
+                <p>• Database connection, encryption, and backup claims are not verified.</p>
+                <p>• Submitting this request will not provision a database.</p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
@@ -735,7 +779,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
                 >
-                  Apply Database Strategy
+                  Submit Database Request
                 </button>
               </div>
             </form>
@@ -750,7 +794,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <FolderSync className="w-4 h-4 text-emerald-400" />
-                <span>Zero-Loss Storage Migration</span>
+                <span>Storage Migration Request</span>
               </h3>
               <button onClick={() => setIsMigrationModalOpen(false)} className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800">
                 <X className="w-5 h-5" />
@@ -765,7 +809,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
                   onChange={(e) => setMigSource(e.target.value as StorageProviderType)}
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
                 >
-                  <option value="google_cloud_storage">Platform Storage (GCS Bucket)</option>
+                  <option value="google_cloud_storage">Platform Storage (GCS)</option>
                   <option value="google_drive">Private Drive (Google Drive)</option>
                   <option value="onedrive">Private Drive (OneDrive)</option>
                   <option value="dropbox">Private Drive (Dropbox)</option>
@@ -780,7 +824,7 @@ export const StorageAndDatabasePortal: React.FC = () => {
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-emerald-500"
                 >
                   <option value="google_drive">Private Drive (Google Drive)</option>
-                  <option value="google_cloud_storage">Platform Storage (GCS Bucket)</option>
+                  <option value="google_cloud_storage">Platform Storage (GCS)</option>
                   <option value="onedrive">Private Drive (OneDrive)</option>
                   <option value="dropbox">Private Drive (Dropbox)</option>
                 </select>
@@ -797,9 +841,9 @@ export const StorageAndDatabasePortal: React.FC = () => {
               </div>
 
               <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 text-[11px] text-slate-400 space-y-1">
-                <p>• Preserves file timestamps, ACLs, and directory hierarchies</p>
-                <p>• Performs SHA-256 integrity checksum verification on every file</p>
-                <p>• Encrypted token vault mediates communication</p>
+                <p>• File and ACL preservation has not been tested.</p>
+                <p>• Migration requests remain unavailable until provider operations are configured.</p>
+                <p>• Credential encryption is not verified for any provider operation.</p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">

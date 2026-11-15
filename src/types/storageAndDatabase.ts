@@ -22,11 +22,13 @@ export interface DatabaseInstanceRecord {
   activeConnections: number;
   storageUsageMb: number;
   storageLimitMb: number;
-  healthStatus: 'healthy' | 'warning' | 'degraded';
+  healthStatus: 'healthy' | 'warning' | 'degraded' | 'unknown';
+  reportedHealthStatus?: 'healthy' | 'warning' | 'degraded';
   backupSchedule: string;
   lastBackupTimestamp: string;
   verifiedAt: string;
   createdAt: string;
+  evidenceStatus: 'unverified_fixture' | 'provider_verified';
 }
 
 export type StorageStrategyType = 'private_drive' | 'platform_storage' | 'hybrid';
@@ -64,18 +66,21 @@ export interface StorageConfigRecord {
   secondaryProvider?: StorageProviderType;
   resourceIdentifier: string; // Folder ID or GCS Bucket Name
   resourceName: string;
-  accessConfigRef: string; // Token vault key reference; never plaintext tokens
+  accessConfigRef?: string; // Server-only encrypted token reference
   oauthConnectedEmail?: string;
   oauthScopes?: string[];
   quotaGb: number;
   usedStorageGb: number;
   retentionPolicyDays: number;
-  connectionHealth: 'healthy' | 'token_refresh_required' | 'quota_warning' | 'disconnected';
-  provisioningState: 'provisioned' | 'pending_auth' | 'verifying' | 'failed';
+  connectionHealth: 'healthy' | 'token_refresh_required' | 'quota_warning' | 'disconnected' | 'unknown';
+  reportedConnectionHealth?: 'healthy' | 'token_refresh_required' | 'quota_warning' | 'disconnected';
+  provisioningState: 'provisioned' | 'pending_auth' | 'verifying' | 'failed' | 'unverified';
+  reportedProvisioningState?: 'provisioned' | 'pending_auth' | 'verifying' | 'failed';
   placementRules: StoragePlacementRule[];
   lastSyncTimestamp: string;
   createdAt: string;
   updatedAt: string;
+  evidenceStatus: 'unverified_fixture' | 'provider_verified';
 }
 
 export interface StorageMigrationJob {

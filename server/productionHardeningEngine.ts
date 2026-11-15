@@ -141,8 +141,8 @@ export class ProductionHardeningEngine {
         category: 'database_permissions',
         name: 'PostgreSQL Least-Privilege Shard Roles',
         description: 'Application database roles are restricted to isolated tenant schemas with DDL execution gated to migration workers.',
-        complianceLevel: 'ENFORCED',
-        implementationNotes: 'StorageAndDatabaseManager provisions isolated schemas (schema_tenant_*) with unprivileged tenant users.',
+        complianceLevel: 'AUDITED_WARN',
+        implementationNotes: 'No database provider is configured; historical database records are unverified and provisioning is unavailable.',
         verifiedAt: now
       },
       {
@@ -150,8 +150,8 @@ export class ProductionHardeningEngine {
         category: 'storage_permissions',
         name: 'Zero-Leak Storage Bucket & Drive ACLs',
         description: 'Cloud Storage buckets enforce uniform bucket-level access with signed URLs expiring in 15 minutes.',
-        complianceLevel: 'ENFORCED',
-        implementationNotes: 'Google Cloud Storage platform vault uses IAM condition keys; Google Drive uses OAuth token scoped strictly to school folder.',
+        complianceLevel: 'AUDITED_WARN',
+        implementationNotes: 'No storage provider is configured; historical storage records are unverified and provisioning is unavailable.',
         verifiedAt: now
       },
       {
@@ -461,15 +461,15 @@ export class ProductionHardeningEngine {
       {
         number: 9,
         name: 'PostgreSQL-Based Control-Plane Records',
-        status: 'COMPLETED',
-        description: 'All control plane records (tenants, instances, migrations, audit logs) reside in authoritative relational schema with ZERO Firebase dependencies.',
+        status: 'UNIMPLEMENTED',
+        description: 'PostgreSQL persistence and provider verification are not implemented; existing records are retained as unverified.',
         evidenceReference: 'server/storageAndDatabaseManager.ts & data/governed_instances.json'
       },
       {
         number: 10,
         name: 'Customer-Selectable Storage',
-        status: 'COMPLETED',
-        description: 'Customer-configured storage supporting Platform GCS, School Google Drive, and Hybrid placement rules with zero vendor lock-in.',
+        status: 'UNIMPLEMENTED',
+        description: 'Provider storage provisioning is unavailable; historical strategy records are not evidence of live resources.',
         evidenceReference: 'StorageAndDatabaseManager.configureCustomerStorage()'
       },
       {
