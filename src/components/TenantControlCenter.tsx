@@ -11,6 +11,7 @@ import { OPTIONAL_FEATURE_DEFINITIONS, INITIAL_SAAS_METRICS, INITIAL_SAAS_INVOIC
 import { globalBackupService } from '../services/backupRestoreService';
 import { globalAuditLogService } from '../services/auditLogService';
 import { TenantSecurityContextManager } from '../services/tenantSecurityContext';
+import { unifiedApiClient } from '../services/unifiedApiClient';
 import { EntitlementEnforcementService, DEFAULT_PLAN_POLICIES } from '../services/entitlementEnforcementService';
 import { TenantLifecycleManager } from '../services/tenantLifecycleManager';
 import { TamperEvidentAuditService } from '../services/tamperEvidentAuditService';
@@ -136,6 +137,7 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
   const [snapshots, setSnapshots] = useState(globalBackupService.getSnapshots(tenant.id));
   const [isTakingBackup, setIsTakingBackup] = useState(false);
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
+  const [restoreMessageType, setRestoreMessageType] = useState<'success' | 'error'>('success');
   const [featuresState, setFeaturesState] = useState<Record<OptionalFeatureKey, boolean>>(tenant.enabledFeatures);
   const [isSavingFeatures, setIsSavingFeatures] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
@@ -417,17 +419,19 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
       });
       if (response.ok) {
         const data = await response.json();
-        setSnapshots(globalBackupService.getSnapshots(tenant.id));
-        setRestoreMessage(`Created authentic AES-256-GCM encrypted backup: ${data.snapshot.snapshotId} (${data.snapshot.sizeMb} MB, ${data.snapshot.databaseTablesCount} tables, ${data.snapshot.filesCount} files). SHA-256 verified.`);
+        setSnapshots(previous => data.snapshot
+          ? [data.snapshot, ...previous.filter(snapshot => snapshot.snapshotId !== data.snapshot.snapshotId)]
+          : previous);
+        setRestoreMessage(`Backup request completed: ${data.snapshot?.snapshotId || 'snapshot ID unavailable'}. Encryption and integrity have not been independently verified.`);
+        setRestoreMessageType('success');
       } else {
-        const newSnap = globalBackupService.createManualSnapshot(tenant.id, tenant.schoolName);
-        setSnapshots(globalBackupService.getSnapshots(tenant.id));
-        setRestoreMessage(`Created authentic backup: ${newSnap.snapshotId} (${newSnap.sizeMb} MB). SHA-256: ${newSnap.checksumSha256.substring(0, 16)}...`);
+        const data = await response.json().catch(() => ({}));
+        setRestoreMessage(`Unavailable: backup request failed (${response.status}). ${data.error || 'No backup was created.'}`);
+        setRestoreMessageType('error');
       }
     } catch {
-      const newSnap = globalBackupService.createManualSnapshot(tenant.id, tenant.schoolName);
-      setSnapshots(globalBackupService.getSnapshots(tenant.id));
-      setRestoreMessage(`Created authentic backup: ${newSnap.snapshotId} (${newSnap.sizeMb} MB).`);
+      setRestoreMessage('Unavailable: backup service could not be reached. No local backup was created.');
+      setRestoreMessageType('error');
     } finally {
       setIsTakingBackup(false);
       setTimeout(() => setRestoreMessage(null), 6000);
@@ -448,14 +452,21 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
       });
       if (response.ok) {
         const data = await response.json();
-        setRestoreMessage(data.message);
+        if (data.success === true) {
+          setRestoreMessage(`${data.message} Integrity verification is reported by the backend.`);
+          setRestoreMessageType('success');
+        } else {
+          setRestoreMessage(`Unavailable: ${data.message || 'restore did not complete.'}`);
+          setRestoreMessageType('error');
+        }
       } else {
-        const res = globalBackupService.simulateRestoreSnapshot(snapshotId);
-        setRestoreMessage(res.message);
+        const data = await response.json().catch(() => ({}));
+        setRestoreMessage(`Unavailable: restore request failed (${response.status}). ${data.error || 'No restore was performed.'}`);
+        setRestoreMessageType('error');
       }
     } catch {
-      const res = globalBackupService.simulateRestoreSnapshot(snapshotId);
-      setRestoreMessage(res.message);
+      setRestoreMessage('Unavailable: backup service could not be reached. No restore was performed.');
+      setRestoreMessageType('error');
     }
     setTimeout(() => setRestoreMessage(null), 6000);
   };
@@ -463,33 +474,22 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
   const handleRunDrill = async () => {
     setIsRunningDrill(true);
     try {
-      const superAdminToken = TenantSecurityContextManager.issueTenantToken(tenant, 'super_admin', 3600);
-      const response = await fetch('/api/v1/control-plane/disaster-recovery-drills', {
-        headers: {
-          'Authorization': `Bearer ${superAdminToken}`
-        }
+      const data = await unifiedApiClient.requestAuthenticatedControlPlane<{
+        suite: string;
+        status: string;
+        totalTests: number;
+        passedCount: number;
+        results: any[];
+      }>('/api/v1/control-plane/disaster-recovery-drills', { method: 'GET' });
+      setDrDrillResults(data);
+    } catch {
+      setDrDrillResults({
+        suite: 'Disaster Recovery Validation Suite',
+        status: 'UNAVAILABLE',
+        totalTests: 0,
+        passedCount: 0,
+        results: []
       });
-      if (response.ok) {
-        const data = await response.json();
-        setDrDrillResults(data);
-      } else {
-        setDrDrillResults({
-          suite: 'Disaster Recovery Validation Suite (Offline / Cache)',
-          status: 'PASSED',
-          totalTests: 6,
-          passedCount: 6,
-          results: [
-            { testId: 'TEST-DR-01', name: 'Authentic AES-256-GCM Encrypted Backup Creation', passed: true, details: 'Verified on disk with genuine SHA-256 digest.' },
-            { testId: 'TEST-DR-02', name: 'Catastrophic Loss Recovery & Real Decryption/Restoration', passed: true, details: 'Verified all tables and files restored.' },
-            { testId: 'TEST-DR-03', name: 'Tampered / Bit-Flipped Artifact Detection & Rejection', passed: true, details: 'Detected tamper and aborted restoration.' },
-            { testId: 'TEST-DR-04', name: 'Cross-Tenant Restore Isolation Enforcement', passed: true, details: 'Cross-tenant restore strictly blocked.' },
-            { testId: 'TEST-DR-05', name: 'Destructive Live Tenant Overwrite Safety Guard', passed: true, details: 'Unapproved live tenant overwrite rejected.' },
-            { testId: 'TEST-DR-06', name: 'Durable Disaster Recovery Job Progression & Checkpoints', passed: true, details: 'Verified 6 lifecycle checkpoints.' }
-          ]
-        });
-      }
-    } catch (err: any) {
-      console.error('Failed to run DR drill:', err);
     } finally {
       setIsRunningDrill(false);
     }
@@ -1478,10 +1478,10 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
             <div>
               <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
                 <Database className="w-4 h-4 text-emerald-400" />
-                <span>Automated Nightly Backups & Disaster Recovery (AES-256-GCM)</span>
+                <span>Backups & Disaster Recovery</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Authentic encrypted snapshots with verified SHA-256 digests. RPO: 24h • RTO: &lt;5m • Retention: 30 Days.
+                Backup encryption, integrity, schedule, and recovery objectives are not verified by this client.
               </p>
             </div>
 
@@ -1515,7 +1515,7 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
               <div className="flex items-center justify-between font-bold">
                 <span className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-indigo-400" />
-                  <span>{drDrillResults.suite} — {drDrillResults.status} ({drDrillResults.passedCount}/{drDrillResults.totalTests} Verified)</span>
+                  <span>{drDrillResults.suite} — {drDrillResults.status} ({drDrillResults.passedCount}/{drDrillResults.totalTests} passed)</span>
                 </span>
                 <span className="px-2 py-0.5 rounded text-[10px] bg-indigo-900 border border-indigo-700">RTO: 1.2s</span>
               </div>
@@ -1536,8 +1536,12 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
           )}
 
           {restoreMessage && (
-            <div className="p-3 bg-emerald-950/60 border border-emerald-800 text-emerald-300 rounded-xl text-xs flex items-center gap-2 animate-fadeIn">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <div className={`p-3 rounded-xl text-xs flex items-center gap-2 animate-fadeIn ${restoreMessageType === 'success'
+              ? 'bg-emerald-950/60 border border-emerald-800 text-emerald-300'
+              : 'bg-amber-950/60 border border-amber-800 text-amber-200'}`}>
+              {restoreMessageType === 'success'
+                ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                : <AlertTriangle className="w-4 h-4 text-amber-300 flex-shrink-0" />}
               <span>{restoreMessage}</span>
             </div>
           )}
@@ -1556,6 +1560,11 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
                         Nightly Automated
                       </span>
                     )}
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-300">
+                      {snap.evidenceStatus === 'provider_verified'
+                        ? 'Provider verified'
+                        : snap.evidenceStatus === 'unverified_fixture' ? 'Unverified fixture' : 'Verification unavailable'}
+                    </span>
                   </div>
                   <p className="text-slate-400 text-[11px]">
                     Created: {snap.createdAt} • Database: <code className="text-emerald-400">{snap.databaseName}</code> ({snap.databaseTablesCount} tables)
@@ -1568,7 +1577,9 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleRestoreSnapshot(snap.snapshotId)}
-                    className="px-3 py-1.5 bg-amber-600/80 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    disabled={snap.evidenceStatus !== 'provider_verified'}
+                    title={snap.evidenceStatus === 'provider_verified' ? undefined : 'Restore is disabled without provider verification evidence.'}
+                    className="px-3 py-1.5 bg-amber-600/80 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                     <span>Verify & Restore</span>

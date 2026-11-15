@@ -2855,6 +2855,7 @@ export interface TenantBackupSnapshot {
   status: 'available' | 'restoring' | 'corrupted' | 'archived';
   lastVerificationDate?: string;
   isAutomatedNightly: boolean;
+  evidenceStatus?: 'unverified_fixture' | 'provider_verified';
 }
 
 export interface AppVersionCatalogItem {

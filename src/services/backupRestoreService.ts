@@ -15,7 +15,8 @@ export const INITIAL_TENANT_SNAPSHOTS: TenantBackupSnapshot[] = [
     storageLocation: '/data/backups/artifacts/tenant-kings-college/snap_kings_20260817_0100.tar.gz.enc',
     status: 'available',
     lastVerificationDate: '2026-08-17T01:05:00Z',
-    isAutomatedNightly: true
+    isAutomatedNightly: true,
+    evidenceStatus: 'unverified_fixture'
   },
   {
     snapshotId: 'snap_atlantic_20260817_0130',
@@ -31,7 +32,8 @@ export const INITIAL_TENANT_SNAPSHOTS: TenantBackupSnapshot[] = [
     storageLocation: '/data/backups/artifacts/tenant-atlantic-crest/snap_atlantic_20260817_0130.tar.gz.enc',
     status: 'available',
     lastVerificationDate: '2026-08-17T01:33:00Z',
-    isAutomatedNightly: true
+    isAutomatedNightly: true,
+    evidenceStatus: 'unverified_fixture'
   },
   {
     snapshotId: 'snap_corona_20260817_0200',
@@ -47,7 +49,8 @@ export const INITIAL_TENANT_SNAPSHOTS: TenantBackupSnapshot[] = [
     storageLocation: '/data/backups/artifacts/tenant-corona-schools/snap_corona_20260817_0200.tar.gz.enc',
     status: 'available',
     lastVerificationDate: '2026-08-17T02:04:00Z',
-    isAutomatedNightly: true
+    isAutomatedNightly: true,
+    evidenceStatus: 'unverified_fixture'
   }
 ];
 
@@ -89,30 +92,8 @@ export class BackupRestoreService {
     return [...this.snapshots];
   }
 
-  public createManualSnapshot(tenantId: string, schoolName: string): TenantBackupSnapshot {
-    const timestamp = new Date().toISOString();
-    const cleanId = tenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const snapshotId = `snp_${cleanId}_${Date.now()}`;
-
-    const newSnapshot: TenantBackupSnapshot = {
-      snapshotId,
-      tenantId,
-      tenantSchoolName: schoolName,
-      databaseName: `db_${cleanId}`,
-      storageNamespace: `/storage/tenants/${cleanId}`,
-      createdAt: timestamp,
-      sizeMb: 1.24,
-      databaseTablesCount: 7,
-      filesCount: 6,
-      checksumSha256: 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90',
-      storageLocation: `/data/backups/artifacts/${cleanId}/${snapshotId}.tar.gz.enc`,
-      status: 'available',
-      lastVerificationDate: timestamp,
-      isAutomatedNightly: false
-    };
-
-    this.snapshots.unshift(newSnapshot);
-    return newSnapshot;
+  public createManualSnapshot(_tenantId: string, _schoolName: string): never {
+    throw new Error('Backup creation is unavailable without a configured backup provider.');
   }
 
   public simulateRestoreSnapshot(snapshotId: string): { success: boolean; message: string; verifiedChecksum: boolean } {
@@ -121,16 +102,10 @@ export class BackupRestoreService {
       return { success: false, message: `Snapshot ID '${snapshotId}' not found in disaster recovery repository`, verifiedChecksum: false };
     }
 
-    snapshot.status = 'restoring';
-    setTimeout(() => {
-      snapshot.status = 'available';
-      snapshot.lastVerificationDate = new Date().toISOString();
-    }, 1500);
-
     return {
-      success: true,
-      message: `Tenant '${snapshot.tenantSchoolName}' successfully restored from snapshot ${snapshotId}. Database consistency and 7 tables re-synchronized.`,
-      verifiedChecksum: true
+      success: false,
+      message: `Restore is unavailable for unverified snapshot ${snapshotId}; no restore was performed.`,
+      verifiedChecksum: false
     };
   }
 }
