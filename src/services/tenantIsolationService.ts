@@ -11,12 +11,8 @@ export interface TenantStoragePathInfo {
 
 export interface TenantDatabaseCredentials {
   tenantId: string;
-  databaseName: string;
-  databaseHost: string;
-  databasePort: number;
-  databaseUser: string;
-  schemaVersion: string;
-  maxPoolConnections: number;
+  available: false;
+  reason: 'DATABASE_CONFIGURATION_UNAVAILABLE';
 }
 
 export class TenantIsolationService {
@@ -37,20 +33,12 @@ export class TenantIsolationService {
     };
   }
 
-  /**
-   * Generates or fetches dedicated database connection details.
-   * The actual connection string is never exposed to browser clients.
-   */
+  /** Does not invent tenant-specific database endpoints before a provider is configured. */
   static getDatabaseDescriptor(tenant: TenantSchoolApp): TenantDatabaseCredentials {
-    const cleanId = tenant.id.replace(/[^a-zA-Z0-9_]/g, '_');
     return {
       tenantId: tenant.id,
-      databaseName: `db_${cleanId}`,
-      databaseHost: 'postgres.cluster.internal',
-      databasePort: 5432,
-      databaseUser: `usr_${cleanId.substring(0, 16)}`,
-      schemaVersion: tenant.provisionedFromTemplateVersion || tenant.clonedFromTemplateVersion || 'v1.4.2',
-      maxPoolConnections: tenant.subscriptionTier === 'Apex Enterprise' ? 50 : 20
+      available: false,
+      reason: 'DATABASE_CONFIGURATION_UNAVAILABLE'
     };
   }
 

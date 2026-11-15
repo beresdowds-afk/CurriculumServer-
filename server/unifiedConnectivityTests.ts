@@ -60,8 +60,8 @@ export class UnifiedConnectivityTestSuite {
       id: 'CS-02',
       category: 'Curriculum Server',
       name: 'Authoritative Instance Registry Access',
-      passed: tenants.length > 0 && tenants.every(t => t.id && t.schoolName),
-      message: `Retrieved ${tenants.length} provisioned school instances from authoritative PostgreSQL store.`,
+      passed: false,
+      message: 'Instance records are still backed by local persistence and have not been verified from PostgreSQL.',
       durationMs: Date.now() - t2Start
     });
 
@@ -110,8 +110,8 @@ export class UnifiedConnectivityTestSuite {
       id: 'CF-02',
       category: 'Curriculum Flow',
       name: 'Authoritative School Instance Profile & Feature Entitlements',
-      passed: !!schoolProfile && schoolProfile.tenantId === schoolA.id && !!schoolProfile.storageStrategy,
-      message: `Resolved school configuration: ${schoolProfile?.schoolName}, Storage: ${schoolProfile?.storageStrategy}, DB: ${schoolProfile?.databaseIsolation}.`,
+      passed: false,
+      message: `Tenant storage and database strategies remain unverified; profile ${schoolProfile?.tenantId || 'unavailable'} is not PostgreSQL-backed.`,
       durationMs: Date.now() - t6Start
     });
 

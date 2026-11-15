@@ -11,7 +11,10 @@
     "build:all": "npm run build && npm run build:server && npm run build:flow",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
-    "test": "tsx --test server/gcpProvisioningEngine.test.ts server/customerOnboardingManager.test.ts server/storageAndDatabaseManager.test.ts src/services/cipaApiClient.test.ts",
+    "test": "tsx --test server/gcpProvisioningEngine.test.ts server/customerOnboardingManager.test.ts server/storageAndDatabaseManager.test.ts src/services/cipaApiClient.test.ts server/db/*.test.ts",
+    "test:db": "tsx --test server/db/*.test.ts",
+    "db:migrate": "tsx server/db/migrate.ts up",
+    "db:migrate:status": "tsx server/db/migrate.ts status",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },
@@ -26,6 +29,7 @@
     "jspdf": "^4.2.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "pg": "^8.16.3",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.10.1",
@@ -33,6 +37,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/pg": "^8.15.5",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",

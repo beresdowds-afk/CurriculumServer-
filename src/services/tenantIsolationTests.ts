@@ -64,13 +64,10 @@ export async function runAllTenantIsolationTests(
   runTest('TEST-ISO-02', 'Tenant A cannot access Tenant B database', 'database', () => {
     const dbDescriptorA = TenantIsolationService.getDatabaseDescriptor(tenantA);
     const dbDescriptorB = TenantIsolationService.getDatabaseDescriptor(tenantB);
-    const databasesAreDistinct = dbDescriptorA.databaseName !== dbDescriptorB.databaseName;
-    const usersAreDistinct = dbDescriptorA.databaseUser !== dbDescriptorB.databaseUser;
-
     return {
-      passed: databasesAreDistinct && usersAreDistinct,
-      details: `Database A is '${dbDescriptorA.databaseName}' (User: ${dbDescriptorA.databaseUser}), Database B is '${dbDescriptorB.databaseName}' (User: ${dbDescriptorB.databaseUser}). Zero cross-database PostgreSQL grants exist.`,
-      proof: `PostgreSQL connection pool isolation verified. SELECT * FROM ${dbDescriptorB.databaseName}.public.students from user ${dbDescriptorA.databaseUser} yields ERROR: permission denied for database.`
+      passed: false,
+      details: `Tenant database access is unavailable for ${dbDescriptorA.tenantId} and ${dbDescriptorB.tenantId}; no tenant-specific database resources are configured.`,
+      proof: dbDescriptorA.reason
     };
   });
 

@@ -41,6 +41,9 @@ import { productionHardeningEngine } from './server/productionHardeningEngine';
 import { homepageEngineManager } from './server/homepageEngineManager';
 import { serverPaymentEngine } from './server/serverPaymentEngine';
 import { MOCK_USERS } from './src/data/curriculumFlowData';
+import { postgresRuntime, DatabaseFailure } from './server/db/postgres';
+import { ControlPlaneRepository } from './server/db/controlPlaneRepository';
+import { inspectPlatformReadiness } from './server/db/readiness';
 
 dotenv.config();
 
@@ -51,6 +54,10 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
+
+app.get('/healthz', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'alive', timestamp: new Date().toISOString() });
+});
 
 // Correlation ID & Request Tracing Middleware
 app.use((req: Request, res: Response, next: express.NextFunction) => {
@@ -214,6 +221,19 @@ function requireStorageTenantAuth(req: Request, res: Response, next: express.Nex
   next();
 }
 
+function requireTrustedDatabaseIdentity(req: Request, res: Response, next: express.NextFunction) {
+  if (!(req as any).trustedTenantContext) {
+    res.status(503).json({
+      success: false,
+      error: 'Tenant-scoped database operations are unavailable until a trusted tenant identity verifier is configured.',
+      code: 'TENANT_IDENTITY_UNAVAILABLE',
+      correlationId: (req as any).correlationId
+    });
+    return;
+  }
+  next();
+}
+
 function requireStorageSuperAdmin(req: Request, res: Response, next: express.NextFunction) {
   if (!hasSecureControlPlaneSecret()) {
     res.status(503).json({
@@ -374,7 +394,7 @@ function generateExamId(classGrade: string, subjectCode: string, term: string): 
 // CORE CURRICULUM APIS
 // -------------------------------------------------------------
 app.get('/api/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok', platform: 'CurriculumFlow', time: new Date().toISOString() });
+  res.json({ status: 'alive', platform: 'CurriculumFlow', time: new Date().toISOString() });
 });
 
 // Domain Ingress & DNS Diagnostic Endpoint for curriculumflow.ai.studio and custom domains
@@ -1730,39 +1750,44 @@ app.get('/api/v1/questions', (req: Request, res: Response) => {
 });
 
 // 5. API v1 - Student Records (Tenant-Isolated)
-app.get('/api/v1/students', (req: Request, res: Response) => {
-  const { appId, tenantId } = extractTenantContext(req);
-  res.json({
-    version: 'v1',
-    tenantId: tenantId || 'tenant-kings-college',
-    totalStudents: 1420,
-    activeTerm: '2026/2027 Term 3',
-    data: [
-      { id: 'std_001', admissionNumber: 'KC/2024/001', name: 'Adekunle Olumide', classGrade: 'SS 2', classGroup: 'SS 2 Science A', status: 'active', gpa: 88.4 },
-      { id: 'std_002', admissionNumber: 'KC/2024/002', name: 'Chukwuemeka Nnamdi', classGrade: 'SS 2', classGroup: 'SS 2 Science A', status: 'active', gpa: 92.1 }
-    ]
-  });
+app.get('/api/v1/students', requireSchoolAuth, requireTrustedDatabaseIdentity, async (req: Request, res: Response) => {
+  try {
+    const repository = new ControlPlaneRepository(postgresRuntime.getPool());
+    const data = await repository.listFlowStudents((req as any).trustedTenantContext);
+    res.json({
+      version: 'v1',
+      tenantId: (req as any).trustedTenantContext.tenantId,
+      totalStudents: data.length,
+      data
+    });
+  } catch (error) {
+    const reason = error instanceof DatabaseFailure ? error.kind : 'unavailable';
+    res.status(503).json({
+      success: false,
+      code: 'DATABASE_UNAVAILABLE',
+      error: 'Curriculum Flow student records are unavailable.',
+      reason,
+      correlationId: (req as any).correlationId
+    });
+  }
 });
 
 // 6. API v1 - Health & Tenant Container Probe
 app.get('/api/v1/tenants/:id/health', (req: Request, res: Response) => {
-  const { id } = req.params;
-  res.json({
-    tenantId: id,
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    containers: {
-      frontend: { status: 'healthy', port: 3000, latencyMs: 12 },
-      backendApi: { status: 'healthy', port: 3001, latencyMs: 14 },
-      backgroundWorker: { status: 'healthy', activeJobs: 1, queueDepth: 0 },
-      database: { status: 'connected', poolActive: 4, name: `db_${id.replace(/[^a-zA-Z0-9_]/g, '_')}` }
-    },
-    resources: {
-      cpuPercent: 18.4,
-      memoryMb: 412,
-      storageUsedMb: 184.6,
-      storageQuotaMb: 10240
-    }
+  void inspectPlatformReadiness(
+    postgresRuntime.configured ? postgresRuntime.getPool() : undefined,
+    postgresRuntime.configured,
+    postgresRuntime.configurationFailureKind
+  ).then(readiness => {
+    res.status(readiness.ready ? 200 : 503).json({
+      tenantId: req.params.id,
+      status: readiness.ready ? 'not_provisioned' : 'not_ready',
+      database: readiness.database,
+      provisioning: readiness.provisioning,
+      timestamp: new Date().toISOString()
+    });
+  }).catch(() => {
+    res.status(503).json({ status: 'not_ready', error: 'Database readiness could not be verified.' });
   });
 });
 
@@ -2578,14 +2603,18 @@ app.get('/api/v1/flow/status', (req: Request, res: Response) => {
 // -------------------------------------------------------------
 
 // 1. Shared Unified Health Check & Integration Test Suite
-app.get('/api/v1/health', (_req: Request, res: Response) => {
-  res.json({
-    status: 'ok',
+app.get('/api/v1/health', async (_req: Request, res: Response) => {
+  const readiness = await inspectPlatformReadiness(
+    postgresRuntime.configured ? postgresRuntime.getPool() : undefined,
+    postgresRuntime.configured,
+    postgresRuntime.configurationFailureKind
+  );
+  res.status(readiness.ready ? 200 : 503).json({
+    status: readiness.ready ? 'ready' : 'not_ready',
     platform: 'Curriculum Unified Platform (Server + Flow)',
     version: '1.4.0',
-    database: 'connected_postgresql',
-    storage: 'operational',
-    auth: 'active',
+    database: readiness.database,
+    provisioning: readiness.provisioning,
     timestamp: new Date().toISOString()
   });
 });
@@ -2862,14 +2891,26 @@ app.get('/api/v1/flow/school/:tenantId/profile', requireSchoolAuth, (req: Reques
   });
 });
 
-app.get('/api/v1/flow/school/:tenantId/students', requireSchoolAuth, (req: Request, res: Response) => {
-  const students = serverSchoolManager.getStudentsByTenant(req.params.tenantId);
-  res.json({
-    success: true,
-    data: students,
-    correlationId: (req as any).correlationId,
-    timestamp: new Date().toISOString()
-  });
+app.get('/api/v1/flow/school/:tenantId/students', requireSchoolAuth, requireTrustedDatabaseIdentity, async (req: Request, res: Response) => {
+  try {
+    const repository = new ControlPlaneRepository(postgresRuntime.getPool());
+    const data = await repository.listFlowStudents((req as any).trustedTenantContext);
+    res.json({
+      success: true,
+      data,
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    const reason = error instanceof DatabaseFailure ? error.kind : 'unavailable';
+    res.status(503).json({
+      success: false,
+      error: 'Curriculum Flow student records are unavailable.',
+      code: 'DATABASE_UNAVAILABLE',
+      reason,
+      correlationId: (req as any).correlationId
+    });
+  }
 });
 
 app.get('/api/v1/flow/school/:tenantId/attendance', requireSchoolAuth, (req: Request, res: Response) => {
@@ -2895,15 +2936,33 @@ app.post('/api/v1/flow/school/:tenantId/attendance', requireSchoolAuth, (req: Re
 // -------------------------------------------------------------
 // PHASE 7 — POSTGRESQL & CUSTOMER STORAGE MANAGEMENT API ENDPOINTS
 // -------------------------------------------------------------
-app.get('/api/v1/server/databases', requireStorageTenantAuth, (req: Request, res: Response) => {
-  const context = (req as any).tenantContext;
-  const tenantId = context.role === 'super_admin' ? undefined : context.tenantId;
-  res.json({
-    status: 'ok',
-    availability: 'unavailable',
-    databases: StorageAndDatabaseManager.getDatabaseRecords(tenantId),
-    correlationId: (req as any).correlationId
-  });
+app.get('/api/v1/server/databases', requireStorageTenantAuth, requireTrustedDatabaseIdentity, async (req: Request, res: Response) => {
+  try {
+    const repository = new ControlPlaneRepository(postgresRuntime.getPool());
+    const resourceConfigurations = await repository.listResourceConfigurations(
+      (req as any).trustedTenantContext,
+      'database'
+    );
+    res.json({
+      status: 'ok',
+      availability: 'unavailable',
+      persistence: 'available',
+      databases: [],
+      resourceConfigurations,
+      correlationId: (req as any).correlationId
+    });
+  } catch (error) {
+    const kind = error instanceof DatabaseFailure ? error.kind : 'unavailable';
+    res.status(503).json({
+      status: 'unavailable',
+      availability: 'unavailable',
+      persistence: 'unavailable',
+      databases: [],
+      code: 'DATABASE_UNAVAILABLE',
+      reason: kind,
+      correlationId: (req as any).correlationId
+    });
+  }
 });
 
 app.post('/api/v1/server/databases/configure', requireStorageSuperAdmin, (req: Request, res: Response) => {
@@ -2926,18 +2985,35 @@ app.post('/api/v1/server/databases/configure', requireStorageSuperAdmin, (req: R
   res.status(503).json({ ...result, correlationId: (req as any).correlationId });
 });
 
-app.get('/api/v1/server/storage', requireStorageTenantAuth, (req: Request, res: Response) => {
-  const context = (req as any).tenantContext;
-  const tenantId = context.role === 'super_admin' ? undefined : context.tenantId;
-  const storageConfigs = StorageAndDatabaseManager.getStorageConfigs(tenantId)
-    .map(({ accessConfigRef: _accessConfigRef, ...record }) => record);
-  res.json({
-    status: 'ok',
-    availability: 'unavailable',
-    storageConfigs,
-    migrationJobs: StorageAndDatabaseManager.getMigrationJobs(tenantId),
-    correlationId: (req as any).correlationId
-  });
+app.get('/api/v1/server/storage', requireStorageTenantAuth, requireTrustedDatabaseIdentity, async (req: Request, res: Response) => {
+  try {
+    const repository = new ControlPlaneRepository(postgresRuntime.getPool());
+    const resourceConfigurations = await repository.listResourceConfigurations(
+      (req as any).trustedTenantContext,
+      'storage'
+    );
+    res.json({
+      status: 'ok',
+      availability: 'unavailable',
+      persistence: 'available',
+      storageConfigs: [],
+      migrationJobs: [],
+      resourceConfigurations,
+      correlationId: (req as any).correlationId
+    });
+  } catch (error) {
+    const kind = error instanceof DatabaseFailure ? error.kind : 'unavailable';
+    res.status(503).json({
+      status: 'unavailable',
+      availability: 'unavailable',
+      persistence: 'unavailable',
+      storageConfigs: [],
+      migrationJobs: [],
+      code: 'DATABASE_UNAVAILABLE',
+      reason: kind,
+      correlationId: (req as any).correlationId
+    });
+  }
 });
 
 app.post('/api/v1/server/storage/configure', requireStorageSuperAdmin, (req: Request, res: Response) => {
@@ -3724,16 +3800,30 @@ app.get('/api/v1/agent/health', (req: Request, res: Response) => {
 });
 
 app.get('/api/v1/agent/ready', (req: Request, res: Response) => {
-  res.status(503).json({
-    status: 'not_ready',
-    dependencies: {
-      database: 'not_configured',
-      mfaVerifier: 'not_configured',
-      piam: 'not_enforced',
-      orchestrator: 'not_configured'
-    },
-    correlationId: (req as any).correlationId,
-    timestamp: new Date().toISOString()
+  void inspectPlatformReadiness(
+    postgresRuntime.configured ? postgresRuntime.getPool() : undefined,
+    postgresRuntime.configured,
+    postgresRuntime.configurationFailureKind
+  ).then(readiness => {
+    res.status(503).json({
+      status: 'not_ready',
+      dependencies: {
+        database: readiness.database,
+        mfaVerifier: 'not_configured',
+        piam: 'not_enforced',
+        orchestrator: 'not_configured'
+      },
+      provisioning: readiness.provisioning,
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  }).catch(() => {
+    res.status(503).json({
+      status: 'not_ready',
+      dependencies: { database: { configured: postgresRuntime.configured, error: 'database_unavailable' } },
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
   });
 });
 
@@ -3819,6 +3909,16 @@ async function startServer() {
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`CurriculumFlow Academic Server running on http://0.0.0.0:${PORT}`);
   });
+
+  const shutdown = () => {
+    server.close(() => {
+      void postgresRuntime.close().catch(() => {
+        console.error('PostgreSQL pool shutdown failed.');
+      });
+    });
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 
   server.on('error', (err: any) => {
     if (err.code === 'EADDRINUSE') {
