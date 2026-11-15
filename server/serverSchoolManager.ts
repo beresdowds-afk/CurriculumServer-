@@ -138,9 +138,6 @@ export class ServerSchoolManager {
     const tenant = this.getTenantById(tenantId);
     if (!tenant) return undefined;
 
-    const storage = StorageAndDatabaseManager.getStorageConfig(tenant.id);
-    const database = StorageAndDatabaseManager.getDatabaseRecord(tenant.id);
-
     return {
       tenantId: tenant.id,
       appId: tenant.appId,
@@ -153,8 +150,8 @@ export class ServerSchoolManager {
       enrolledStudentsCount: tenant.activeStudentsCount,
       facultyCount: tenant.facultyCount,
       enabledFeatures: tenant.enabledFeatures,
-      storageStrategy: storage ? storage.strategy : 'hybrid',
-      databaseIsolation: database ? database.strategy : 'dedicated_database',
+      storageStrategy: 'unverified',
+      databaseIsolation: 'unverified',
       status: tenant.status === 'active' ? 'ACTIVE' : 'SUSPENDED'
     };
   }
