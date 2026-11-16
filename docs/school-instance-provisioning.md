@@ -58,7 +58,7 @@ All responses use the unified API response envelope with `success`, `data` or a 
 1. Provision an isolated staging PostgreSQL database and separate migration/runtime roles; verify backups and recovery.
 2. Inject the staging database URL, a dedicated control-plane secret, per-operator platform keys, a verified Resend sender/key, and the HTTPS staging `APP_URL`.
 3. Review the migration dry-run and apply migrations from the controlled migration job.
-4. Confirm `/api/v1/health` reports `ready`, then run `npm run test:postgres` with `TEST_DATABASE_URL` pointing to the disposable database and `DATABASE_TEST_DISPOSABLE=1`. The acceptance test requires a non-owner runtime role without superuser or `BYPASSRLS`.
+4. Confirm `/api/v1/health` reports `ready`, then run `npm run test:postgres:acceptance` (also set `POSTGRES_ACCEPTANCE=1` and `MIGRATION_DATABASE_URL`) with `TEST_DATABASE_URL` pointing to the disposable database and `DATABASE_TEST_DISPOSABLE=1`. The acceptance test requires a non-owner runtime role without superuser or `BYPASSRLS`.
 5. In staging, verify actual invitation delivery and cross-tenant denial. The automated test verifies isolated tenant reads/writes, invitation token rotation and one-time activation, idempotent retries, configuration persistence across runtime restart, and readiness with invitation delivery unconfigured.
 6. Only after these checks, approve a separately reviewed staging deployment. This repository change does not deploy or alter production infrastructure.
 

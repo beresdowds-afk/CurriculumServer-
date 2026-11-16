@@ -65,5 +65,14 @@ jobs:
           DATABASE_TEST_DISPOSABLE: '1'
         run: npm test
 
+      - name: Run mandatory PostgreSQL acceptance tests (no skips permitted)
+        env:
+          MIGRATION_DATABASE_URL: postgres://postgres:postgres@localhost:5432/curriculum_platform?sslmode=disable
+          TEST_DATABASE_URL: postgres://curriculum_runtime:runtime-test@localhost:5432/curriculum_platform
+          TEST_DATABASE_SSLMODE: disable
+          DATABASE_TEST_DISPOSABLE: '1'
+          POSTGRES_ACCEPTANCE: '1'
+        run: npm run test:postgres:acceptance
+
       - name: Build all production applications
         run: npm run build:all

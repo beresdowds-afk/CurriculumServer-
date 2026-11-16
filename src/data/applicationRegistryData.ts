@@ -1,4 +1,4 @@
-import { RegisteredApplication, RegisteredFeature } from '../types/applicationRegistry';
+import { FeatureReadinessStage, RegisteredApplication, RegisteredFeature } from '../types/applicationRegistry';
 
 export const INITIAL_REGISTERED_APPLICATIONS: RegisteredApplication[] = [
   {
@@ -270,6 +270,48 @@ export const INITIAL_REGISTERED_FEATURES: RegisteredFeature[] = [
   }
 ];
 
+const READINESS_ORDER: FeatureReadinessStage[] = [
+  'designed', 'implemented', 'database_migrated', 'api_operational',
+  'authorization_verified', 'acceptance_tested', 'provisionable', 'production_approved'
+];
+
+/**
+ * Readiness is derived from recorded stage evidence, never from the mere
+ * existence of a registry entry. A stage only counts when every earlier
+ * stage is also recorded.
+ */
+export function deriveFeatureReadiness(feature: RegisteredFeature): {
+  reachedStage: FeatureReadinessStage | 'none';
+  productionReady: boolean;
+} {
+  const recorded = new Set(feature.readiness ?? []);
+  let reachedStage: FeatureReadinessStage | 'none' = 'none';
+  for (const stage of READINESS_ORDER) {
+    if (!recorded.has(stage)) break;
+    reachedStage = stage;
+  }
+  return {
+    reachedStage,
+    productionReady: reachedStage === 'production_approved' && feature.honestyStatus === 'fully_implemented'
+  };
+}
+
+// Legacy and divergent feature identifiers mapped to canonical registry IDs.
+// Several legacy keys describe parts of one canonical feature, so the map is
+// many-to-one and must only be used to normalize input, never to expand it.
+export const FEATURE_ID_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  student_registers: 'feat_student_registration',
+  question_bank: 'feat_exam_management',
+  cbt_examination: 'feat_exam_management',
+  broadsheet_analytics: 'feat_results_processing',
+  bursary_finance: 'feat_bursary_billing',
+  biometric_attendance: 'feat_biometric_attendance'
+});
+
+export function canonicalFeatureId(featureId: string): string {
+  return FEATURE_ID_ALIASES[featureId] ?? featureId;
+}
+
 export function validateFeatureDependencies(selectedFeatureIds: string[]): { valid: boolean; missingDependencies: string[] } {
   const missing: string[] = [];
   const featureMap = new Map(INITIAL_REGISTERED_FEATURES.map(f => [f.featureId, f]));
@@ -316,8 +358,7 @@ export function validateProvisionableFeatures(
     if (feature.applicationAssociation !== applicationId) {
       errors.push(`Feature '${featureId}' is not compatible with application '${applicationId}'.`);
     }
-    if (!feature.readiness?.includes('provisionable') ||
-        !feature.readiness.includes('production_approved')) {
+    if (!deriveFeatureReadiness(feature).productionReady) {
       errors.push(`Feature '${featureId}' is not approved for production provisioning.`);
     }
   }

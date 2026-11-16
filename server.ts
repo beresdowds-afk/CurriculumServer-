@@ -52,6 +52,10 @@ import {
   type PersistedSchoolProvisioning
 } from './server/db/schoolProvisioningRepository';
 import { createVerifiedTenantPrincipal } from './server/db/tenantContext';
+import { AuthorizationRepository } from './server/authorization/authorizationRepository';
+import { createAuthorizationMiddleware } from './server/authorization/middleware';
+import { PERMISSIONS } from './server/authorization/permissions';
+import { evaluateProductionCapabilityGate } from './server/capabilities/productionCapabilityRegistry';
 import {
   hashInvitationToken,
   hashPassword,
@@ -127,11 +131,12 @@ async function deliverSchoolInvitation(
 
 app.use(express.json());
 
-function productionPersistenceUnavailable(req: Request, res: Response): void {
+function productionPersistenceUnavailable(req: Request, res: Response, capabilityId?: string): void {
   res.status(503).json({
     success: false,
     error: 'This operation is unavailable until its production persistence and authorization adapters are configured.',
     code: 'PRODUCTION_PERSISTENCE_UNAVAILABLE',
+    ...(capabilityId ? { capabilityId } : {}),
     correlationId: (req as any).correlationId,
     timestamp: new Date().toISOString()
   });
@@ -366,57 +371,12 @@ async function requireProvisioningPlatformAdmin(req: Request, res: Response, nex
   }
 }
 
-async function requireSchoolAdministrator(req: Request, res: Response, next: express.NextFunction) {
-  const authorization = req.headers.authorization || '';
-  const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
-  if (!token || !hasSecureControlPlaneSecret()) {
-    res.status(401).json({
-      success: false,
-      error: 'School administrator authentication is required.',
-      code: 'UNAUTHENTICATED',
-      correlationId: (req as any).correlationId,
-      timestamp: new Date().toISOString()
-    });
-    return;
-  }
-  const verification = ServerTenantTokenService.verifyTenantToken(token);
-  const context = verification.context;
-  if (!verification.valid || !context || context.role !== 'tenant_admin' ||
-      !context.userId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(context.tenantId)) {
-    res.status(403).json({
-      success: false,
-      error: 'School administrator authentication is invalid.',
-      code: 'FORBIDDEN',
-      correlationId: (req as any).correlationId,
-      timestamp: new Date().toISOString()
-    });
-    return;
-  }
-  try {
-    const principal = createVerifiedTenantPrincipal(verification);
-    if (!await getSchoolProvisioningRepository().getMembership(principal, context.userId)) {
-      res.status(403).json({
-        success: false,
-        error: 'School administrator membership is no longer active.',
-        code: 'FORBIDDEN',
-        correlationId: (req as any).correlationId,
-        timestamp: new Date().toISOString()
-      });
-      return;
-    }
-    (req as any).tenantContext = context;
-    (req as any).trustedTenantContext = principal;
-    next();
-  } catch {
-    res.status(503).json({
-      success: false,
-      error: 'School administrator authorization is temporarily unavailable.',
-      code: 'DATABASE_UNAVAILABLE',
-      correlationId: (req as any).correlationId,
-      timestamp: new Date().toISOString()
-    });
-  }
-}
+const authorizationMiddleware = createAuthorizationMiddleware({
+  verifyToken: token => ServerTenantTokenService.verifyTenantToken(token),
+  signingConfigured: hasSecureControlPlaneSecret,
+  authorization: () => new AuthorizationRepository(postgresRuntime.getPool()),
+  internalServiceKey: () => process.env.INTERNAL_SERVICE_KEY
+});
 
 function requireStorageSuperAdmin(req: Request, res: Response, next: express.NextFunction) {
   if (!hasSecureControlPlaneSecret()) {
@@ -521,41 +481,15 @@ function requireSchoolAuth(req: Request, res: Response, next: express.NextFuncti
   return productionPersistenceUnavailable(req, res);
 }
 
+// Fail-closed production gate: only enabled, evidence-backed capability route
+// groups are served; everything else under /api/v1 returns 503.
 app.use('/api/v1', (req: Request, res: Response, next: express.NextFunction) => {
-  const isLivenessOrReadiness = req.method === 'GET' && [
-    '/health',
-    '/readiness',
-    '/agent/health',
-    '/agent/ready',
-    '/flow/status'
-  ].includes(req.path);
-  const isPublicCurriculumReference = req.method === 'GET' && (
-    req.path === '/curriculum' ||
-    req.path === '/curriculum/stats' ||
-    req.path === '/curriculum/subjects' ||
-    /^\/curriculum\/subject\/[A-Za-z0-9_-]+$/.test(req.path)
-  );
-  const isSchoolProvisioningApi = (
-    (req.method === 'POST' && [
-      '/server/auth/login',
-      '/schools/provision',
-      '/schools/activation',
-      '/schools/auth/login'
-    ].includes(req.path)) ||
-    (req.method === 'POST' && /^\/schools\/provision\/[0-9a-f-]{36}\/retry$/i.test(req.path)) ||
-    (req.method === 'GET' && /^\/schools\/provision\/[0-9a-f-]{36}$/i.test(req.path)) ||
-    (req.method === 'GET' && [
-      '/schools/me',
-      '/schools/me/config',
-      '/schools/me/membership'
-    ].includes(req.path)) ||
-    (req.method === 'PUT' && req.path === '/schools/me/config')
-  );
-  if (isLivenessOrReadiness || isPublicCurriculumReference || isSchoolProvisioningApi) {
+  const decision = evaluateProductionCapabilityGate(req.method, req.path);
+  if (decision.allowed) {
     next();
     return;
   }
-  productionPersistenceUnavailable(req, res);
+  productionPersistenceUnavailable(req, res, decision.capabilityId);
 });
 
 // Initialize Google Gemini AI SDK on the server side
@@ -3312,18 +3246,24 @@ app.post('/api/v1/schools/auth/login', async (req: Request, res: Response) => {
   }
   try {
     const account = await getSchoolProvisioningRepository().authenticateAdministrator(tenantId, email);
-    if (!account || account.role !== 'tenant_admin' ||
-        !await verifyPassword(password, account.passwordHash)) {
+    if (!account || !await verifyPassword(password, account.passwordHash)) {
       res.status(401).json({ success: false, error: 'School, email, or password is invalid.', code: 'INVALID_CREDENTIALS' });
       return;
     }
+    // The token role claim is informational; PostgreSQL decides roles and permissions.
+    const loginPrincipal = createVerifiedTenantPrincipal({
+      valid: true,
+      context: { tenantId: account.tenantId, role: account.role, email: account.email } as any
+    });
+    const session = await new AuthorizationRepository(postgresRuntime.getPool())
+      .createSession(loginPrincipal, account.userId, 12 * 60 * 60);
     const token = ServerTenantTokenService.issueTenantToken({
       id: account.tenantId,
       appId: 'curriculum-school-application',
       schoolName: account.schoolName,
       subscriptionTier: 'standard',
       status: 'active'
-    } as any, 'tenant_admin', 12 * 60 * 60, account.email, account.userId);
+    } as any, account.role, 12 * 60 * 60, account.email, account.userId, session.sessionId);
     res.json({
       success: true,
       data: {
@@ -3341,7 +3281,7 @@ app.post('/api/v1/schools/auth/login', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/v1/schools/me', requireSchoolAdministrator, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me', authorizationMiddleware.requirePermission(PERMISSIONS.schoolProfileRead), async (req: Request, res: Response) => {
   try {
     const principal = (req as any).trustedTenantContext;
     const school = await getSchoolProvisioningRepository().getSchool(principal);
@@ -3393,7 +3333,7 @@ app.get('/api/v1/schools/me', requireSchoolAdministrator, async (req: Request, r
   }
 });
 
-app.get('/api/v1/schools/me/config', requireSchoolAdministrator, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/config', authorizationMiddleware.requirePermission(PERMISSIONS.schoolConfigurationRead), async (req: Request, res: Response) => {
   try {
     const configuration = await getSchoolProvisioningRepository().getConfiguration(
       (req as any).trustedTenantContext
@@ -3404,7 +3344,7 @@ app.get('/api/v1/schools/me/config', requireSchoolAdministrator, async (req: Req
   }
 });
 
-app.get('/api/v1/schools/me/membership', requireSchoolAdministrator, (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/membership', authorizationMiddleware.requirePermission(PERMISSIONS.membershipRead), (req: Request, res: Response) => {
   const context = (req as any).tenantContext;
   const principal = (req as any).trustedTenantContext;
   res.json({
@@ -3413,7 +3353,8 @@ app.get('/api/v1/schools/me/membership', requireSchoolAdministrator, (req: Reque
       tenantId: principal.tenantId,
       userId: context.userId,
       email: context.email,
-      role: 'tenant_admin',
+      roles: (req as any).authorizedPrincipal.roles,
+      permissions: [...new Set((req as any).authorizedPrincipal.grants.flatMap((grant: any) => grant.permissions))],
       status: 'active'
     },
     correlationId: (req as any).correlationId,
@@ -3421,7 +3362,7 @@ app.get('/api/v1/schools/me/membership', requireSchoolAdministrator, (req: Reque
   });
 });
 
-app.put('/api/v1/schools/me/config', requireSchoolAdministrator, async (req: Request, res: Response) => {
+app.put('/api/v1/schools/me/config', authorizationMiddleware.requirePermission(PERMISSIONS.schoolConfigurationManage), async (req: Request, res: Response) => {
   try {
     const repository = getSchoolProvisioningRepository();
     const principal = (req as any).trustedTenantContext;
@@ -3431,7 +3372,7 @@ app.put('/api/v1/schools/me/config', requireSchoolAdministrator, async (req: Req
       return;
     }
     const configuration = validateSchoolConfiguration(req.body);
-    await repository.updateConfiguration(principal, configuration);
+    await repository.updateConfiguration(principal, configuration, (req as any).authorizedPrincipal);
     res.json({ success: true, data: configuration, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';

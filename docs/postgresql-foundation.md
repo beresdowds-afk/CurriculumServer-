@@ -32,7 +32,7 @@ docker run --name curriculum-postgres-dev \
   -p 5432:5432 postgres:16
 ```
 
-Populate a local `.env` with the explicit connection variables and `PGSSLMODE=disable`; do not commit that file. For isolated persistence/RLS tests, apply migrations to a separate disposable database as its migration owner, then use a non-owner runtime role without superuser or `BYPASSRLS` for `TEST_DATABASE_URL`. Run `npm run test:postgres` with `DATABASE_TEST_DISPOSABLE=1`. The integration test writes and deletes only records carrying random test tenant identifiers. It is skipped unless both safeguards are explicitly set. Never point it at production or a shared database.
+Populate a local `.env` with the explicit connection variables and `PGSSLMODE=disable`; do not commit that file. For isolated persistence/RLS tests, apply migrations to a separate disposable database as its migration owner, then use a non-owner runtime role without superuser or `BYPASSRLS` for `TEST_DATABASE_URL`. Run `npm run test:postgres:acceptance` with `POSTGRES_ACCEPTANCE=1`, `DATABASE_TEST_DISPOSABLE=1`, `TEST_DATABASE_URL` and `MIGRATION_DATABASE_URL`; it applies migrations, checks the runtime role is non-owner/non-superuser/non-BYPASSRLS, and fails instead of skipping. (`npm run test:postgres` runs the same tests but skips without the safeguards; `npm run test:db` runs only the database unit tests.) Tests write and delete only synthetic records. Never point it at production or a shared database.
 
 ## Controlled migrations
 

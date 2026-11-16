@@ -43,4 +43,4 @@ PostgreSQL integration test environment:
 - `TEST_DATABASE_URL`: same disposable database using the non-owner `curriculum_runtime` role (without superuser or `BYPASSRLS`).
 - The role must be granted `USAGE` on `production`, `SELECT` on `production.tenants`, and `SELECT, INSERT, UPDATE, DELETE` on `production.instances`. Do not use a production database.
 
-Run `npm run test:postgres` only with those disposable test URLs. If they are absent, the integration test is skipped and does not constitute a passing PostgreSQL verification.
+Run `npm run test:postgres:acceptance` (requires `POSTGRES_ACCEPTANCE=1`, `DATABASE_TEST_DISPOSABLE=1`, `TEST_DATABASE_URL` and `MIGRATION_DATABASE_URL`) only with disposable databases. It applies migrations, verifies the runtime role, and fails rather than skips. `npm run test:postgres` runs the same integration files but they skip silently without the opt-in variables, so a skipped run is not PostgreSQL verification.

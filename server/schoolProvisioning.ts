@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import type { SchoolProvisioningRequest } from '../packages/shared-types/src/apiContracts';
 import { validateProvisionableFeatures } from '../src/data/applicationRegistryData';
 import { INITIAL_REGISTERED_APPLICATIONS } from '../src/data/applicationRegistryData';
+import { buildApplicationInstanceConfiguration } from '../src/data/applicationInstanceConfiguration';
 
 const scryptAsync = promisify(scrypt);
 
@@ -84,6 +85,17 @@ export function validateSchoolProvisioningRequest(value: unknown): SchoolProvisi
   }
   const featureValidation = validateProvisionableFeatures(applicationId, request.enabledFeatures);
   if (!featureValidation.valid) throw new Error(featureValidation.errors.join(' '));
+  try {
+    buildApplicationInstanceConfiguration({
+      applicationId,
+      templateId: request.templateId.trim(),
+      templateVersion: request.templateVersion.trim(),
+      enabledCapabilities: request.enabledFeatures,
+      deploymentArchitecture: request.architecture
+    });
+  } catch (error) {
+    throw new Error((error as Error).message.replace('INVALID_APPLICATION_CONFIGURATION: ', ''));
+  }
   if (!request.enabledFeatures.includes('feat_school_administration_identity')) {
     throw new Error('School Administration & Identity is required for a school instance.');
   }
