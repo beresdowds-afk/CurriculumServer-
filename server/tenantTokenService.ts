@@ -22,7 +22,8 @@ export class ServerTenantTokenService {
     role = 'tenant_admin',
     ttlSeconds = 86400,
     email?: string,
-    userId?: string
+    userId?: string,
+    sessionId?: string
   ): string {
     const now = Math.floor(Date.now() / 1000);
     const payload = {
@@ -38,6 +39,7 @@ export class ServerTenantTokenService {
       role,
       email,
       userId,
+      sessionId,
       issuedAt: now,
       expiresAt: now + ttlSeconds
     };

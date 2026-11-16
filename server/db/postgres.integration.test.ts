@@ -5,41 +5,17 @@ import { ControlPlaneRepository } from './controlPlaneRepository';
 import { SchoolProvisioningRepository } from './schoolProvisioningRepository';
 import { PostgresRuntime } from './postgres';
 import { inspectPlatformReadiness } from './readiness';
-import { createVerifiedTenantPrincipal, withControlPlaneTransaction, withTenantTransaction } from './tenantContext';
+import { withControlPlaneTransaction, withTenantTransaction } from './tenantContext';
 import {
   createInvitationToken,
   hashInvitationToken,
   hashPassword,
   hashProvisioningRequest
 } from '../schoolProvisioning';
-import type { SchoolProvisioningRequest } from '../../packages/shared-types/src/apiContracts';
+import { AuthorizationRepository } from '../authorization/authorizationRepository';
+import { acceptanceTestOptions, buildSchoolRequest, databaseUrl, principal } from './testSupport';
 
-const databaseUrl = process.env.TEST_DATABASE_URL;
-const enabled = process.env.DATABASE_TEST_DISPOSABLE === '1' && Boolean(databaseUrl);
-
-function principal(tenantId: string, role = 'tenant_admin') {
-  return createVerifiedTenantPrincipal({
-    valid: true,
-    context: {
-      tenantId,
-      role,
-      appId: 'curriculum-flow',
-      schoolName: 'Integration test',
-      subscriptionTier: 'test',
-      status: 'ACTIVE',
-      databaseName: 'curriculum_platform',
-      storageNamespace: `/storage/${tenantId}`,
-      issuer: 'integration-test',
-      audience: tenantId,
-      issuedAt: 1,
-      expiresAt: 2,
-      tokenSignature: 'test-signature',
-      permissions: []
-    }
-  });
-}
-
-test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS', { skip: !enabled }, async () => {
+test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS', acceptanceTestOptions, async () => {
   const runtime = new PostgresRuntime({
     DATABASE_URL: databaseUrl,
     PGSSLMODE: process.env.TEST_DATABASE_SSLMODE || 'disable',
@@ -196,44 +172,7 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
     );
 
     const schoolRepository = new SchoolProvisioningRepository(pool);
-    const schoolRequest = (name: string, email: string): SchoolProvisioningRequest => ({
-      school: {
-        name,
-        displayName: name,
-        shortName: name.slice(0, 40),
-        slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60),
-        schoolType: 'primary',
-        country: 'Ghana',
-        stateProvince: 'Greater Accra',
-        city: 'Accra',
-        physicalAddress: '1 Test Road',
-        officialContactEmail: `contact-${randomUUID()}@test.invalid`,
-        telephone: '+233 20 000 0000'
-      },
-      configuration: {
-        timeZone: 'Africa/Accra',
-        currency: 'GHS',
-        language: 'en',
-        academicSession: '2025-2026',
-        academicTermStructure: [{ name: 'Semester 1', startMonth: 9, endMonth: 1 }],
-        educationLevels: ['Primary'],
-        gradingConfiguration: { maximumScore: 100 }
-      },
-      administrator: { fullName: 'Test Administrator', email },
-      applicationId: 'app_curriculum_flow',
-      architecture: 'shared_database',
-      templateId: 'school-standard',
-      templateVersion: '1',
-      enabledFeatures: ['feat_school_administration_identity'],
-      commercial: {
-        commercialModel: 'annual',
-        planReference: 'test-annual',
-        priceReference: 'unverified-test-price',
-        currency: 'GHS',
-        billingInterval: 'year'
-      },
-      deployment: {}
-    });
+    const schoolRequest = buildSchoolRequest;
     const requestA = schoolRequest(`School A ${randomUUID()}`, schoolAdminEmailA);
     const keyA = `school-provision-${randomUUID()}`;
     const recordA = await schoolRepository.provision(
@@ -350,10 +289,16 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
     assert.equal(await schoolRepository.getMembership(schoolAPrincipal, activationB.userId), false);
     assert.equal((await schoolRepository.getSchool(schoolAPrincipal))?.id, recordA.schoolId);
     assert.equal(await schoolRepository.authenticateAdministrator(recordA.tenantId, schoolAdminEmailB), undefined);
+    const authorizationRepository = new AuthorizationRepository(pool);
+    const sessionA = await authorizationRepository.createSession(schoolAPrincipal, activationA.userId, 3600);
+    const authorizationA = await authorizationRepository.authorize(
+      schoolAPrincipal, activationA.userId, sessionA.sessionId
+    );
+    assert.equal(authorizationA.ok, true);
     await schoolRepository.updateConfiguration(schoolAPrincipal, {
       ...requestA.configuration,
       academicSession: '2026-2027'
-    });
+    }, (authorizationA as Extract<typeof authorizationA, { ok: true }>).principal);
     assert.equal((await schoolRepository.getConfiguration(schoolAPrincipal))?.academicSession, '2026-2027');
     assert.equal(
       (await schoolRepository.getConfiguration(principal(recordB.tenantId)))?.academicSession,

@@ -15,6 +15,8 @@ export interface TenantSecurityContext {
   permissions: string[];
   email?: string;
   userId?: string;
+  // Server-side session identifier; revocation is checked in PostgreSQL.
+  sessionId?: string;
 }
 
 export interface SecurityViolationEvent {
