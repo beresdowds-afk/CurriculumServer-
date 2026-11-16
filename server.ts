@@ -45,10 +45,14 @@ import type { SchoolProvisioningConfirmation, SchoolProvisioningRequest } from '
 import { postgresRuntime, DatabaseFailure } from './server/db/postgres';
 import { ControlPlaneRepository } from './server/db/controlPlaneRepository';
 import { inspectPlatformReadiness } from './server/db/readiness';
-import { SchoolProvisioningRepository } from './server/db/schoolProvisioningRepository';
+import {
+  ProvisioningOperationError,
+  SchoolProvisioningRepository,
+  type PersistedProvisioningOperation,
+  type PersistedSchoolProvisioning
+} from './server/db/schoolProvisioningRepository';
 import { createVerifiedTenantPrincipal } from './server/db/tenantContext';
 import {
-  createInvitationToken,
   hashInvitationToken,
   hashPassword,
   hashProvisioningRequest,
@@ -59,6 +63,7 @@ import {
   normalizeEmail,
   platformCredentialsAreValid,
   sendSchoolAdministratorInvitation,
+  validateSchoolConfiguration,
   validateSchoolProvisioningRequest,
   verifyPassword
 } from './server/schoolProvisioning';
@@ -72,6 +77,53 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const getCustomerOnboardingManager = () => CustomerOnboardingManager.getInstance();
 const getSchoolProvisioningRepository = () => new SchoolProvisioningRepository(postgresRuntime.getPool());
+const toSchoolProvisioningConfirmation = (record: PersistedSchoolProvisioning): SchoolProvisioningConfirmation => {
+  const {
+    invitationId: _invitationId,
+    invitationEmail: _invitationEmail,
+    idempotentReplay: _idempotentReplay,
+    ...confirmation
+  } = record;
+  return confirmation;
+};
+const toPublicProvisioningOperation = (operation: PersistedProvisioningOperation) => {
+  const {
+    idempotencyKey: _idempotencyKey,
+    requestHash: _requestHash,
+    requestPayload: _requestPayload,
+    initiatedBy: _initiatedBy,
+    provisioning,
+    ...publicOperation
+  } = operation;
+  return {
+    ...publicOperation,
+    ...(provisioning ? { provisioning } : {})
+  };
+};
+async function deliverSchoolInvitation(
+  repository: SchoolProvisioningRepository,
+  record: PersistedSchoolProvisioning,
+  principal: ReturnType<typeof createVerifiedTenantPrincipal>
+): Promise<PersistedSchoolProvisioning> {
+  if (!record.invitationId || record.administratorActivationStatus === 'activated') return record;
+  const delivery = await repository.prepareInvitationDelivery(record.invitationId, principal);
+  if (!delivery) {
+    return await repository.getProvisioningStatus(record.instanceId, principal) || record;
+  }
+  try {
+    const providerResult = await sendSchoolAdministratorInvitation(
+      delivery.email, delivery.fullName, delivery.schoolName, delivery.token
+    );
+    await repository.recordInvitationDelivery(
+      delivery.invitationId, principal, delivery.attemptId, providerResult
+    );
+  } catch {
+    await repository.recordInvitationDelivery(
+      delivery.invitationId, principal, delivery.attemptId, { error: 'email_delivery_failed' }
+    );
+  }
+  return await repository.getProvisioningStatus(record.instanceId, principal) || record;
+}
 
 app.use(express.json());
 
@@ -258,7 +310,7 @@ function requireTrustedDatabaseIdentity(req: Request, res: Response, next: expre
   next();
 }
 
-function requireProvisioningPlatformAdmin(req: Request, res: Response, next: express.NextFunction) {
+async function requireProvisioningPlatformAdmin(req: Request, res: Response, next: express.NextFunction) {
   const authorization = req.headers.authorization || '';
   const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
   if (!token || !hasSecureControlPlaneSecret()) {
@@ -284,8 +336,34 @@ function requireProvisioningPlatformAdmin(req: Request, res: Response, next: exp
     });
     return;
   }
-  (req as any).tenantContext = context;
-  next();
+  try {
+    const readiness = await inspectPlatformReadiness(
+      postgresRuntime.configured ? postgresRuntime.getPool() : undefined,
+      postgresRuntime.configured,
+      postgresRuntime.configurationFailureKind
+    );
+    if (!readiness.provisioning.executionAvailable) {
+      res.status(503).json({
+        success: false,
+        error: 'School provisioning is unavailable until PostgreSQL migrations, RLS, and platform credentials are ready.',
+        code: 'PROVISIONING_NOT_READY',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    (req as any).tenantContext = context;
+    (req as any).trustedTenantContext = createVerifiedTenantPrincipal(verification);
+    next();
+  } catch {
+    res.status(503).json({
+      success: false,
+      error: 'School provisioning readiness could not be verified.',
+      code: 'PROVISIONING_NOT_READY',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  }
 }
 
 async function requireSchoolAdministrator(req: Request, res: Response, next: express.NextFunction) {
@@ -464,6 +542,7 @@ app.use('/api/v1', (req: Request, res: Response, next: express.NextFunction) => 
       '/schools/activation',
       '/schools/auth/login'
     ].includes(req.path)) ||
+    (req.method === 'POST' && /^\/schools\/provision\/[0-9a-f-]{36}\/retry$/i.test(req.path)) ||
     (req.method === 'GET' && /^\/schools\/provision\/[0-9a-f-]{36}$/i.test(req.path)) ||
     (req.method === 'GET' && [
       '/schools/me',
@@ -3004,64 +3083,42 @@ app.post('/api/v1/schools/provision', requireProvisioningPlatformAdmin, async (r
   }
 
   try {
-    const invitation = createInvitationToken();
     const initiatedBy = (req as any).tenantContext.email as string;
+    const principal = (req as any).trustedTenantContext;
     const repository = getSchoolProvisioningRepository();
-    const record = await repository.provision(
+    let record = await repository.provision(
       request,
       initiatedBy,
       idempotencyKey,
       hashProvisioningRequest(request),
-      invitation.tokenHash,
-      new Date(Date.now() + 24 * 60 * 60 * 1000)
+      principal
     );
-
-    if (record.invitationId && record.invitationEmail &&
+    record = await deliverSchoolInvitation(repository, record, principal);
+    if (record.invitationDeliveryStatus !== 'delivered' &&
         record.administratorActivationStatus !== 'activated') {
-      try {
-        await sendSchoolAdministratorInvitation(
-          record.invitationEmail,
-          request.administrator.fullName,
-          request.school.displayName,
-          invitation.token
-        );
-        await repository.recordInvitationDelivery(record.invitationId);
-        record.administratorActivationStatus = 'invitation_sent';
-      } catch {
-        await repository.recordInvitationDelivery(record.invitationId, 'email_delivery_failed');
-        record.administratorActivationStatus = 'delivery_pending';
-        const data: SchoolProvisioningConfirmation = {
-          schoolId: record.schoolId,
-          tenantId: record.tenantId,
-          instanceId: record.instanceId,
-          schoolName: record.schoolName,
-          instanceStatus: record.instanceStatus,
-          administratorActivationStatus: 'delivery_pending',
-          applicationId: record.applicationId,
-          createdAt: record.createdAt
-        };
-        res.status(503).json({
-          success: false,
-          error: 'School records are saved, but administrator invitation delivery is pending. Retry with the same Idempotency-Key.',
-          code: 'INVITATION_DELIVERY_PENDING',
-          data,
-          correlationId,
-          timestamp: new Date().toISOString()
-        });
-        return;
-      }
+      res.status(503).json({
+        success: false,
+        error: 'School records are saved, but administrator invitation delivery is pending. Retry with the same Idempotency-Key.',
+        code: 'INVITATION_DELIVERY_PENDING',
+        data: toSchoolProvisioningConfirmation(record),
+        correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    if (record.applicationReadiness !== 'ready') {
+      res.status(503).json({
+        success: false,
+        error: 'School records and invitation state are persisted, but the application runtime has not passed its health check.',
+        code: 'APPLICATION_READINESS_PENDING',
+        data: toSchoolProvisioningConfirmation(record),
+        correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
     }
 
-    const data: SchoolProvisioningConfirmation = {
-      schoolId: record.schoolId,
-      tenantId: record.tenantId,
-      instanceId: record.instanceId,
-      schoolName: record.schoolName,
-      instanceStatus: record.instanceStatus,
-      administratorActivationStatus: record.administratorActivationStatus,
-      applicationId: record.applicationId,
-      createdAt: record.createdAt
-    };
+    const data = toSchoolProvisioningConfirmation(record);
     res.status(record.idempotentReplay ? 200 : 201).json({
       success: true,
       data,
@@ -3070,6 +3127,34 @@ app.post('/api/v1/schools/provision', requireProvisioningPlatformAdmin, async (r
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
+    if (error instanceof ProvisioningOperationError) {
+      try {
+        const operation = await getSchoolProvisioningRepository().getProvisioningOperation(
+          error.operationId,
+          (req as any).trustedTenantContext
+        );
+        res.status(503).json({
+          success: false,
+          error: 'School provisioning did not complete.',
+          code: error.failureCode,
+          retryable: error.retryable,
+          data: operation ? toPublicProvisioningOperation(operation) : { operationId: error.operationId },
+          correlationId,
+          timestamp: new Date().toISOString()
+        });
+        return;
+      } catch {
+        res.status(503).json({
+          success: false,
+          error: 'School provisioning failed and its operation status is temporarily unavailable.',
+          code: 'PROVISIONING_STATUS_UNAVAILABLE',
+          operationId: error.operationId,
+          correlationId,
+          timestamp: new Date().toISOString()
+        });
+        return;
+      }
+    }
     const conflict = message === 'IDEMPOTENCY_CONFLICT';
     const duplicate = (error as { code?: string })?.code === '23505';
     res.status(conflict || duplicate ? 409 : 503).json({
@@ -3086,24 +3171,78 @@ app.post('/api/v1/schools/provision', requireProvisioningPlatformAdmin, async (r
 
 app.get('/api/v1/schools/provision/:instanceId', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
   try {
-    const record = await getSchoolProvisioningRepository().getProvisioningStatus(req.params.instanceId);
-    if (!record) {
+    const principal = (req as any).trustedTenantContext;
+    const operation = await getSchoolProvisioningRepository().getProvisioningOperation(req.params.instanceId, principal);
+    if (!operation) {
       res.status(404).json({ success: false, error: 'School instance was not found.', code: 'RESOURCE_NOT_FOUND' });
       return;
     }
-    const data: SchoolProvisioningConfirmation = {
-      schoolId: record.schoolId,
-      tenantId: record.tenantId,
-      instanceId: record.instanceId,
-      schoolName: record.schoolName,
-      instanceStatus: record.instanceStatus,
-      administratorActivationStatus: record.administratorActivationStatus,
-      applicationId: record.applicationId,
-      createdAt: record.createdAt
-    };
-    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    res.json({
+      success: true,
+      data: toPublicProvisioningOperation(operation),
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
   } catch {
     res.status(503).json({ success: false, error: 'School provisioning status is unavailable.', code: 'DATABASE_UNAVAILABLE' });
+  }
+});
+
+app.post('/api/v1/schools/provision/:operationId/retry', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  const principal = (req as any).trustedTenantContext;
+  const repository = getSchoolProvisioningRepository();
+  try {
+    let operation = await repository.getProvisioningOperation(req.params.operationId, principal);
+    if (!operation) {
+      res.status(404).json({ success: false, error: 'Provisioning operation was not found.', code: 'RESOURCE_NOT_FOUND' });
+      return;
+    }
+    if (operation.status !== 'ready') {
+      const request = validateSchoolProvisioningRequest(operation.requestPayload);
+      await repository.provision(
+        request,
+        operation.initiatedBy,
+        operation.idempotencyKey,
+        operation.requestHash,
+        principal
+      );
+      operation = await repository.getProvisioningOperation(req.params.operationId, principal) || operation;
+    }
+    const record = await repository.getProvisioningStatus(req.params.operationId, principal);
+    if (record && record.invitationDeliveryStatus !== 'delivered' &&
+        record.administratorActivationStatus !== 'activated') {
+      await repository.queueInvitationRetry(record.instanceId, principal);
+      await deliverSchoolInvitation(repository, record, principal);
+    }
+    operation = await repository.getProvisioningOperation(req.params.operationId, principal) || operation;
+    const data = toPublicProvisioningOperation(operation);
+    const delivered = operation.provisioning?.invitationDeliveryStatus === 'delivered' ||
+      operation.provisioning?.administratorActivationStatus === 'activated';
+    const applicationReady = operation.provisioning?.applicationReadiness === 'ready';
+    const success = operation.status === 'ready' && delivered && applicationReady;
+    res.status(success ? 200 : 503).json({
+      success,
+      data,
+      ...(success
+        ? {}
+        : {
+            error: applicationReady
+              ? 'Provisioning or invitation delivery remains incomplete and can be retried.'
+              : 'School configuration is persisted, but application runtime health has not been verified.',
+            code: applicationReady ? 'PROVISIONING_RETRY_PENDING' : 'APPLICATION_READINESS_PENDING'
+          }),
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch {
+    res.status(503).json({
+      success: false,
+      error: 'School provisioning retry is unavailable.',
+      code: 'PROVISIONING_RETRY_UNAVAILABLE',
+      operationId: req.params.operationId,
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
@@ -3138,7 +3277,11 @@ app.post('/api/v1/schools/activation', async (req: Request, res: Response) => {
     );
     res.json({
       success: true,
-      data: { tenantId: activated.tenantId, status: 'active', administratorActivationStatus: 'activated' },
+      data: {
+        tenantId: activated.tenantId,
+        status: 'ready_for_activation',
+        administratorActivationStatus: 'activated'
+      },
       correlationId: (req as any).correlationId,
       timestamp: new Date().toISOString()
     });
@@ -3211,6 +3354,7 @@ app.get('/api/v1/schools/me', requireSchoolAdministrator, async (req: Request, r
       tenantId: school.tenant_id,
       slug: school.school_slug,
       name: school.name,
+      shortName: school.short_name,
       displayName: school.display_name,
       schoolType: school.school_type,
       country: school.country,
@@ -3219,6 +3363,17 @@ app.get('/api/v1/schools/me', requireSchoolAdministrator, async (req: Request, r
       physicalAddress: school.physical_address,
       officialContactEmail: school.official_contact_email,
       telephone: school.telephone,
+      website: school.website,
+      motto: school.motto,
+      principalName: school.principal_name,
+      principalEmail: school.principal_email,
+      principalPhone: school.principal_phone,
+      ictAdministratorName: school.ict_administrator_name,
+      ictAdministratorEmail: school.ict_administrator_email,
+      ictAdministratorPhone: school.ict_administrator_phone,
+      logoUrl: school.logo_url,
+      primaryBrandColor: school.primary_brand_color,
+      accentBrandColor: school.accent_brand_color,
       timeZone: school.time_zone,
       currency: school.currency,
       language: school.default_language,
@@ -3275,24 +3430,9 @@ app.put('/api/v1/schools/me/config', requireSchoolAdministrator, async (req: Req
       res.status(404).json({ success: false, error: 'School instance was not found.', code: 'RESOURCE_NOT_FOUND' });
       return;
     }
-    const validationRequest = validateSchoolProvisioningRequest({
-      school: {
-        name: school.name,
-        displayName: school.display_name,
-        schoolType: school.school_type,
-        country: school.country,
-        stateProvince: school.state_province,
-        city: school.city,
-        physicalAddress: school.physical_address,
-        officialContactEmail: school.official_contact_email,
-        telephone: school.telephone
-      },
-      configuration: req.body,
-      administrator: { fullName: 'School administrator', email: (req as any).tenantContext.email },
-      applicationId: school.application_id
-    });
-    await repository.updateConfiguration(principal, validationRequest.configuration);
-    res.json({ success: true, data: validationRequest.configuration, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    const configuration = validateSchoolConfiguration(req.body);
+    await repository.updateConfiguration(principal, configuration);
+    res.json({ success: true, data: configuration, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
     const databaseFailure = error instanceof DatabaseFailure ||

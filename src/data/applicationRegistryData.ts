@@ -104,6 +104,36 @@ export const INITIAL_REGISTERED_APPLICATIONS: RegisteredApplication[] = [
 
 export const INITIAL_REGISTERED_FEATURES: RegisteredFeature[] = [
   {
+    featureId: 'feat_school_administration_identity',
+    name: 'School Administration & Identity',
+    description: 'School profile, tenant-scoped application configuration, and first-administrator invitation and membership.',
+    applicationAssociation: 'app_curriculum_flow',
+    dependencies: [],
+    requiredPermissions: ['manage_school_configuration'],
+    apiDependencies: ['/api/v1/schools/me', '/api/v1/schools/activation'],
+    databaseRequirements: [
+      'production.schools',
+      'production.school_configurations',
+      'production.application_instances',
+      'production.memberships'
+    ],
+    storageRequirements: [],
+    configOptions: {},
+    version: '1.0.0',
+    availabilityStatus: 'available',
+    honestyStatus: 'fully_implemented',
+    readiness: [
+      'designed',
+      'implemented',
+      'database_migrated',
+      'api_operational',
+      'authorization_verified',
+      'acceptance_tested',
+      'provisionable',
+      'production_approved'
+    ]
+  },
+  {
     featureId: 'feat_student_registration',
     name: 'Student & Guardian Registration',
     description: 'Enrolment records, guardian contact linkage, medical records, and demography tracking.',
@@ -246,12 +276,14 @@ export function validateFeatureDependencies(selectedFeatureIds: string[]): { val
 
   for (const fid of selectedFeatureIds) {
     const feat = featureMap.get(fid);
-    if (feat) {
-      for (const depId of feat.dependencies) {
-        if (!selectedFeatureIds.includes(depId)) {
-          const depFeature = featureMap.get(depId);
-          missing.push(depFeature ? depFeature.name : depId);
-        }
+    if (!feat) {
+      missing.push(fid);
+      continue;
+    }
+    for (const depId of feat.dependencies) {
+      if (!selectedFeatureIds.includes(depId)) {
+        const depFeature = featureMap.get(depId);
+        missing.push(depFeature ? depFeature.name : depId);
       }
     }
   }
@@ -260,4 +292,44 @@ export function validateFeatureDependencies(selectedFeatureIds: string[]): { val
     valid: missing.length === 0,
     missingDependencies: Array.from(new Set(missing))
   };
+}
+
+export function validateProvisionableFeatures(
+  applicationId: string,
+  selectedFeatureIds: string[]
+): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const featureMap = new Map(INITIAL_REGISTERED_FEATURES.map(feature => [feature.featureId, feature]));
+  const selected = new Set<string>();
+
+  for (const featureId of selectedFeatureIds) {
+    if (selected.has(featureId)) {
+      errors.push(`Feature '${featureId}' was selected more than once.`);
+      continue;
+    }
+    selected.add(featureId);
+    const feature = featureMap.get(featureId);
+    if (!feature) {
+      errors.push(`Unknown feature '${featureId}'.`);
+      continue;
+    }
+    if (feature.applicationAssociation !== applicationId) {
+      errors.push(`Feature '${featureId}' is not compatible with application '${applicationId}'.`);
+    }
+    if (!feature.readiness?.includes('provisionable') ||
+        !feature.readiness.includes('production_approved')) {
+      errors.push(`Feature '${featureId}' is not approved for production provisioning.`);
+    }
+  }
+
+  for (const featureId of selected) {
+    const feature = featureMap.get(featureId);
+    for (const dependency of feature?.dependencies || []) {
+      if (!selected.has(dependency)) {
+        errors.push(`Feature '${featureId}' requires '${dependency}'.`);
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, errors: [...new Set(errors)] };
 }

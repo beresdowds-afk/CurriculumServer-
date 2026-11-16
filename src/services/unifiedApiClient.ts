@@ -15,6 +15,7 @@ import type {
   SchoolDetailsResponse,
   SchoolMembershipResponse,
   SchoolProvisioningConfirmation,
+  SchoolProvisioningOperationResponse,
   SchoolProvisioningRequest
 } from '../../packages/shared-types/src/apiContracts';
 import { TenantSchoolApp } from '../types';
@@ -315,6 +316,28 @@ class UnifiedApiClient {
         headers: { 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(payload)
       },
+      'control_plane'
+    );
+    return res.data;
+  }
+
+  public async getSchoolProvisioningOperation(
+    operationId: string
+  ): Promise<SchoolProvisioningOperationResponse> {
+    const res = await this.request<{ success: boolean; data: SchoolProvisioningOperationResponse }>(
+      `/api/v1/schools/provision/${encodeURIComponent(operationId)}`,
+      { method: 'GET' },
+      'control_plane'
+    );
+    return res.data;
+  }
+
+  public async retrySchoolProvisioning(
+    operationId: string
+  ): Promise<SchoolProvisioningOperationResponse> {
+    const res = await this.request<{ success: boolean; data: SchoolProvisioningOperationResponse }>(
+      `/api/v1/schools/provision/${encodeURIComponent(operationId)}/retry`,
+      { method: 'POST' },
       'control_plane'
     );
     return res.data;
