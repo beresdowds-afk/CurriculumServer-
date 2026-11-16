@@ -53,8 +53,10 @@ export class AuthorizationRepository implements AuthorizationSource {
         `SELECT membership.user_subject
          FROM production.memberships membership
          JOIN production.tenants tenant_record ON tenant_record.id = membership.tenant_id
+         JOIN production.users user_record ON user_record.id = membership.user_id
          WHERE membership.tenant_id = $1 AND membership.user_id = $2
-           AND membership.status = 'active' AND tenant_record.status = 'approved'`,
+           AND membership.status = 'active' AND tenant_record.status = 'approved'
+           AND user_record.account_status = 'active'`,
         [tenant.tenantId, userId]
       );
       if (membership.rowCount !== 1) return { ok: false as const, reason: 'MEMBERSHIP_INACTIVE' as const };

@@ -3,7 +3,11 @@ import { promisify } from 'node:util';
 import type { SchoolProvisioningRequest } from '../packages/shared-types/src/apiContracts';
 import { validateProvisionableFeatures } from '../src/data/applicationRegistryData';
 import { INITIAL_REGISTERED_APPLICATIONS } from '../src/data/applicationRegistryData';
-import { buildApplicationInstanceConfiguration } from '../src/data/applicationInstanceConfiguration';
+import {
+  buildApplicationInstanceConfiguration,
+  validateApplicationInstanceConfiguration,
+  type ApplicationInstanceConfiguration
+} from '../src/data/applicationInstanceConfiguration';
 
 const scryptAsync = promisify(scrypt);
 
@@ -19,6 +23,12 @@ export function isValidEmail(email: string): boolean {
 export function validateSchoolProvisioningRequest(value: unknown): SchoolProvisioningRequest {
   if (!value || typeof value !== 'object') throw new Error('A registration request is required.');
   const request = value as SchoolProvisioningRequest;
+  if (Object.prototype.hasOwnProperty.call(request, 'applicationConfiguration') &&
+      (!request.applicationConfiguration ||
+       typeof request.applicationConfiguration !== 'object' ||
+       Array.isArray(request.applicationConfiguration))) {
+    throw new Error('Application Builder configuration must be an object when supplied.');
+  }
   const requiredText: Array<[string, unknown, number]> = [
     ['school.name', request.school?.name, 255],
     ['school.displayName', request.school?.displayName, 255],
@@ -85,19 +95,40 @@ export function validateSchoolProvisioningRequest(value: unknown): SchoolProvisi
   }
   const featureValidation = validateProvisionableFeatures(applicationId, request.enabledFeatures);
   if (!featureValidation.valid) throw new Error(featureValidation.errors.join(' '));
+  let applicationConfiguration: ApplicationInstanceConfiguration;
   try {
-    buildApplicationInstanceConfiguration({
+    applicationConfiguration = buildApplicationInstanceConfiguration({
       applicationId,
       templateId: request.templateId.trim(),
       templateVersion: request.templateVersion.trim(),
       enabledCapabilities: request.enabledFeatures,
       deploymentArchitecture: request.architecture
     });
+    if (request.applicationConfiguration) {
+      const supplied = request.applicationConfiguration;
+      const validation = validateApplicationInstanceConfiguration(supplied);
+      if (!validation.valid) throw new Error(validation.errors.join(' '));
+      const template = supplied.templates[0];
+      if (supplied.applicationId !== applicationId ||
+          supplied.deploymentArchitecture !== request.architecture ||
+          supplied.templates.length !== 1 ||
+          template.templateId !== request.templateId.trim() ||
+          template.templateVersion !== request.templateVersion.trim() ||
+          [...supplied.enabledCapabilities].sort().join('\0') !==
+            [...request.enabledFeatures].sort().join('\0')) {
+        throw new Error('Application Builder configuration does not match the provisioning selection.');
+      }
+      applicationConfiguration = buildApplicationInstanceConfiguration({
+        applicationId,
+        templateId: request.templateId.trim(),
+        templateVersion: request.templateVersion.trim(),
+        enabledCapabilities: request.enabledFeatures,
+        configurationVersion: supplied.configurationVersion,
+        deploymentArchitecture: request.architecture
+      });
+    }
   } catch (error) {
     throw new Error((error as Error).message.replace('INVALID_APPLICATION_CONFIGURATION: ', ''));
-  }
-  if (!request.enabledFeatures.includes('feat_school_administration_identity')) {
-    throw new Error('School Administration & Identity is required for a school instance.');
   }
   if (!request.commercial || !['monthly', 'annual', 'lease_to_own'].includes(request.commercial.commercialModel) ||
       !['month', 'year', 'lease'].includes(request.commercial.billingInterval)) {
@@ -195,6 +226,7 @@ export function validateSchoolProvisioningRequest(value: unknown): SchoolProvisi
     templateId: request.templateId.trim(),
     templateVersion: request.templateVersion.trim(),
     enabledFeatures: [...request.enabledFeatures].sort(),
+    applicationConfiguration,
     commercial: {
       ...request.commercial,
       currency: request.commercial.currency.toUpperCase()
@@ -283,7 +315,19 @@ export function createInvitationToken(): { token: string; tokenHash: Buffer } {
 }
 
 export function hashProvisioningRequest(request: SchoolProvisioningRequest): string {
-  return createHash('sha256').update(stableJson(request)).digest('hex');
+  const canonicalRequest = request.applicationConfiguration
+    ? {
+        ...request,
+        applicationConfiguration: {
+          ...request.applicationConfiguration,
+          validationEvidence: {
+            ...request.applicationConfiguration.validationEvidence,
+            validatedAt: ''
+          }
+        }
+      }
+    : request;
+  return createHash('sha256').update(stableJson(canonicalRequest)).digest('hex');
 }
 
 function stableJson(value: unknown): string {

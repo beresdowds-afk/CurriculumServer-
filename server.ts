@@ -32,6 +32,7 @@ import { runProductionHardeningTestSuite } from './server/serverProductionHarden
 import { StorageAndDatabaseManager } from './server/storageAndDatabaseManager';
 import { serverSchoolManager } from './server/serverSchoolManager';
 import { INITIAL_REGISTERED_APPLICATIONS, INITIAL_REGISTERED_FEATURES } from './src/data/applicationRegistryData';
+import { APPLICATION_TEMPLATE_REGISTRY } from './src/data/applicationInstanceConfiguration';
 import { IIAPEngineService } from './src/services/iiapEngineService';
 import { GCPProvisioningOrchestrationEngine } from './server/gcpProvisioningEngine';
 import { UnifiedConnectivityTestSuite } from './server/unifiedConnectivityTests';
@@ -55,6 +56,12 @@ import { createVerifiedTenantPrincipal } from './server/db/tenantContext';
 import { AuthorizationRepository } from './server/authorization/authorizationRepository';
 import { createAuthorizationMiddleware } from './server/authorization/middleware';
 import { PERMISSIONS } from './server/authorization/permissions';
+import {
+  SchoolAdministrationError,
+  SchoolAdministrationRepository,
+  type StudentLifecycleStatus,
+  type StudentTransition
+} from './server/db/schoolAdministrationRepository';
 import { evaluateProductionCapabilityGate } from './server/capabilities/productionCapabilityRegistry';
 import {
   hashInvitationToken,
@@ -81,6 +88,7 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const getCustomerOnboardingManager = () => CustomerOnboardingManager.getInstance();
 const getSchoolProvisioningRepository = () => new SchoolProvisioningRepository(postgresRuntime.getPool());
+const getSchoolAdministrationRepository = () => new SchoolAdministrationRepository(postgresRuntime.getPool());
 const toSchoolProvisioningConfirmation = (record: PersistedSchoolProvisioning): SchoolProvisioningConfirmation => {
   const {
     invitationId: _invitationId,
@@ -3281,6 +3289,15 @@ app.post('/api/v1/schools/auth/login', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/v1/application-templates', (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    data: APPLICATION_TEMPLATE_REGISTRY,
+    correlationId: (_req as any).correlationId,
+    timestamp: new Date().toISOString()
+  });
+});
+
 app.get('/api/v1/schools/me', authorizationMiddleware.requirePermission(PERMISSIONS.schoolProfileRead), async (req: Request, res: Response) => {
   try {
     const principal = (req as any).trustedTenantContext;
@@ -3386,6 +3403,240 @@ app.put('/api/v1/schools/me/config', authorizationMiddleware.requirePermission(P
       correlationId: (req as any).correlationId,
       timestamp: new Date().toISOString()
     });
+  }
+});
+
+function schoolAdministrationFailure(req: Request, res: Response, error: unknown): void {
+  const databaseCode = (error as { code?: string })?.code;
+  const code = error instanceof SchoolAdministrationError
+    ? error.code
+    : databaseCode === '23505'
+      ? 'CONFLICT'
+      : databaseCode === '23503' || databaseCode === '22P02'
+        ? 'VALIDATION_FAILED'
+        : 'DATABASE_UNAVAILABLE';
+  const status = code === 'FORBIDDEN' ? 403
+    : code === 'STUDENT_NOT_FOUND' || code === 'CLASS_NOT_FOUND' ? 404
+      : code === 'CONFLICT' || code === 'INVALID_STUDENT_TRANSITION' ? 409
+        : code === 'VALIDATION_FAILED' || code === 'INVALID_INPUT' ? 400
+          : 503;
+  const message = error instanceof SchoolAdministrationError
+    ? error.message
+    : code === 'CONFLICT'
+      ? 'The record conflicts with existing school data.'
+      : code === 'VALIDATION_FAILED'
+        ? 'The requested school record is invalid.'
+        : 'School administration data is temporarily unavailable.';
+  res.status(status).json({
+    success: false,
+    error: message,
+    code,
+    correlationId: (req as any).correlationId,
+    timestamp: new Date().toISOString()
+  });
+}
+
+async function getCurrentSchoolId(req: Request, res: Response): Promise<string | undefined> {
+  const school = await getSchoolProvisioningRepository().getSchool((req as any).trustedTenantContext);
+  if (!school) {
+    res.status(404).json({
+      success: false,
+      error: 'School instance was not found.',
+      code: 'RESOURCE_NOT_FOUND',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+    return undefined;
+  }
+  return school.id;
+}
+
+app.get('/api/v1/schools/me/students', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const lifecycleStatuses = new Set<StudentLifecycleStatus>([
+      'applicant', 'admitted', 'active', 'transferred', 'graduated', 'withdrawn', 'legacy_unverified'
+    ]);
+    if (status && !lifecycleStatuses.has(status as StudentLifecycleStatus)) {
+      res.status(400).json({
+        success: false,
+        error: 'Student status filter is invalid.',
+        code: 'VALIDATION_FAILED',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    const page = typeof req.query.page === 'string' ? Number(req.query.page) : undefined;
+    const pageSize = typeof req.query.pageSize === 'string' ? Number(req.query.pageSize) : undefined;
+    if ((page !== undefined && (!Number.isInteger(page) || page < 1)) ||
+        (pageSize !== undefined && (!Number.isInteger(pageSize) || pageSize < 1))) {
+      res.status(400).json({
+        success: false,
+        error: 'Pagination values must be positive integers.',
+        code: 'VALIDATION_FAILED',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    const data = await getSchoolAdministrationRepository().listStudents(
+      (req as any).authorizedPrincipal,
+      schoolId,
+      {
+        page,
+        pageSize,
+        search: typeof req.query.search === 'string' ? req.query.search : undefined,
+        lifecycleStatus: status as StudentLifecycleStatus | undefined,
+        classId: typeof req.query.classId === 'string' ? req.query.classId : undefined
+      }
+    );
+    res.json({
+      success: true,
+      data,
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/students', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const body = req.body as Record<string, unknown> | undefined;
+    const data = await getSchoolAdministrationRepository().createStudent(
+      (req as any).authorizedPrincipal,
+      {
+        schoolId,
+        admissionNumber: typeof body?.admissionNumber === 'string' ? body.admissionNumber : '',
+        firstName: typeof body?.firstName === 'string' ? body.firstName : '',
+        lastName: typeof body?.lastName === 'string' ? body.lastName : ''
+      }
+    );
+    res.status(201).json({
+      success: true,
+      data,
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/students/:studentId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().getStudent(
+      (req as any).authorizedPrincipal, schoolId, req.params.studentId
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/students/:studentId/lifecycle', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const body = req.body as Record<string, unknown> | undefined;
+    let transition: StudentTransition | undefined;
+    if (body?.type === 'admit' || body?.type === 'activate' || body?.type === 'graduate') {
+      transition = { type: body.type };
+    } else if (body?.type === 'external_transfer' && typeof body.destination === 'string') {
+      transition = { type: 'external_transfer', destination: body.destination };
+    } else if ((body?.type === 'withdraw' || body?.type === 'reinstate') &&
+        typeof body.reason === 'string') {
+      transition = { type: body.type, reason: body.reason };
+    }
+    if (!transition) {
+      res.status(400).json({
+        success: false,
+        error: 'A supported lifecycle action and its required details are required.',
+        code: 'VALIDATION_FAILED',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    const data = await getSchoolAdministrationRepository().transitionStudent(
+      (req as any).authorizedPrincipal, schoolId, req.params.studentId, transition
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/students/:studentId/class', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const body = req.body as Record<string, unknown> | undefined;
+    if (body?.operation !== undefined &&
+        !['assign', 'promote', 'internal_transfer'].includes(String(body.operation))) {
+      res.status(400).json({
+        success: false,
+        error: 'The class assignment operation is invalid.',
+        code: 'VALIDATION_FAILED',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    const operation = body?.operation === 'promote' || body?.operation === 'internal_transfer'
+      ? body.operation
+      : 'assign';
+    const data = await getSchoolAdministrationRepository().assignStudentToClass(
+      (req as any).authorizedPrincipal,
+      schoolId,
+      req.params.studentId,
+      typeof body?.classId === 'string' ? body.classId : '',
+      operation
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/students/:studentId/history', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().getStudentHistory(
+      (req as any).authorizedPrincipal, schoolId, req.params.studentId
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/classes', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const body = req.body as Record<string, unknown> | undefined;
+    const data = await getSchoolAdministrationRepository().createClass(
+      (req as any).authorizedPrincipal,
+      {
+        schoolId,
+        name: typeof body?.name === 'string' ? body.name : '',
+        academicYear: typeof body?.academicYear === 'string' ? body.academicYear : '',
+        section: typeof body?.section === 'string' ? body.section : 'General'
+      }
+    );
+    res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
   }
 });
 

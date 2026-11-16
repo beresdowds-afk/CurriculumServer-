@@ -22,7 +22,7 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
   const emails: string[] = [];
 
   async function provision(label: string) {
-    const email = `${label}-${randomUUID()}@test.invalid`;
+    const email = `${label.toLowerCase().replace(/[^a-z0-9-]+/g, '-')}-${randomUUID()}@test.invalid`;
     emails.push(email);
     const request = buildSchoolRequest(`${label} ${randomUUID()}`, email);
     const record = await schools.provision(request, 'admin@test.invalid', `authz-${randomUUID()}`,
@@ -75,6 +75,24 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
     const adminPrincipal = (result as Extract<typeof result, { ok: true }>).principal;
     assert.ok(adminPrincipal.hasPermission(PERMISSIONS.schoolConfigurationManage));
 
+    await withControlPlaneTransaction(pool, admin, async client => {
+      await client.query(
+        `UPDATE production.users SET account_status = 'suspended', account_status_changed_at = now()
+         WHERE id = $1`,
+        [activeA.account.userId]
+      );
+    });
+    assert.equal(await schools.authenticateAdministrator(a.record.tenantId, a.email), undefined);
+    assert.deepEqual(await authz.authorize(tenantA, activeA.account.userId, session.sessionId),
+      { ok: false, reason: 'SESSION_REVOKED' });
+    await withControlPlaneTransaction(pool, admin, async client => {
+      await client.query(
+        `UPDATE production.users SET account_status = 'active', account_status_changed_at = now()
+         WHERE id = $1`,
+        [activeA.account.userId]
+      );
+    });
+
     // Lifecycle trigger blocks skipped transitions even for direct SQL.
     await assert.rejects(withControlPlaneTransaction(pool, admin, c =>
       c.query("UPDATE production.application_instances SET lifecycle_stage = 'application_activated' WHERE id = $1",
@@ -89,6 +107,15 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
     const tenantB = principal(b.record.tenantId);
     assert.equal((await authz.authorize(tenantB, activeA.account.userId, session.sessionId)).ok, false);
     assert.equal(await schools.getMembership(tenantB, activeA.account.userId), false);
+    await withControlPlaneTransaction(pool, admin, client =>
+      client.query(
+        `INSERT INTO production.memberships (tenant_id, user_id, user_subject, role)
+         VALUES ($1, $2, $3, 'staff')`,
+        [b.record.tenantId, activeA.account.userId, `cross-school-${activeA.account.userId}`]
+      )
+    );
+    const secondSchoolSession = await authz.createSession(tenantB, activeA.account.userId, 3600);
+    assert.equal((await authz.authorize(tenantB, activeA.account.userId, secondSchoolSession.sessionId)).ok, true);
 
     // RLS on new tables.
     const seen = await withTenantTransaction(pool, tenantB, c =>

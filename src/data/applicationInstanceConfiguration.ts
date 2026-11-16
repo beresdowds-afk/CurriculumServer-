@@ -9,6 +9,8 @@ import {
   INITIAL_REGISTERED_FEATURES,
   validateProvisionableFeatures
 } from './applicationRegistryData';
+import { SCHOOL_ADMINISTRATION_IDENTITY_TEMPLATE } from '../../packages/shared-types/src/schoolAdministrationTemplate';
+import type { ApplicationBuilderConfigurationV1 } from '../../packages/shared-types/src/apiContracts';
 
 export const APPLICATION_CONFIGURATION_CONTRACT_VERSION = 1;
 
@@ -28,28 +30,35 @@ export interface SupportedApplicationTemplate {
   versions: string[];
 }
 
-export const SUPPORTED_APPLICATION_TEMPLATES: readonly SupportedApplicationTemplate[] = [
-  { applicationId: 'app_curriculum_flow', templateId: 'school-standard', versions: ['1'] }
+export interface ApplicationTemplateRegistration extends SupportedApplicationTemplate {
+  status: 'published' | 'draft';
+  provisionable: boolean;
+  capabilities: readonly string[];
+}
+
+export const APPLICATION_TEMPLATE_REGISTRY: readonly ApplicationTemplateRegistration[] = [
+  {
+    applicationId: 'app_curriculum_flow',
+    templateId: 'school-standard',
+    versions: ['1'],
+    status: 'published',
+    provisionable: true,
+    capabilities: ['school_identity', 'student_register', 'class_groups', 'staff_records']
+  },
+  {
+    applicationId: 'app_curriculum_flow',
+    templateId: SCHOOL_ADMINISTRATION_IDENTITY_TEMPLATE.templateId,
+    versions: [SCHOOL_ADMINISTRATION_IDENTITY_TEMPLATE.templateVersion],
+    status: 'draft',
+    provisionable: false,
+    capabilities: SCHOOL_ADMINISTRATION_IDENTITY_TEMPLATE.capabilities
+  }
 ];
 
-export interface ApplicationInstanceConfiguration {
-  schemaVersion: 1;
-  contractVersion: typeof APPLICATION_CONFIGURATION_CONTRACT_VERSION;
-  applicationId: string;
-  applicationVersion: string;
-  templates: ApplicationTemplateReference[];
-  enabledCapabilities: string[];
-  capabilityDependencies: Record<string, string[]>;
-  configurationVersion: number;
-  deploymentArchitecture: DeploymentArchitecture;
-  databaseStrategy: { engine: 'postgresql'; isolation: DeploymentArchitecture };
-  validationEvidence: {
-    validatedAt: string;
-    validator: 'application-configuration-contract';
-    capabilityVersions: Record<string, string>;
-    checks: string[];
-  };
-}
+export const SUPPORTED_APPLICATION_TEMPLATES: readonly SupportedApplicationTemplate[] =
+  APPLICATION_TEMPLATE_REGISTRY.filter(template => template.provisionable);
+
+export type ApplicationInstanceConfiguration = ApplicationBuilderConfigurationV1;
 
 export interface ApplicationConfigurationInput {
   applicationId: string;
@@ -89,12 +98,14 @@ export function validateApplicationInstanceConfiguration(
     errors.push('At least one template is required.');
   } else {
     for (const template of config.templates) {
-      const supported = SUPPORTED_APPLICATION_TEMPLATES.find(item =>
+      const registration = APPLICATION_TEMPLATE_REGISTRY.find(item =>
         item.applicationId === config.applicationId && item.templateId === template?.templateId
       );
-      if (!supported) errors.push(`Unsupported template '${String(template?.templateId)}'.`);
-      else if (!supported.versions.includes(template.templateVersion)) {
+      if (!registration) errors.push(`Unsupported template '${String(template?.templateId)}'.`);
+      else if (!registration.versions.includes(template.templateVersion)) {
         errors.push(`Unsupported template version '${String(template.templateVersion)}' for '${template.templateId}'.`);
+      } else if (!registration.provisionable || registration.status !== 'published') {
+        errors.push(`Template '${template.templateId}' is registered but not provisionable.`);
       }
     }
   }
