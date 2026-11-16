@@ -23,7 +23,7 @@ Platform APIs require a verified platform-administrator session and database rea
 - Migration compatibility test: migrations 001–006 were applied, an existing `dedicated_database` instance was inserted, and migration 007 preserved that architecture and completed successfully.
 - `npm run build:all`: passed for the server and both frontends. Vite emitted existing large-chunk warnings.
 - `git diff --check`: passed.
-- A GitHub-hosted CI run has not yet occurred; the new workflow will execute typecheck, migration, PostgreSQL acceptance tests, unit tests, and all production builds on the pull request.
+- The hosted CI workflow was triggered by the pull request but concluded `action_required` with zero jobs. Hosted CI has not run; repository-level approval or Actions configuration is required before it can be reported as passing.
 
 ## Remaining integrations and limits
 
