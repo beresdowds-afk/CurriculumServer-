@@ -3,6 +3,15 @@ export type LifecycleStatus = 'published' | 'beta' | 'deprecated' | 'disabled';
 export type AvailabilityStatus = 'available' | 'beta' | 'deprecated' | 'experimental';
 
 export type ImplementationHonestyStatus = 'fully_implemented' | 'simulated_ui' | 'partial_stub';
+export type FeatureReadinessStage =
+  | 'designed'
+  | 'implemented'
+  | 'database_migrated'
+  | 'api_operational'
+  | 'authorization_verified'
+  | 'acceptance_tested'
+  | 'provisionable'
+  | 'production_approved';
 
 export interface RegisteredApplication {
   appId: string;
@@ -52,6 +61,7 @@ export interface RegisteredFeature {
   version: string;
   availabilityStatus: AvailabilityStatus;
   honestyStatus: ImplementationHonestyStatus;
+  readiness?: FeatureReadinessStage[];
 }
 
 export interface ApplicationComposition {

@@ -14,6 +14,8 @@ const request: SchoolProvisioningRequest = {
   school: {
     name: 'North School',
     displayName: 'North School',
+    shortName: 'North',
+    slug: 'north-school',
     schoolType: 'primary',
     country: 'Ghana',
     stateProvince: 'Greater Accra',
@@ -32,7 +34,19 @@ const request: SchoolProvisioningRequest = {
     gradingConfiguration: { maximumScore: 100 }
   },
   administrator: { fullName: 'School Administrator', email: 'ADMIN@north.example' },
-  applicationId: 'app_curriculum_flow'
+  applicationId: 'app_curriculum_flow',
+  architecture: 'shared_database',
+  templateId: 'school-standard',
+  templateVersion: '1',
+  enabledFeatures: ['feat_school_administration_identity'],
+  commercial: {
+    commercialModel: 'annual',
+    planReference: 'school-standard-annual',
+    priceReference: 'price-pending-review',
+    currency: 'GHS',
+    billingInterval: 'year'
+  },
+  deployment: {}
 };
 
 test('school provisioning validation normalizes input and accepts configurable calendars', () => {
@@ -43,15 +57,19 @@ test('school provisioning validation normalizes input and accepts configurable c
   assert.deepEqual(validated.configuration.academicTermStructure, request.configuration.academicTermStructure);
 });
 
-test('school provisioning rejects invalid contact data, types, and duplicate terms', () => {
+test('school provisioning rejects invalid contact data, slugs, unregistered features, and duplicate terms', () => {
   assert.throws(() => validateSchoolProvisioningRequest({
     ...request,
     school: { ...request.school, officialContactEmail: 'not-an-email' }
   }), /valid official school/);
   assert.throws(() => validateSchoolProvisioningRequest({
     ...request,
-    school: { ...request.school, schoolType: 'university-ish' }
-  }), /supported school type/);
+    school: { ...request.school, slug: 'Invalid School Slug' }
+  }), /slug must contain/);
+  assert.throws(() => validateSchoolProvisioningRequest({
+    ...request,
+    enabledFeatures: ['unknown-feature']
+  }), /Unknown feature/);
   assert.throws(() => validateSchoolProvisioningRequest({
     ...request,
     configuration: {

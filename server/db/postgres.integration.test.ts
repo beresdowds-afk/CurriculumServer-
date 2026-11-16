@@ -6,7 +6,12 @@ import { SchoolProvisioningRepository } from './schoolProvisioningRepository';
 import { PostgresRuntime } from './postgres';
 import { inspectPlatformReadiness } from './readiness';
 import { createVerifiedTenantPrincipal, withControlPlaneTransaction, withTenantTransaction } from './tenantContext';
-import { createInvitationToken, hashPassword, hashProvisioningRequest } from '../schoolProvisioning';
+import {
+  createInvitationToken,
+  hashInvitationToken,
+  hashPassword,
+  hashProvisioningRequest
+} from '../schoolProvisioning';
 import type { SchoolProvisioningRequest } from '../../packages/shared-types/src/apiContracts';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -48,6 +53,7 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
   let schoolTenantA: string | undefined;
   let schoolTenantB: string | undefined;
   let schoolTenantC: string | undefined;
+  const schoolOperationIds: string[] = [];
   const schoolAdminEmailA = `admin-a-${randomUUID()}@test.invalid`;
   const schoolAdminEmailB = `admin-b-${randomUUID()}@test.invalid`;
   const schoolAdminEmailC = `admin-c-${randomUUID()}@test.invalid`;
@@ -66,9 +72,9 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
     process.env.PLATFORM_ADMIN_CREDENTIALS_JSON = JSON.stringify({
       'admin@test.invalid': 'integration-test-admin-key-at-least-32-chars'
     });
-    process.env.INVITATION_EMAIL_API_KEY = 'integration-test-mail-key';
-    process.env.INVITATION_EMAIL_FROM = 'integration@test.invalid';
-    process.env.APP_URL = 'https://test.invalid';
+    delete process.env.INVITATION_EMAIL_API_KEY;
+    delete process.env.INVITATION_EMAIL_FROM;
+    delete process.env.APP_URL;
     let readiness: Awaited<ReturnType<typeof inspectPlatformReadiness>>;
     try {
       readiness = await inspectPlatformReadiness(pool, true);
@@ -79,6 +85,8 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
       }
     }
     assert.equal(readiness.ready, true, JSON.stringify(readiness));
+    assert.equal(readiness.provisioning.executionAvailable, true);
+    assert.equal(readiness.provisioning.invitationDeliveryAvailable, false);
     assert.equal(readiness.database.rlsPoliciesAvailable, true);
     assert.equal(readiness.database.trustedTenantContextAvailable, true);
     assert.equal(readiness.database.tenantSecurityAvailable, true);
@@ -192,6 +200,8 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
       school: {
         name,
         displayName: name,
+        shortName: name.slice(0, 40),
+        slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60),
         schoolType: 'primary',
         country: 'Ghana',
         stateProvince: 'Greater Accra',
@@ -210,37 +220,56 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
         gradingConfiguration: { maximumScore: 100 }
       },
       administrator: { fullName: 'Test Administrator', email },
-      applicationId: 'app_curriculum_flow'
+      applicationId: 'app_curriculum_flow',
+      architecture: 'shared_database',
+      templateId: 'school-standard',
+      templateVersion: '1',
+      enabledFeatures: ['feat_school_administration_identity'],
+      commercial: {
+        commercialModel: 'annual',
+        planReference: 'test-annual',
+        priceReference: 'unverified-test-price',
+        currency: 'GHS',
+        billingInterval: 'year'
+      },
+      deployment: {}
     });
     const requestA = schoolRequest(`School A ${randomUUID()}`, schoolAdminEmailA);
     const keyA = `school-provision-${randomUUID()}`;
-    const invitationA = createInvitationToken();
     const recordA = await schoolRepository.provision(
       requestA,
       'admin@test.invalid',
       keyA,
       hashProvisioningRequest(requestA),
-      invitationA.tokenHash,
-      new Date(Date.now() + 60 * 60 * 1000)
+      admin
     );
+    schoolOperationIds.push(recordA.operationId);
     schoolTenantA = recordA.tenantId;
-    assert.equal(recordA.instanceStatus, 'provisioning');
+    assert.equal(recordA.instanceStatus, 'ready_for_activation');
+    assert.equal(recordA.provisioningStatus, 'ready');
+    assert.equal(recordA.configurationReadiness, 'ready');
+    assert.equal(recordA.applicationReadiness, 'pending');
     assert.equal(recordA.administratorActivationStatus, 'delivery_pending');
 
-    const retryInvitationA = createInvitationToken();
     const retryA = await schoolRepository.provision(
       requestA,
       'admin@test.invalid',
       keyA,
       hashProvisioningRequest(requestA),
-      retryInvitationA.tokenHash,
-      new Date(Date.now() + 60 * 60 * 1000)
+      admin
     );
     assert.equal(retryA.idempotentReplay, true);
     assert.equal(retryA.tenantId, recordA.tenantId);
     assert.equal(retryA.schoolId, recordA.schoolId);
     assert.equal(retryA.instanceId, recordA.instanceId);
-    await schoolRepository.recordInvitationDelivery(recordA.invitationId!);
+    const firstDeliveryA = await schoolRepository.prepareInvitationDelivery(recordA.invitationId!, admin);
+    assert.ok(firstDeliveryA);
+    await schoolRepository.recordInvitationDelivery(
+      firstDeliveryA.invitationId, admin, firstDeliveryA.attemptId, { error: 'test_provider_unavailable' }
+    );
+    const retryDeliveryA = await schoolRepository.prepareInvitationDelivery(recordA.invitationId!, admin);
+    assert.ok(retryDeliveryA);
+    assert.notEqual(retryDeliveryA.token, firstDeliveryA.token, 'retry rotates and invalidates the previous token');
     await assert.rejects(
       schoolRepository.activateAdministrator(
         recordA.invitationId!,
@@ -249,10 +278,13 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
       ),
       /INVITATION_INVALID_OR_EXPIRED/
     );
-    assert.equal((await schoolRepository.getProvisioningStatus(recordA.instanceId))?.instanceStatus, 'provisioning');
+    assert.equal((await schoolRepository.getProvisioningStatus(recordA.instanceId, admin))?.instanceStatus, 'ready_for_activation');
+    const pendingInvitationA = await schoolRepository.getInvitation(hashInvitationToken(retryDeliveryA.token));
+    assert.equal(pendingInvitationA?.id, recordA.invitationId);
+    assert.equal(pendingInvitationA?.invitation_status, 'pending');
     const activationA = await schoolRepository.activateAdministrator(
       recordA.invitationId!,
-      retryInvitationA.tokenHash,
+      hashInvitationToken(retryDeliveryA.token),
       await hashPassword('test-school-admin-password-12')
     );
     assert.equal(activationA.tenantId, recordA.tenantId);
@@ -260,33 +292,56 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
     assert.equal(await schoolRepository.getMembership(schoolAPrincipal, activationA.userId), true);
     const activeSchoolA = await schoolRepository.getSchool(schoolAPrincipal);
     assert.equal(activeSchoolA?.id, recordA.schoolId);
-    assert.equal(activeSchoolA?.instance_status, 'active');
-    assert.deepEqual(activeSchoolA?.enabled_features, ['feat_student_registration', 'feat_exam_management']);
+    assert.equal(activeSchoolA?.instance_status, 'ready_for_activation');
+    assert.deepEqual(activeSchoolA?.enabled_features, ['feat_school_administration_identity']);
     assert.equal((await schoolRepository.getConfiguration(schoolAPrincipal))?.currency, 'GHS');
-    assert.equal((await schoolRepository.getProvisioningStatus(recordA.instanceId))?.instanceStatus, 'active');
+    assert.equal((await schoolRepository.getProvisioningStatus(recordA.instanceId, admin))?.instanceStatus, 'ready_for_activation');
     await assert.rejects(
       schoolRepository.activateAdministrator(
         recordA.invitationId!,
-        retryInvitationA.tokenHash,
+        hashInvitationToken(retryDeliveryA.token),
         await hashPassword('test-school-admin-password-12')
       ),
       /INVITATION_INVALID_OR_EXPIRED/
     );
 
     const requestB = schoolRequest(`School B ${randomUUID()}`, schoolAdminEmailB);
-    const invitationB = createInvitationToken();
     const recordB = await schoolRepository.provision(
       requestB,
       'admin@test.invalid',
       `school-provision-${randomUUID()}`,
       hashProvisioningRequest(requestB),
-      invitationB.tokenHash,
-      new Date(Date.now() + 60 * 60 * 1000)
+      admin
     );
+    schoolOperationIds.push(recordB.operationId);
     schoolTenantB = recordB.tenantId;
+    const crossTenantSchoolRead = await withTenantTransaction(pool, schoolAPrincipal, client =>
+      client.query(
+        'SELECT id FROM production.schools WHERE tenant_id = $1 AND id = $2',
+        [recordB.tenantId, recordB.schoolId]
+      )
+    );
+    assert.equal(crossTenantSchoolRead.rowCount, 0, 'tenant A cannot read tenant B school records');
+    const crossTenantSchoolWrite = await withTenantTransaction(pool, schoolAPrincipal, client =>
+      client.query(
+        'UPDATE production.schools SET motto = $1 WHERE tenant_id = $2 AND id = $3 RETURNING id',
+        ['cross-tenant write', recordB.tenantId, recordB.schoolId]
+      )
+    );
+    assert.equal(crossTenantSchoolWrite.rowCount, 0, 'tenant A cannot update tenant B school records');
+    await assert.rejects(withTenantTransaction(pool, schoolAPrincipal, client =>
+      client.query(
+        `INSERT INTO production.school_configuration_versions
+           (tenant_id, school_id, configuration_version, configuration, created_by)
+         VALUES ($1, $2, 99, '{}'::jsonb, 'cross-tenant-test')`,
+        [recordB.tenantId, recordB.schoolId]
+      )
+    ), /row-level security policy/);
+    const deliveryB = await schoolRepository.prepareInvitationDelivery(recordB.invitationId!, admin);
+    assert.ok(deliveryB);
     const activationB = await schoolRepository.activateAdministrator(
       recordB.invitationId!,
-      invitationB.tokenHash,
+      hashInvitationToken(deliveryB.token),
       await hashPassword('test-school-admin-password-12')
     );
     assert.notEqual(recordA.schoolId, recordB.schoolId);
@@ -308,18 +363,15 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
 
     const requestC = schoolRequest(`School C ${randomUUID()}`, schoolAdminEmailC);
     const keyC = `school-provision-${randomUUID()}`;
-    const invitationC1 = createInvitationToken();
-    const invitationC2 = createInvitationToken();
     const [recordC1, recordC2] = await Promise.all([
       schoolRepository.provision(
-        requestC, 'admin@test.invalid', keyC, hashProvisioningRequest(requestC),
-        invitationC1.tokenHash, new Date(Date.now() + 60 * 60 * 1000)
+        requestC, 'admin@test.invalid', keyC, hashProvisioningRequest(requestC), admin
       ),
       schoolRepository.provision(
-        requestC, 'admin@test.invalid', keyC, hashProvisioningRequest(requestC),
-        invitationC2.tokenHash, new Date(Date.now() + 60 * 60 * 1000)
+        requestC, 'admin@test.invalid', keyC, hashProvisioningRequest(requestC), admin
       )
     ]);
+    schoolOperationIds.push(recordC1.operationId, recordC2.operationId);
     schoolTenantC = recordC1.tenantId;
     assert.equal(recordC1.tenantId, recordC2.tenantId);
     assert.equal(recordC1.schoolId, recordC2.schoolId);
@@ -337,6 +389,9 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
     await withControlPlaneTransaction(pool, admin, async client => {
       await client.query('DELETE FROM production.tenants WHERE id = ANY($1::uuid[])', [
         [schoolTenantA, schoolTenantB, schoolTenantC].filter(Boolean)
+      ]);
+      await client.query('DELETE FROM production.school_provisioning_operations WHERE id = ANY($1::uuid[])', [
+        schoolOperationIds
       ]);
       await client.query('DELETE FROM production.users WHERE lower(email) = ANY($1::text[])', [
         [schoolAdminEmailA, schoolAdminEmailB, schoolAdminEmailC]

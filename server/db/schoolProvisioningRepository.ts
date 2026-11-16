@@ -1,11 +1,27 @@
 import { randomBytes } from 'node:crypto';
 import type { QueryResultRow } from 'pg';
-import type { SchoolProvisioningConfirmation, SchoolProvisioningRequest } from '../../packages/shared-types/src/apiContracts';
+import type {
+  SchoolProvisioningConfirmation,
+  SchoolProvisioningOperationResponse,
+  SchoolProvisioningRequest
+} from '../../packages/shared-types/src/apiContracts';
 import type { DatabaseClient, DatabasePool } from './postgres';
 import { inTransaction } from './postgres';
-import { withTenantTransaction, type VerifiedTenantPrincipal } from './tenantContext';
+import {
+  withControlPlaneTransaction,
+  withTenantTransaction,
+  type VerifiedTenantPrincipal
+} from './tenantContext';
+import { INITIAL_REGISTERED_APPLICATIONS, INITIAL_REGISTERED_FEATURES } from '../../src/data/applicationRegistryData';
+import { createInvitationToken, hashInvitationToken } from '../schoolProvisioning';
 
 interface ProvisioningRow extends QueryResultRow {
+  operation_id: string;
+  provisioning_status: SchoolProvisioningConfirmation['provisioningStatus'];
+  configuration_readiness: SchoolProvisioningConfirmation['configurationReadiness'];
+  application_readiness: SchoolProvisioningConfirmation['applicationReadiness'];
+  invitation_delivery_status: SchoolProvisioningConfirmation['invitationDeliveryStatus'];
+  deployment_status: SchoolProvisioningConfirmation['deploymentStatus'];
   school_id: string;
   tenant_id: string;
   instance_id: string;
@@ -13,6 +29,7 @@ interface ProvisioningRow extends QueryResultRow {
   instance_status: SchoolProvisioningConfirmation['instanceStatus'];
   application_id: string;
   created_at: Date;
+  updated_at: Date;
   invitation_id: string | null;
   invitation_status: string | null;
   invitation_email: string | null;
@@ -28,6 +45,33 @@ interface InvitationRow extends QueryResultRow {
   invitation_status: string;
   existing_user_id: string | null;
   existing_password_hash: string | null;
+}
+
+export interface PreparedInvitationDelivery {
+  invitationId: string;
+  attemptId: string;
+  token: string;
+  fullName: string;
+  email: string;
+  schoolName: string;
+}
+
+export interface PersistedProvisioningOperation extends SchoolProvisioningOperationResponse {
+  idempotencyKey: string;
+  requestHash: string;
+  requestPayload: unknown;
+  initiatedBy: string;
+}
+
+export class ProvisioningOperationError extends Error {
+  constructor(
+    public readonly operationId: string,
+    public readonly failureCode: string,
+    public readonly retryable: boolean
+  ) {
+    super('School provisioning failed and was recorded for safe retry.');
+    this.name = 'ProvisioningOperationError';
+  }
 }
 
 interface AccountRow extends QueryResultRow {
@@ -61,6 +105,7 @@ export interface SchoolSummary extends QueryResultRow {
   tenant_id: string;
   school_slug: string;
   name: string;
+  short_name: string;
   display_name: string;
   school_type: string;
   country: string;
@@ -69,6 +114,17 @@ export interface SchoolSummary extends QueryResultRow {
   physical_address: string;
   official_contact_email: string;
   telephone: string;
+  website: string | null;
+  motto: string | null;
+  principal_name: string | null;
+  principal_email: string | null;
+  principal_phone: string | null;
+  ict_administrator_name: string | null;
+  ict_administrator_email: string | null;
+  ict_administrator_phone: string | null;
+  logo_url: string | null;
+  primary_brand_color: string;
+  accent_brand_color: string;
   time_zone: string;
   currency: string;
   default_language: string;
@@ -81,30 +137,59 @@ export interface SchoolSummary extends QueryResultRow {
   activated_at: Date | null;
 }
 
-async function withControlPlaneTransaction<T>(
+async function withInvitationTokenTransaction<T>(
   pool: DatabasePool,
+  tokenHash: Buffer,
   operation: (client: DatabaseClient) => Promise<T>
 ): Promise<T> {
   return inTransaction(pool, async client => {
-    await client.query("SELECT set_config('app.control_plane_admin', 'true', true)");
+    await client.query(
+      "SELECT set_config('app.invitation_token_hash', $1, true)",
+      [tokenHash.toString('hex')]
+    );
+    return operation(client);
+  });
+}
+
+async function withSchoolLoginTransaction<T>(
+  pool: DatabasePool,
+  tenantId: string,
+  operation: (client: DatabaseClient) => Promise<T>
+): Promise<T> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantId)) {
+    throw new Error('TENANT_NOT_FOUND');
+  }
+  return inTransaction(pool, async client => {
+    await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
     return operation(client);
   });
 }
 
 function mapProvisioningRow(row: ProvisioningRow, idempotentReplay: boolean): PersistedSchoolProvisioning {
   return {
+    operationId: row.operation_id,
     schoolId: row.school_id,
     tenantId: row.tenant_id,
     instanceId: row.instance_id,
     schoolName: row.school_name,
     instanceStatus: row.instance_status,
+    provisioningStatus: row.provisioning_status,
+    configurationReadiness: row.configuration_readiness,
+    applicationReadiness: row.application_readiness,
     administratorActivationStatus: row.invitation_status === 'accepted'
       ? 'activated'
-      : row.invitation_status === 'pending'
-        ? 'invitation_sent'
-        : 'delivery_pending',
+      : row.invitation_status === 'expired'
+        ? 'expired'
+        : row.invitation_status === 'revoked'
+          ? 'revoked'
+          : row.invitation_delivery_status === 'delivered'
+            ? 'invitation_sent'
+            : 'delivery_pending',
+    invitationDeliveryStatus: row.invitation_delivery_status,
+    deploymentStatus: row.deployment_status,
     applicationId: row.application_id,
     createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
     invitationId: row.invitation_id,
     invitationEmail: row.invitation_email,
     idempotentReplay
@@ -112,16 +197,42 @@ function mapProvisioningRow(row: ProvisioningRow, idempotentReplay: boolean): Pe
 }
 
 const PROVISIONING_SELECT = `
-  SELECT s.id AS school_id, t.id AS tenant_id, ai.id AS instance_id,
+  SELECT operation.id AS operation_id, operation.status AS provisioning_status,
+         CASE WHEN operation.status = 'ready' AND ai.provisioning_status = 'ready'
+              THEN 'ready' ELSE 'pending' END AS configuration_readiness,
+         CASE WHEN deployment.health_check_status = 'verified' THEN 'ready'
+              WHEN deployment.health_check_status = 'failed' THEN 'failed'
+              ELSE 'pending' END AS application_readiness,
+         deployment.deployment_status,
+         CASE WHEN invitation_outbox.status = 'delivered' THEN 'delivered'
+              WHEN invitation_outbox.status IN ('retryable_failure', 'failed') THEN 'retryable_failure'
+              WHEN invitation_outbox.status = 'sending' THEN 'sending'
+              ELSE 'pending' END AS invitation_delivery_status,
+         s.id AS school_id, t.id AS tenant_id, ai.id AS instance_id,
          s.name AS school_name, ai.status AS instance_status,
-         ai.application_id, spr.created_at,
+         ai.application_id, spr.created_at, operation.updated_at,
          invitation.id AS invitation_id, invitation.status AS invitation_status,
          invitation.invitation_email
   FROM production.school_provisioning_requests spr
+  JOIN production.school_provisioning_operations operation
+    ON operation.idempotency_key = spr.idempotency_key
   JOIN production.tenants t ON t.id = spr.tenant_id
   JOIN production.schools s ON s.id = spr.school_id AND s.tenant_id = spr.tenant_id
   JOIN production.application_instances ai
     ON ai.id = spr.application_instance_id AND ai.tenant_id = spr.tenant_id
+  LEFT JOIN production.application_instance_deployments deployment
+    ON deployment.tenant_id = spr.tenant_id
+   AND deployment.application_instance_id = spr.application_instance_id
+  LEFT JOIN LATERAL (
+    SELECT status
+    FROM production.invitation_outbox
+    WHERE invitation_id = (
+      SELECT id FROM production.school_admin_invitations
+      WHERE tenant_id = spr.tenant_id AND school_id = spr.school_id
+      ORDER BY created_at DESC LIMIT 1
+    )
+    ORDER BY created_at DESC LIMIT 1
+  ) invitation_outbox ON true
   LEFT JOIN LATERAL (
     SELECT id, status, administrator_email AS invitation_email
     FROM production.school_admin_invitations
@@ -138,145 +249,392 @@ export class SchoolProvisioningRepository {
     initiatedBy: string,
     idempotencyKey: string,
     requestHash: string,
-    invitationTokenHash: Buffer,
-    invitationExpiresAt: Date
+    principal: VerifiedTenantPrincipal
   ): Promise<PersistedSchoolProvisioning> {
-    return withControlPlaneTransaction(this.pool, async client => {
+    const operationId = await withControlPlaneTransaction(this.pool, principal, async client => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [idempotencyKey]);
-      const existing = await client.query<ProvisioningRow>(
-        `${PROVISIONING_SELECT}
-         WHERE spr.idempotency_key = $1
-         FOR UPDATE OF spr`,
+      const current = await client.query<{
+        id: string;
+        request_hash: string;
+        status: string;
+      }>(
+        `SELECT id, request_hash, status
+         FROM production.school_provisioning_operations
+         WHERE idempotency_key = $1
+         FOR UPDATE`,
         [idempotencyKey]
       );
-      if (existing.rows[0]) {
-        const request = await client.query<{ request_hash: string }>(
-          'SELECT request_hash FROM production.school_provisioning_requests WHERE idempotency_key = $1',
-          [idempotencyKey]
-        );
-        if (request.rows[0]?.request_hash !== requestHash) {
-          throw new Error('IDEMPOTENCY_CONFLICT');
-        }
-        const current = existing.rows[0];
-        if (current.invitation_id && current.invitation_status !== 'accepted') {
+      if (current.rows[0]) {
+        if (current.rows[0].request_hash !== requestHash) throw new Error('IDEMPOTENCY_CONFLICT');
+        if (current.rows[0].status !== 'ready') {
           await client.query(
-            `UPDATE production.school_admin_invitations
-             SET token_hash = $2, status = 'pending', expires_at = $3,
-                 last_delivery_error = NULL
+            `UPDATE production.school_provisioning_operations
+             SET status = 'running', retryable = false, attempt_count = attempt_count + 1,
+                 error_code = NULL, error_details = '{}'::jsonb, updated_at = now()
              WHERE id = $1`,
-            [current.invitation_id, invitationTokenHash, invitationExpiresAt]
+            [current.rows[0].id]
           );
         }
-        return mapProvisioningRow(current, true);
+        return current.rows[0].id;
       }
-
-      const tenantResult = await client.query<{ id: string; created_at: Date }>(
-        `INSERT INTO production.tenants (display_name, status, created_by, tenant_slug)
-         VALUES ($1, 'pending', $2, 'pending-' || gen_random_uuid()::text)
-         RETURNING id, created_at`,
-        [input.school.displayName.trim(), initiatedBy]
-      );
-      const tenant = tenantResult.rows[0];
-      const slugPrefix = input.school.name.toLowerCase()
-        .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'school';
-      await client.query(
-        'UPDATE production.tenants SET tenant_slug = $2 WHERE id = $1',
-        [tenant.id, `${slugPrefix}-${tenant.id.slice(0, 8)}`]
-      );
-
-      const organisationResult = await client.query<{ id: string }>(
-        `INSERT INTO production.organizations
-           (tenant_id, name, school_type, country, state_province, city, physical_address,
-            official_contact_email, telephone)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      const inserted = await client.query<{ id: string }>(
+        `INSERT INTO production.school_provisioning_operations
+           (idempotency_key, request_hash, request_payload, initiated_by,
+            status, attempt_count)
+         VALUES ($1, $2, $3::jsonb, $4, 'running', 1)
          RETURNING id`,
-        [tenant.id, input.school.displayName.trim(), input.school.schoolType, input.school.country,
-          input.school.stateProvince, input.school.city, input.school.physicalAddress,
-          input.school.officialContactEmail.toLowerCase(), input.school.telephone]
+        [idempotencyKey, requestHash, JSON.stringify(input), initiatedBy]
       );
-      const schoolResult = await client.query<{ id: string }>(
-        `INSERT INTO production.schools
-           (tenant_id, organization_id, name, school_slug, school_type, country, state_province,
-            city, physical_address, official_contact_email, telephone, time_zone, currency, default_language)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-         RETURNING id`,
-        [tenant.id, organisationResult.rows[0].id, input.school.name.trim(),
-          `${slugPrefix}-${tenant.id.slice(0, 8)}`, input.school.schoolType, input.school.country,
-          input.school.stateProvince, input.school.city, input.school.physicalAddress,
-          input.school.officialContactEmail.toLowerCase(), input.school.telephone,
-          input.configuration.timeZone, input.configuration.currency.toUpperCase(),
-          input.configuration.language.toLowerCase()]
-      );
-      const schoolId = schoolResult.rows[0].id;
-
-      await client.query(
-        `INSERT INTO production.school_configurations
-           (tenant_id, school_id, academic_session, academic_term_structure,
-            education_levels, grading_configuration)
-         VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb)`,
-        [tenant.id, schoolId, input.configuration.academicSession.trim(),
-          JSON.stringify(input.configuration.academicTermStructure),
-          JSON.stringify(input.configuration.educationLevels),
-          JSON.stringify(input.configuration.gradingConfiguration ?? {})]
-      );
-      const instanceResult = await client.query<{ id: string }>(
-        `INSERT INTO production.application_instances
-           (tenant_id, school_id, application_id, application_version,
-            configuration_version, status, enabled_features, deployment_architecture)
-         VALUES ($1, $2, $3, NULL, '1', 'provisioning',
-                 ARRAY['feat_student_registration', 'feat_exam_management']::text[], 'shared_database')
-         RETURNING id`,
-        [tenant.id, schoolId, input.applicationId]
-      );
-      const instanceId = instanceResult.rows[0].id;
-      await client.query(
-        `INSERT INTO production.school_provisioning_requests
-           (idempotency_key, request_hash, tenant_id, school_id,
-            application_instance_id, initiated_by)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [idempotencyKey, requestHash, tenant.id, schoolId, instanceId, initiatedBy]
-      );
-      const invitationResult = await client.query<{ id: string }>(
-        `INSERT INTO production.school_admin_invitations
-           (tenant_id, school_id, administrator_name, administrator_email,
-            token_hash, expires_at, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id`,
-        [tenant.id, schoolId, input.administrator.fullName.trim(),
-          input.administrator.email.toLowerCase(), invitationTokenHash, invitationExpiresAt, initiatedBy]
-      );
-      return {
-        schoolId,
-        tenantId: tenant.id,
-        instanceId,
-        schoolName: input.school.name.trim(),
-        instanceStatus: 'provisioning',
-        administratorActivationStatus: 'delivery_pending',
-        applicationId: input.applicationId,
-        createdAt: tenant.created_at.toISOString(),
-        invitationId: invitationResult.rows[0].id,
-        invitationEmail: input.administrator.email.toLowerCase(),
-        idempotentReplay: false
-      };
+      return inserted.rows[0].id;
     });
+
+    try {
+      const result = await withControlPlaneTransaction(this.pool, principal, async client => {
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [operationId]);
+        const operation = await client.query<{ status: string; request_hash: string }>(
+          `SELECT status, request_hash FROM production.school_provisioning_operations
+           WHERE id = $1 FOR UPDATE`,
+          [operationId]
+        );
+        if (operation.rows[0]?.request_hash !== requestHash) throw new Error('IDEMPOTENCY_CONFLICT');
+        const existing = await client.query<ProvisioningRow>(
+          `${PROVISIONING_SELECT} WHERE spr.idempotency_key = $1`,
+          [idempotencyKey]
+        );
+        if (existing.rows[0]) return mapProvisioningRow(existing.rows[0], true);
+
+        const tenantResult = await client.query<{ id: string; created_at: Date }>(
+          `INSERT INTO production.tenants (display_name, status, created_by, tenant_slug)
+           VALUES ($1, 'pending', $2, $3) RETURNING id, created_at`,
+          [input.school.displayName, initiatedBy, input.school.slug]
+        );
+        const tenant = tenantResult.rows[0];
+        const organizationResult = await client.query<{ id: string }>(
+          `INSERT INTO production.organizations
+             (tenant_id, name, school_type, country, state_province, city,
+              physical_address, official_contact_email, telephone)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+          [tenant.id, input.school.displayName, input.school.schoolType, input.school.country,
+            input.school.stateProvince, input.school.city, input.school.physicalAddress,
+            input.school.officialContactEmail, input.school.telephone]
+        );
+        const schoolResult = await client.query<{ id: string }>(
+          `INSERT INTO production.schools
+             (tenant_id, organization_id, name, school_slug, short_name, school_type,
+              country, state_province, city, physical_address, official_contact_email,
+              telephone, time_zone, currency, default_language, website, motto,
+              principal_name, principal_email, principal_phone, ict_administrator_name,
+              ict_administrator_email, ict_administrator_phone, logo_url,
+              primary_brand_color, accent_brand_color)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                   $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+           RETURNING id`,
+          [tenant.id, organizationResult.rows[0].id, input.school.name, input.school.slug,
+            input.school.shortName, input.school.schoolType, input.school.country,
+            input.school.stateProvince, input.school.city, input.school.physicalAddress,
+            input.school.officialContactEmail, input.school.telephone, input.configuration.timeZone,
+            input.configuration.currency, input.configuration.language, input.school.website ?? null,
+            input.school.motto ?? null, input.school.principalName ?? null,
+            input.school.principalEmail ?? null, input.school.principalPhone ?? null,
+            input.school.ictAdministratorName ?? null, input.school.ictAdministratorEmail ?? null,
+            input.school.ictAdministratorPhone ?? null, input.school.logoUrl ?? null,
+            input.school.primaryBrandColor ?? '#1d4ed8', input.school.accentBrandColor ?? '#0f766e']
+        );
+        const schoolId = schoolResult.rows[0].id;
+
+        await client.query(
+          `INSERT INTO production.school_configurations
+             (tenant_id, school_id, academic_session, academic_term_structure,
+              education_levels, grading_configuration)
+           VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb)`,
+          [tenant.id, schoolId, input.configuration.academicSession,
+            JSON.stringify(input.configuration.academicTermStructure),
+            JSON.stringify(input.configuration.educationLevels),
+            JSON.stringify(input.configuration.gradingConfiguration ?? {})]
+        );
+        await client.query(
+          `INSERT INTO production.school_configuration_versions
+             (tenant_id, school_id, configuration_version, configuration, created_by)
+           VALUES ($1, $2, 1, $3::jsonb, $4)`,
+          [tenant.id, schoolId, JSON.stringify(input.configuration), initiatedBy]
+        );
+        const application = INITIAL_REGISTERED_APPLICATIONS.find(item => item.appId === input.applicationId);
+        if (!application) throw new Error('APPLICATION_REGISTRY_ENTRY_UNAVAILABLE');
+        const instanceResult = await client.query<{ id: string }>(
+          `INSERT INTO production.application_instances
+             (tenant_id, school_id, application_id, application_version, configuration_version,
+              status, provisioning_status, enabled_features, deployment_architecture,
+              architecture, template_id, template_version)
+           VALUES ($1, $2, $3, $4, '1', 'provisioning', 'running',
+                   $5::text[], 'shared_database', $6, $7, $8)
+           RETURNING id`,
+          [tenant.id, schoolId, input.applicationId, application.version, input.enabledFeatures,
+            input.architecture, input.templateId, input.templateVersion]
+        );
+        const instanceId = instanceResult.rows[0].id;
+        const selectedFeatures = INITIAL_REGISTERED_FEATURES.filter(feature =>
+          input.enabledFeatures.includes(feature.featureId)
+        );
+        const configuration = {
+          schemaVersion: 1,
+          applicationId: input.applicationId,
+          applicationVersion: application.version,
+          tenantId: tenant.id,
+          architecture: input.architecture,
+          template: { id: input.templateId, version: input.templateVersion },
+          enabledFeatureIds: input.enabledFeatures,
+          featureDependencies: Object.fromEntries(
+            selectedFeatures.map(feature => [feature.featureId, feature.dependencies])
+          ),
+          featureOverrides: input.featureOverrides ?? {},
+          schoolConfiguration: input.configuration,
+          branding: {
+            logoUrl: input.school.logoUrl,
+            primaryColor: input.school.primaryBrandColor ?? '#1d4ed8',
+            accentColor: input.school.accentBrandColor ?? '#0f766e'
+          },
+          deployment: input.deployment,
+          configurationVersion: 1,
+          provisioningStatus: 'ready'
+        };
+        await client.query(
+          `INSERT INTO production.application_instance_configurations
+             (tenant_id, application_instance_id, configuration_version, schema_version,
+              configuration, created_by)
+           VALUES ($1, $2, 1, 1, $3::jsonb, $4)`,
+          [tenant.id, instanceId, JSON.stringify(configuration), initiatedBy]
+        );
+        await client.query(
+          `INSERT INTO production.school_commercial_agreements
+             (tenant_id, school_id, application_instance_id, commercial_model,
+              plan_reference, price_reference, currency, billing_interval, agreed_amount_minor)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [tenant.id, schoolId, instanceId, input.commercial.commercialModel,
+            input.commercial.planReference, input.commercial.priceReference,
+            input.commercial.currency, input.commercial.billingInterval,
+            input.commercial.agreedAmountMinor ?? null]
+        );
+        const domainRequested = Boolean(
+          input.deployment.requestedSubdomain ||
+          input.deployment.requestedCustomDomain ||
+          input.deployment.applicationUrl
+        );
+        await client.query(
+          `INSERT INTO production.application_instance_deployments
+             (tenant_id, application_instance_id, requested_subdomain,
+              requested_custom_domain, application_url, deployment_target,
+              deployment_status, dns_status, tls_status)
+           VALUES ($1, $2, $3, $4, $5, 'shared_platform', $6, $7, $8)`,
+          [tenant.id, instanceId, input.deployment.requestedSubdomain ?? null,
+            input.deployment.requestedCustomDomain ?? null, input.deployment.applicationUrl ?? null,
+            domainRequested ? 'manual_action_required' : 'not_required',
+            input.deployment.requestedSubdomain || input.deployment.requestedCustomDomain
+              ? 'manual_action_required' : 'not_requested',
+            input.deployment.requestedCustomDomain ? 'manual_action_required' : 'not_requested']
+        );
+        await client.query(
+          `INSERT INTO production.school_provisioning_requests
+             (idempotency_key, request_hash, tenant_id, school_id,
+              application_instance_id, initiated_by)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [idempotencyKey, requestHash, tenant.id, schoolId, instanceId, initiatedBy]
+        );
+        const invitationResult = await client.query<{ id: string }>(
+          `INSERT INTO production.school_admin_invitations
+             (tenant_id, school_id, administrator_name, administrator_email,
+              token_hash, expires_at, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          [tenant.id, schoolId, input.administrator.fullName, input.administrator.email,
+            randomBytes(32), new Date(Date.now() + 24 * 60 * 60 * 1000), initiatedBy]
+        );
+        await client.query(
+          `INSERT INTO production.invitation_outbox (tenant_id, invitation_id)
+           VALUES ($1, $2)`,
+          [tenant.id, invitationResult.rows[0].id]
+        );
+        await client.query(
+          `UPDATE production.application_instances
+           SET status = 'ready_for_activation', provisioning_status = 'ready', updated_at = now()
+           WHERE tenant_id = $1 AND id = $2`,
+          [tenant.id, instanceId]
+        );
+        await client.query(
+          `UPDATE production.school_provisioning_operations
+           SET tenant_id = $2, school_id = $3, application_instance_id = $4,
+               status = 'ready', retryable = false, error_code = NULL,
+               error_details = '{}'::jsonb, completed_at = now(), updated_at = now()
+           WHERE id = $1`,
+          [operationId, tenant.id, schoolId, instanceId]
+        );
+        await client.query(
+          `INSERT INTO production.audit_events (tenant_id, actor_subject, action, details)
+           VALUES ($1, $2, 'school_instance_provisioned', $3::jsonb)`,
+          [tenant.id, initiatedBy, JSON.stringify({
+            operationId,
+            schoolId,
+            applicationInstanceId: instanceId,
+            configurationVersion: 1
+          })]
+        );
+        const stored = await client.query<ProvisioningRow>(
+          `${PROVISIONING_SELECT} WHERE spr.idempotency_key = $1`,
+          [idempotencyKey]
+        );
+        return mapProvisioningRow(stored.rows[0], false);
+      });
+      return result;
+    } catch (error) {
+      const failureCode = (error as { code?: string })?.code === '23505'
+        ? 'DUPLICATE_SCHOOL'
+        : 'PROVISIONING_FAILED';
+      const retryable = failureCode !== 'DUPLICATE_SCHOOL';
+      await withControlPlaneTransaction(this.pool, principal, client =>
+        client.query(
+          `UPDATE production.school_provisioning_operations
+           SET status = $2, retryable = $3,
+               error_code = $4,
+               error_details = jsonb_build_object('message', $5::text),
+               updated_at = now()
+           WHERE id = $1 AND status <> 'ready'`,
+          [
+            operationId,
+            retryable ? 'retryable_failure' : 'failed',
+            retryable,
+            failureCode,
+            error instanceof Error ? error.message : 'Provisioning failed.'
+          ]
+        ).then(() => undefined)
+      );
+      throw new ProvisioningOperationError(operationId, failureCode, retryable);
+    }
   }
 
-  async recordInvitationDelivery(invitationId: string, error?: string): Promise<void> {
-    await withControlPlaneTransaction(this.pool, async client => {
+  async recordInvitationDelivery(
+    invitationId: string,
+    principal: VerifiedTenantPrincipal,
+    attemptId: string,
+    result: { providerMessageId?: string; error?: string }
+  ): Promise<void> {
+    await withControlPlaneTransaction(this.pool, principal, async client => {
       await client.query(
         `UPDATE production.school_admin_invitations
          SET delivery_attempts = delivery_attempts + 1,
              status = CASE WHEN $2::text IS NULL THEN 'pending' ELSE 'delivery_failed' END,
-             last_delivery_error = $2
+             last_delivery_error = $2, updated_at = now()
          WHERE id = $1`,
-        [invitationId, error ?? null]
+        [invitationId, result.error ?? null]
+      );
+      await client.query(
+        `UPDATE production.invitation_outbox
+         SET status = CASE WHEN $2::text IS NULL THEN 'delivered' ELSE 'retryable_failure' END,
+             last_error = $2, provider_message_id = $3, locked_at = NULL, updated_at = now()
+         WHERE invitation_id = $1 AND status = 'sending'`,
+        [invitationId, result.error ?? null, result.providerMessageId ?? null]
+      );
+      await client.query(
+        `UPDATE production.invitation_delivery_attempts
+         SET status = CASE WHEN $2::text IS NULL THEN 'delivered' ELSE 'failed' END,
+             error_code = CASE WHEN $2::text IS NULL THEN NULL ELSE 'EMAIL_DELIVERY_FAILED' END,
+             provider_message_id = $3,
+             completed_at = now()
+         WHERE id = $1 AND status = 'sending'`,
+        [attemptId, result.error ?? null, result.providerMessageId ?? null]
       );
     });
   }
 
+  async prepareInvitationDelivery(
+    invitationId: string,
+    principal: VerifiedTenantPrincipal
+  ): Promise<PreparedInvitationDelivery | undefined> {
+    return withControlPlaneTransaction(this.pool, principal, async client => {
+      const result = await client.query<{
+        invitation_id: string;
+        outbox_id: string;
+        tenant_id: string;
+        administrator_name: string;
+        administrator_email: string;
+        school_name: string;
+        status: string;
+      }>(
+        `SELECT invitation.id AS invitation_id, outbox.id AS outbox_id,
+                invitation.tenant_id, invitation.administrator_name,
+                invitation.administrator_email, school.name AS school_name,
+                outbox.status
+         FROM production.school_admin_invitations invitation
+         JOIN production.schools school
+           ON school.tenant_id = invitation.tenant_id AND school.id = invitation.school_id
+         JOIN production.invitation_outbox outbox
+           ON outbox.tenant_id = invitation.tenant_id
+          AND outbox.invitation_id = invitation.id
+         WHERE invitation.id = $1
+           AND invitation.status IN ('pending', 'delivery_failed')
+           AND (outbox.status IN ('pending', 'retryable_failure')
+                OR (outbox.status = 'sending' AND outbox.locked_at < now() - interval '2 minutes'))
+         FOR UPDATE OF invitation, outbox`,
+        [invitationId]
+      );
+      const row = result.rows[0];
+      if (!row) return undefined;
+      const { token, tokenHash } = createInvitationToken();
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await client.query(
+        `UPDATE production.school_admin_invitations
+         SET token_hash = $2, status = 'pending', expires_at = $3,
+             last_delivery_error = NULL, updated_at = now()
+         WHERE id = $1`,
+        [invitationId, tokenHash, expiresAt]
+      );
+      await client.query(
+        `UPDATE production.invitation_outbox
+         SET status = 'sending', attempt_count = attempt_count + 1,
+             locked_at = now(), last_error = NULL, updated_at = now()
+         WHERE id = $1`,
+        [row.outbox_id]
+      );
+      const attempt = await client.query<{ id: string }>(
+        `INSERT INTO production.invitation_delivery_attempts
+           (tenant_id, outbox_id, status)
+         VALUES ($1, $2, 'sending') RETURNING id`,
+        [row.tenant_id, row.outbox_id]
+      );
+      return {
+        invitationId,
+        attemptId: attempt.rows[0].id,
+        token,
+        fullName: row.administrator_name,
+        email: row.administrator_email,
+        schoolName: row.school_name
+      };
+    });
+  }
+
+  async queueInvitationRetry(
+    instanceId: string,
+    principal: VerifiedTenantPrincipal
+  ): Promise<string | undefined> {
+    return withControlPlaneTransaction(this.pool, principal, async client => {
+      const result = await client.query<{ invitation_id: string }>(
+        `UPDATE production.invitation_outbox outbox
+         SET status = 'pending', available_at = now(), updated_at = now(),
+             last_error = NULL
+         FROM production.school_admin_invitations invitation,
+              production.school_provisioning_requests request
+         WHERE outbox.invitation_id = invitation.id
+           AND request.tenant_id = invitation.tenant_id
+           AND request.school_id = invitation.school_id
+           AND request.application_instance_id = $1
+           AND outbox.status IN ('retryable_failure', 'failed')
+           AND invitation.status IN ('pending', 'delivery_failed')
+         RETURNING invitation.id AS invitation_id`,
+        [instanceId]
+      );
+      return result.rows[0]?.invitation_id;
+    });
+  }
+
   async getInvitation(tokenHash: Buffer): Promise<InvitationRow | undefined> {
-    return withControlPlaneTransaction(this.pool, async client => {
+    return withInvitationTokenTransaction(this.pool, tokenHash, async client => {
       const result = await client.query<InvitationRow>(
         `SELECT invitation.id, invitation.tenant_id, invitation.school_id,
                 invitation.administrator_name, invitation.administrator_email,
@@ -299,7 +657,16 @@ export class SchoolProvisioningRepository {
     passwordHash: string,
     existingPasswordHash?: string
   ): Promise<{ tenantId: string; userId: string }> {
-    return withControlPlaneTransaction(this.pool, async client => {
+    return withInvitationTokenTransaction(this.pool, tokenHash, async client => {
+      const candidateResult = await client.query<Pick<InvitationRow, 'tenant_id'>>(
+        `SELECT tenant_id
+         FROM production.school_admin_invitations
+         WHERE id = $1 AND token_hash = $2`,
+        [invitationId, tokenHash]
+      );
+      const candidate = candidateResult.rows[0];
+      if (!candidate) throw new Error('INVITATION_INVALID_OR_EXPIRED');
+      await client.query("SELECT set_config('app.tenant_id', $1, true)", [candidate.tenant_id]);
       const invitationResult = await client.query<InvitationRow>(
         `SELECT id, tenant_id, school_id, administrator_name, administrator_email,
                 expires_at, status AS invitation_status
@@ -356,21 +723,23 @@ export class SchoolProvisioningRepository {
          WHERE id = $1`,
         [invitation.tenant_id]
       );
-      const activeInstance = await client.query(
-        `UPDATE production.application_instances
-         SET status = 'active', activated_at = now()
-         WHERE tenant_id = $1 AND school_id = $2 AND status = 'provisioning'`,
-        [invitation.tenant_id, invitation.school_id]
+      await client.query(
+        `UPDATE production.school_admin_invitations
+         SET accepted_user_id = $2, updated_at = now()
+         WHERE id = $1`,
+        [invitation.id, userId]
       );
-      if (activeInstance.rowCount !== 1) {
-        throw new Error('INSTANCE_ACTIVATION_FAILED');
-      }
+      await client.query(
+        `INSERT INTO production.audit_events (tenant_id, actor_subject, action, details)
+         VALUES ($1, $2, 'school_admin_invitation_accepted', $3::jsonb)`,
+        [invitation.tenant_id, userId, JSON.stringify({ invitationId: invitation.id })]
+      );
       return { tenantId: invitation.tenant_id, userId };
     });
   }
 
   async authenticateAdministrator(tenantId: string, email: string): Promise<SchoolAccount | undefined> {
-    return withControlPlaneTransaction(this.pool, async client => {
+    return withSchoolLoginTransaction(this.pool, tenantId, async client => {
       const result = await client.query<AccountRow>(
         `SELECT user_record.id AS user_id, membership.tenant_id, school_org.name AS school_name,
                 user_record.email, user_record.full_name, user_record.password_hash, membership.role
@@ -416,9 +785,14 @@ export class SchoolProvisioningRepository {
   async getSchool(principal: VerifiedTenantPrincipal): Promise<SchoolSummary | undefined> {
     return withTenantTransaction(this.pool, principal, async client => {
       const result = await client.query<SchoolSummary>(
-        `SELECT school.id, school.tenant_id, school.school_slug, school.name, tenant.display_name,
+        `SELECT school.id, school.tenant_id, school.school_slug, school.name,
+                school.short_name, tenant.display_name,
                 school.school_type, school.country, school.state_province, school.city,
                 school.physical_address, school.official_contact_email, school.telephone,
+                school.website, school.motto, school.principal_name, school.principal_email,
+                school.principal_phone, school.ict_administrator_name,
+                school.ict_administrator_email, school.ict_administrator_phone,
+                school.logo_url, school.primary_brand_color, school.accent_brand_color,
                 school.time_zone, school.currency, school.default_language,
                 instance.id AS instance_id, instance.application_id, instance.application_version,
                 instance.status AS instance_status, instance.enabled_features,
@@ -427,7 +801,7 @@ export class SchoolProvisioningRepository {
          JOIN production.tenants tenant ON tenant.id = school.tenant_id
          JOIN production.application_instances instance
            ON instance.tenant_id = school.tenant_id AND instance.school_id = school.id
-         WHERE instance.status = 'active' AND school.tenant_id = $1
+         WHERE instance.status IN ('ready_for_activation', 'active') AND school.tenant_id = $1
          LIMIT 1`,
         [principal.tenantId]
       );
@@ -475,6 +849,37 @@ export class SchoolProvisioningRepository {
   ): Promise<void> {
     if (principal.role !== 'tenant_admin') throw new Error('FORBIDDEN');
     await withTenantTransaction(this.pool, principal, async client => {
+      const current = await client.query<{
+        school_id: string;
+        instance_id: string;
+        configuration: Record<string, unknown>;
+        current_version: number;
+      }>(
+        `SELECT school.id AS school_id, instance.id AS instance_id,
+                latest.configuration,
+                latest.configuration_version AS current_version
+         FROM production.schools school
+         JOIN production.application_instances instance
+           ON instance.tenant_id = school.tenant_id AND instance.school_id = school.id
+         JOIN LATERAL (
+           SELECT configuration, configuration_version
+           FROM production.application_instance_configurations
+           WHERE tenant_id = school.tenant_id AND application_instance_id = instance.id
+           ORDER BY configuration_version DESC LIMIT 1
+         ) latest ON true
+         WHERE school.tenant_id = $1
+         FOR UPDATE OF instance`,
+        [principal.tenantId]
+      );
+      if (!current.rows[0]) throw new Error('SCHOOL_CONFIGURATION_NOT_FOUND');
+      const nextVersion = current.rows[0].current_version + 1;
+      await client.query(
+        `INSERT INTO production.school_configuration_versions
+           (tenant_id, school_id, configuration_version, configuration, created_by)
+         VALUES ($1, $2, $3, $4::jsonb, $5)`,
+        [principal.tenantId, current.rows[0].school_id, nextVersion,
+          JSON.stringify(configuration), principal.email || 'tenant_admin']
+      );
       await client.query(
         `UPDATE production.school_configurations
          SET academic_session = $2, academic_term_structure = $3::jsonb,
@@ -493,17 +898,101 @@ export class SchoolProvisioningRepository {
         [principal.tenantId, configuration.timeZone,
           configuration.currency.toUpperCase(), configuration.language.toLowerCase()]
       );
+      const updatedSnapshot = {
+        ...current.rows[0].configuration,
+        schoolConfiguration: configuration,
+        configurationVersion: nextVersion
+      };
+      await client.query(
+        `INSERT INTO production.application_instance_configurations
+           (tenant_id, application_instance_id, configuration_version,
+            schema_version, configuration, created_by)
+         VALUES ($1, $2, $3, 1, $4::jsonb, $5)`,
+        [principal.tenantId, current.rows[0].instance_id, nextVersion,
+          JSON.stringify(updatedSnapshot), principal.email || 'tenant_admin']
+      );
+      await client.query(
+        `UPDATE production.application_instances
+         SET configuration_version = $3, updated_at = now()
+         WHERE tenant_id = $1 AND id = $2`,
+        [principal.tenantId, current.rows[0].instance_id, String(nextVersion)]
+      );
+      await client.query(
+        `INSERT INTO production.audit_events (tenant_id, actor_subject, action, details)
+         VALUES ($1, $2, 'school_configuration_updated', $3::jsonb)`,
+        [principal.tenantId, principal.email || 'tenant_admin',
+          JSON.stringify({ schoolId: current.rows[0].school_id, configurationVersion: nextVersion })]
+      );
     });
   }
 
-  async getProvisioningStatus(instanceId: string): Promise<PersistedSchoolProvisioning | undefined> {
-    return withControlPlaneTransaction(this.pool, async client => {
+  async getProvisioningStatus(
+    instanceId: string,
+    principal: VerifiedTenantPrincipal
+  ): Promise<PersistedSchoolProvisioning | undefined> {
+    return withControlPlaneTransaction(this.pool, principal, async client => {
       const result = await client.query<ProvisioningRow>(
         `${PROVISIONING_SELECT}
-         WHERE ai.id = $1`,
+         WHERE ai.id = $1 OR operation.id = $1
+         LIMIT 1`,
         [instanceId]
       );
       return result.rows[0] ? mapProvisioningRow(result.rows[0], false) : undefined;
     });
+  }
+
+  async getProvisioningOperation(
+    operationId: string,
+    principal: VerifiedTenantPrincipal
+  ): Promise<PersistedProvisioningOperation | undefined> {
+    const operation = await withControlPlaneTransaction(this.pool, principal, async client => {
+      const result = await client.query<{
+        id: string;
+        idempotency_key: string;
+        request_hash: string;
+        request_payload: SchoolProvisioningRequest;
+        initiated_by: string;
+        status: SchoolProvisioningOperationResponse['status'];
+        retryable: boolean;
+        attempt_count: number;
+        created_at: Date;
+        updated_at: Date;
+        completed_at: Date | null;
+        error_code: string | null;
+        error_details: { message?: string };
+        application_instance_id: string | null;
+      }>(
+        `SELECT id, idempotency_key, request_hash, request_payload, initiated_by,
+                status, retryable, attempt_count, created_at, updated_at, completed_at,
+                error_code, error_details, application_instance_id
+         FROM production.school_provisioning_operations
+         WHERE id = $1`,
+        [operationId]
+      );
+      return result.rows[0];
+    });
+    if (!operation) return undefined;
+    const provisioning = await this.getProvisioningStatus(operation.id, principal);
+    return {
+      operationId: operation.id,
+      status: operation.status,
+      retryable: operation.retryable,
+      attemptCount: operation.attempt_count,
+      createdAt: operation.created_at.toISOString(),
+      updatedAt: operation.updated_at.toISOString(),
+      completedAt: operation.completed_at?.toISOString() ?? null,
+      ...(operation.error_code ? {
+        error: {
+          code: operation.error_code,
+          message: operation.error_details.message || 'School provisioning did not complete.',
+          retryable: operation.retryable
+        }
+      } : {}),
+      ...(provisioning ? { provisioning } : {}),
+      idempotencyKey: operation.idempotency_key,
+      requestHash: operation.request_hash,
+      requestPayload: operation.request_payload,
+      initiatedBy: operation.initiated_by
+    };
   }
 }

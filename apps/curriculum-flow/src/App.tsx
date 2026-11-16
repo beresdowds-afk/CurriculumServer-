@@ -51,7 +51,7 @@ import { UserProfile, SubjectCurriculum, UserRole } from '../../../src/types';
 import { NERDC_SUBJECTS_DATABASE } from '../../../src/data/nerdcDatabase';
 import { unifiedApiClient } from '../../../src/services/unifiedApiClient';
 import { CurriculumFlowPublicHome } from '../../../src/components/CurriculumFlowPublicHome';
-import { UniversalCustomerOnboardingWizard } from '../../../src/components/UniversalCustomerOnboardingWizard';
+import { SchoolRegistrationWizard } from '../../../src/components/SchoolRegistrationWizard';
 
 export const CurriculumFlowApp: React.FC = () => {
   const [viewMode, setViewMode] = useState<'public_homepage' | 'school_workspace'>('public_homepage');
@@ -154,13 +154,9 @@ export const CurriculumFlowApp: React.FC = () => {
         />
 
         {isOnboardingModalOpen && (
-          <UniversalCustomerOnboardingWizard
+          <SchoolRegistrationWizard
             isOpen={isOnboardingModalOpen}
             onClose={() => setIsOnboardingModalOpen(false)}
-            onProvisionSuccess={() => {
-              setIsOnboardingModalOpen(false);
-              setViewMode('school_workspace');
-            }}
           />
         )}
       </div>

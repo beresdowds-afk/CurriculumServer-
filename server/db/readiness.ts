@@ -37,7 +37,14 @@ const REQUIRED_TABLES = [
   'production.school_configurations',
   'production.application_instances',
   'production.school_provisioning_requests',
-  'production.school_admin_invitations'
+  'production.school_provisioning_operations',
+  'production.application_instance_configurations',
+  'production.school_commercial_agreements',
+  'production.school_configuration_versions',
+  'production.application_instance_deployments',
+  'production.school_admin_invitations',
+  'production.invitation_outbox',
+  'production.invitation_delivery_attempts'
 ];
 
 export interface PlatformReadiness {
@@ -54,6 +61,7 @@ export interface PlatformReadiness {
   };
   provisioning: {
     executionAvailable: boolean;
+    invitationDeliveryAvailable: boolean;
     reason: string;
   };
   ready: boolean;
@@ -77,7 +85,11 @@ export async function inspectPlatformReadiness(
         tenantSecurityAvailable: false,
         error: configurationError || 'configuration_missing'
       },
-      provisioning: { executionAvailable: false, reason: 'PostgreSQL, platform credentials, secure token signing, and invitation email configuration are required.' },
+      provisioning: {
+        executionAvailable: false,
+        invitationDeliveryAvailable: false,
+        reason: 'PostgreSQL, platform credentials, and secure token signing are required.'
+      },
       ready: false
     };
   }
@@ -140,7 +152,8 @@ export async function inspectPlatformReadiness(
   const trustedTenantContextAvailable = rlsPoliciesAvailable && hasSecureControlPlaneSecret();
   const provisioningReady = connectionVerified && migrationsCurrent &&
     requiredTablesAvailable && rlsPoliciesAvailable && trustedTenantContextAvailable &&
-    hasConfiguredPlatformAdminAccounts() && hasInvitationEmailConfiguration();
+    hasConfiguredPlatformAdminAccounts();
+  const invitationDeliveryAvailable = hasInvitationEmailConfiguration();
   const provisioningReason = !connectionVerified || !migrationsCurrent ||
     !requiredTablesAvailable || !rlsPoliciesAvailable
     ? 'PostgreSQL connection, current migrations, and tenant RLS policies are required.'
@@ -148,8 +161,8 @@ export async function inspectPlatformReadiness(
       ? 'Secure server-side token signing is not configured.'
       : !hasConfiguredPlatformAdminAccounts()
         ? 'Platform administrator credentials are not configured.'
-        : !hasInvitationEmailConfiguration()
-          ? 'Administrator invitation email configuration is incomplete.'
+        : !invitationDeliveryAvailable
+          ? 'Shared PostgreSQL provisioning is available; invitation delivery remains pending until email configuration is supplied.'
           : 'Shared PostgreSQL school records are available; this workflow does not create cloud infrastructure.';
 
   return {
@@ -164,7 +177,11 @@ export async function inspectPlatformReadiness(
       tenantSecurityAvailable,
       ...(error ? { error } : {})
     },
-    provisioning: { executionAvailable: provisioningReady, reason: provisioningReason },
+    provisioning: {
+      executionAvailable: provisioningReady,
+      invitationDeliveryAvailable,
+      reason: provisioningReason
+    },
     ready: provisioningReady
   };
 }

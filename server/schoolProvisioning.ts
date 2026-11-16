@@ -1,6 +1,8 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { SchoolProvisioningRequest } from '../packages/shared-types/src/apiContracts';
+import { validateProvisionableFeatures } from '../src/data/applicationRegistryData';
+import { INITIAL_REGISTERED_APPLICATIONS } from '../src/data/applicationRegistryData';
 
 const scryptAsync = promisify(scrypt);
 
@@ -19,6 +21,8 @@ export function validateSchoolProvisioningRequest(value: unknown): SchoolProvisi
   const requiredText: Array<[string, unknown, number]> = [
     ['school.name', request.school?.name, 255],
     ['school.displayName', request.school?.displayName, 255],
+    ['school.shortName', request.school?.shortName, 100],
+    ['school.slug', request.school?.slug, 63],
     ['school.schoolType', request.school?.schoolType, 100],
     ['school.country', request.school?.country, 100],
     ['school.stateProvince', request.school?.stateProvince, 100],
@@ -32,18 +36,29 @@ export function validateSchoolProvisioningRequest(value: unknown): SchoolProvisi
     ['configuration.academicSession', request.configuration?.academicSession, 40],
     ['administrator.fullName', request.administrator?.fullName, 255],
     ['administrator.email', request.administrator?.email, 254],
-    ['applicationId', request.applicationId, 64]
+    ['applicationId', request.applicationId, 64],
+    ['templateId', request.templateId, 100],
+    ['templateVersion', request.templateVersion, 40],
+    ['commercial.planReference', request.commercial?.planReference, 100],
+    ['commercial.priceReference', request.commercial?.priceReference, 100]
   ];
   for (const [field, candidate, maxLength] of requiredText) {
     if (typeof candidate !== 'string' || !candidate.trim() || candidate.trim().length > maxLength) {
       throw new Error(`${field} is required and must be at most ${maxLength} characters.`);
     }
-    if (!['primary', 'secondary', 'combined', 'tertiary', 'other'].includes(request.school.schoolType.toLowerCase())) {
-      throw new Error('Choose a supported school type.');
-    }
   }
+  const slug = request.school.slug.trim().toLowerCase();
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slug)) {
+    throw new Error('School slug must contain lowercase letters, numbers, and interior hyphens only.');
+  }
+  const schoolType = request.school.schoolType.trim();
   if (!isValidEmail(request.school.officialContactEmail) || !isValidEmail(request.administrator.email)) {
     throw new Error('Enter valid official school and administrator email addresses.');
+  }
+  for (const email of [request.school.principalEmail, request.school.ictAdministratorEmail]) {
+    if (email && !isValidEmail(email)) {
+      throw new Error('Enter valid principal and ICT administrator email addresses.');
+    }
   }
   if (!/^[A-Z]{3}$/i.test(request.configuration.currency)) {
     throw new Error('Currency must be a three-letter ISO code.');
@@ -56,8 +71,56 @@ export function validateSchoolProvisioningRequest(value: unknown): SchoolProvisi
   } catch {
     throw new Error('Enter a valid IANA time zone.');
   }
-  if (!/^[a-z0-9][a-z0-9._-]{1,63}$/i.test(request.applicationId)) {
-    throw new Error('Application identifier has an invalid format.');
+  const applicationId = request.applicationId.trim();
+  const application = INITIAL_REGISTERED_APPLICATIONS.find(item => item.appId === applicationId);
+  if (!application || application.lifecycleStatus !== 'published') {
+    throw new Error('Choose a published application from the registry.');
+  }
+  if (request.architecture !== 'shared_database') {
+    throw new Error('Only the shared PostgreSQL architecture is currently provisionable.');
+  }
+  if (!Array.isArray(request.enabledFeatures) || request.enabledFeatures.length === 0) {
+    throw new Error('Select at least one production-approved application feature.');
+  }
+  const featureValidation = validateProvisionableFeatures(applicationId, request.enabledFeatures);
+  if (!featureValidation.valid) throw new Error(featureValidation.errors.join(' '));
+  if (!request.enabledFeatures.includes('feat_school_administration_identity')) {
+    throw new Error('School Administration & Identity is required for a school instance.');
+  }
+  if (!request.commercial || !['monthly', 'annual', 'lease_to_own'].includes(request.commercial.commercialModel) ||
+      !['month', 'year', 'lease'].includes(request.commercial.billingInterval)) {
+    throw new Error('Choose a supported commercial model and billing interval.');
+  }
+  if (request.commercial.currency.toUpperCase() !== request.configuration.currency.toUpperCase()) {
+    throw new Error('Commercial currency must match the school configuration currency.');
+  }
+  if (request.commercial.agreedAmountMinor !== undefined &&
+      (!Number.isSafeInteger(request.commercial.agreedAmountMinor) || request.commercial.agreedAmountMinor < 0)) {
+    throw new Error('Agreed amount must be a non-negative integer in minor currency units.');
+  }
+  for (const color of [request.school.primaryBrandColor, request.school.accentBrandColor]) {
+    if (color && !/^#[0-9a-f]{6}$/i.test(color)) {
+      throw new Error('Brand colors must be six-digit hexadecimal colors.');
+    }
+  }
+  for (const optionalUrl of [request.school.website, request.school.logoUrl, request.deployment?.applicationUrl]) {
+    if (!optionalUrl) continue;
+    try {
+      const url = new URL(optionalUrl);
+      if (!['https:', ...(process.env.NODE_ENV === 'production' ? [] : ['http:'])].includes(url.protocol)) {
+        throw new Error();
+      }
+    } catch {
+      throw new Error('Website, logo, and application URLs must be valid HTTP(S) URLs.');
+    }
+  }
+  if (request.deployment?.requestedSubdomain &&
+      !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(request.deployment.requestedSubdomain.toLowerCase())) {
+    throw new Error('Requested subdomain has an invalid format.');
+  }
+  if (request.deployment?.requestedCustomDomain &&
+      !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(request.deployment.requestedCustomDomain)) {
+    throw new Error('Requested custom domain has an invalid format.');
   }
   if (!Array.isArray(request.configuration.academicTermStructure) ||
       request.configuration.academicTermStructure.length === 0 ||
@@ -96,6 +159,12 @@ export function validateSchoolProvisioningRequest(value: unknown): SchoolProvisi
       ...request.school,
       name: request.school.name.trim(),
       displayName: request.school.displayName.trim(),
+      shortName: request.school.shortName.trim(),
+      slug,
+      schoolType,
+      country: request.school.country.trim().replace(/\s+/g, ' '),
+      stateProvince: request.school.stateProvince.trim().replace(/\s+/g, ' '),
+      city: request.school.city.trim().replace(/\s+/g, ' '),
       officialContactEmail: normalizeEmail(request.school.officialContactEmail)
     },
     administrator: {
@@ -110,7 +179,89 @@ export function validateSchoolProvisioningRequest(value: unknown): SchoolProvisi
       language: request.configuration.language.toLowerCase(),
       academicSession: request.configuration.academicSession.trim()
     },
-    applicationId: request.applicationId.trim()
+    applicationId,
+    templateId: request.templateId.trim(),
+    templateVersion: request.templateVersion.trim(),
+    enabledFeatures: [...request.enabledFeatures].sort(),
+    commercial: {
+      ...request.commercial,
+      currency: request.commercial.currency.toUpperCase()
+    },
+    deployment: {
+      ...request.deployment,
+      requestedSubdomain: request.deployment?.requestedSubdomain?.toLowerCase(),
+      requestedCustomDomain: request.deployment?.requestedCustomDomain?.toLowerCase()
+    }
+  };
+}
+
+export function validateSchoolConfiguration(
+  value: unknown
+): SchoolProvisioningRequest['configuration'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('School configuration must be an object.');
+  }
+  const configuration = value as SchoolProvisioningRequest['configuration'];
+  if (typeof configuration.timeZone !== 'string' ||
+      typeof configuration.currency !== 'string' ||
+      typeof configuration.language !== 'string' ||
+      typeof configuration.academicSession !== 'string' ||
+      !configuration.timeZone.trim() || !configuration.academicSession.trim()) {
+    throw new Error('Time zone, currency, language, and academic session are required.');
+  }
+  if (!/^[A-Z]{3}$/i.test(configuration.currency)) throw new Error('Currency must be a three-letter ISO code.');
+  if (!/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/i.test(configuration.language)) {
+    throw new Error('Enter a valid language code.');
+  }
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: configuration.timeZone });
+  } catch {
+    throw new Error('Enter a valid IANA time zone.');
+  }
+  if (configuration.academicSession.length > 40 ||
+      !Array.isArray(configuration.academicTermStructure) ||
+      configuration.academicTermStructure.length === 0 ||
+      configuration.academicTermStructure.length > 12) {
+    throw new Error('Configure an academic session and between one and twelve academic terms.');
+  }
+  const names = new Set<string>();
+  for (const term of configuration.academicTermStructure) {
+    if (!term || typeof term.name !== 'string' || !term.name.trim() || term.name.length > 80) {
+      throw new Error('Each academic term must have a valid name.');
+    }
+    const name = term.name.trim().toLowerCase();
+    if (names.has(name)) throw new Error('Academic term names must be unique.');
+    names.add(name);
+    for (const month of [term.startMonth, term.endMonth]) {
+      if (month !== undefined && (!Number.isInteger(month) || month < 1 || month > 12)) {
+        throw new Error('Academic term months must be between 1 and 12.');
+      }
+    }
+  }
+  if (!Array.isArray(configuration.educationLevels) ||
+      configuration.educationLevels.length > 20 ||
+      configuration.educationLevels.some(level =>
+        typeof level !== 'string' || !level.trim() || level.length > 80
+      )) {
+    throw new Error('Education levels must be a list of up to twenty valid names.');
+  }
+  if (configuration.gradingConfiguration !== undefined &&
+      (!configuration.gradingConfiguration ||
+       typeof configuration.gradingConfiguration !== 'object' ||
+       Array.isArray(configuration.gradingConfiguration))) {
+    throw new Error('Grading configuration must be an object.');
+  }
+  return {
+    ...configuration,
+    timeZone: configuration.timeZone.trim(),
+    currency: configuration.currency.toUpperCase(),
+    language: configuration.language.toLowerCase(),
+    academicSession: configuration.academicSession.trim(),
+    academicTermStructure: configuration.academicTermStructure.map(term => ({
+      ...term,
+      name: term.name.trim()
+    })),
+    educationLevels: configuration.educationLevels.map(level => level.trim())
   };
 }
 
@@ -120,7 +271,17 @@ export function createInvitationToken(): { token: string; tokenHash: Buffer } {
 }
 
 export function hashProvisioningRequest(request: SchoolProvisioningRequest): string {
-  return createHash('sha256').update(JSON.stringify(request)).digest('hex');
+  return createHash('sha256').update(stableJson(request)).digest('hex');
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 export function hashInvitationToken(token: string): Buffer {
@@ -211,7 +372,7 @@ export async function sendSchoolAdministratorInvitation(
   fullName: string,
   schoolName: string,
   token: string
-): Promise<void> {
+): Promise<{ providerMessageId?: string }> {
   if (!hasInvitationEmailConfiguration()) throw new Error('Administrator invitation email is not configured.');
   const apiKey = process.env.INVITATION_EMAIL_API_KEY!;
   const from = process.env.INVITATION_EMAIL_FROM!;
@@ -235,6 +396,14 @@ export async function sendSchoolAdministratorInvitation(
   });
   if (!response.ok) {
     throw new Error('Administrator invitation email could not be delivered.');
+  }
+  try {
+    const body = await response.json() as { id?: unknown };
+    return typeof body.id === 'string' && body.id.length <= 255
+      ? { providerMessageId: body.id }
+      : {};
+  } catch {
+    return {};
   }
 }
 

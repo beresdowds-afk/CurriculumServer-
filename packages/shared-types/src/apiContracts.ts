@@ -101,6 +101,8 @@ export interface SchoolProvisioningRequest {
   school: {
     name: string;
     displayName: string;
+    shortName: string;
+    slug: string;
     schoolType: string;
     country: string;
     stateProvince: string;
@@ -108,6 +110,17 @@ export interface SchoolProvisioningRequest {
     physicalAddress: string;
     officialContactEmail: string;
     telephone: string;
+    website?: string;
+    motto?: string;
+    principalName?: string;
+    principalEmail?: string;
+    principalPhone?: string;
+    ictAdministratorName?: string;
+    ictAdministratorEmail?: string;
+    ictAdministratorPhone?: string;
+    logoUrl?: string;
+    primaryBrandColor?: string;
+    accentBrandColor?: string;
   };
   configuration: {
     timeZone: string;
@@ -123,17 +136,94 @@ export interface SchoolProvisioningRequest {
     email: string;
   };
   applicationId: string;
+  architecture: 'shared_database';
+  templateId: string;
+  templateVersion: string;
+  enabledFeatures: string[];
+  featureOverrides?: Record<string, Record<string, unknown>>;
+  commercial: {
+    commercialModel: 'monthly' | 'annual' | 'lease_to_own';
+    planReference: string;
+    priceReference: string;
+    currency: string;
+    billingInterval: 'month' | 'year' | 'lease';
+    agreedAmountMinor?: number;
+  };
+  deployment: {
+    requestedSubdomain?: string;
+    requestedCustomDomain?: string;
+    applicationUrl?: string;
+  };
+}
+
+export interface ApplicationInstanceConfigurationV1 {
+  schemaVersion: 1;
+  applicationId: string;
+  applicationVersion: string;
+  tenantId: string;
+  architecture: 'shared_database';
+  template: { id: string; version: string };
+  enabledFeatureIds: string[];
+  featureDependencies: Record<string, string[]>;
+  featureOverrides: Record<string, Record<string, unknown>>;
+  schoolConfiguration: SchoolProvisioningRequest['configuration'];
+  branding: {
+    logoUrl?: string;
+    primaryColor: string;
+    accentColor: string;
+  };
+  deployment: SchoolProvisioningRequest['deployment'];
+  configurationVersion: number;
+  provisioningStatus: 'ready' | 'pending';
 }
 
 export interface SchoolProvisioningConfirmation {
+  operationId: string;
   schoolId: string;
   tenantId: string;
   instanceId: string;
   schoolName: string;
-  instanceStatus: 'provisioning' | 'active' | 'failed';
-  administratorActivationStatus: 'invitation_sent' | 'delivery_pending' | 'activated';
+  instanceStatus:
+    | 'draft'
+    | 'pending_approval'
+    | 'approved'
+    | 'provisioning'
+    | 'provisioning_failed'
+    | 'provisioned'
+    | 'configuration_pending'
+    | 'ready_for_activation'
+    | 'active'
+    | 'suspended'
+    | 'decommissioning'
+    | 'decommissioned'
+    | 'failed';
+  provisioningStatus: 'pending' | 'running' | 'retryable_failure' | 'failed' | 'ready';
+  configurationReadiness: 'pending' | 'ready' | 'failed';
+  applicationReadiness: 'pending' | 'ready' | 'failed';
+  administratorActivationStatus:
+    | 'invitation_sent'
+    | 'delivery_pending'
+    | 'activated'
+    | 'expired'
+    | 'revoked';
+  invitationDeliveryStatus: 'pending' | 'sending' | 'delivered' | 'retryable_failure' | 'failed';
+  deploymentStatus: 'not_required' | 'pending' | 'manual_action_required' | 'verified' | 'failed';
   applicationId: string;
   createdAt: string;
+  updatedAt: string;
+  error?: { code: string; message: string; retryable: boolean };
+}
+
+export interface SchoolProvisioningOperationResponse {
+  operationId: string;
+  status: 'pending' | 'running' | 'retryable_failure' | 'failed' | 'ready';
+  retryable: boolean;
+  attemptCount: number;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  error?: { code: string; message: string; retryable: boolean };
+  provisioning?: SchoolProvisioningConfirmation;
 }
 
 export interface SchoolAdministratorLoginResponse {
@@ -154,6 +244,7 @@ export interface SchoolDetailsResponse {
   tenantId: string;
   slug: string;
   name: string;
+  shortName: string;
   displayName: string;
   schoolType: string;
   country: string;
@@ -162,6 +253,17 @@ export interface SchoolDetailsResponse {
   physicalAddress: string;
   officialContactEmail: string;
   telephone: string;
+  website: string | null;
+  motto: string | null;
+  principalName: string | null;
+  principalEmail: string | null;
+  principalPhone: string | null;
+  ictAdministratorName: string | null;
+  ictAdministratorEmail: string | null;
+  ictAdministratorPhone: string | null;
+  logoUrl: string | null;
+  primaryBrandColor: string;
+  accentBrandColor: string;
   timeZone: string;
   currency: string;
   language: string;

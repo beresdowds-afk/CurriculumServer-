@@ -14,6 +14,7 @@
  
     "test": "tsx --test server/gcpProvisioningEngine.test.ts server/customerOnboardingManager.test.ts server/storageAndDatabaseManager.test.ts server/schoolProvisioning.test.ts server/tenantTokenService.test.ts src/services/cipaApiClient.test.ts server/db/*.test.ts",
     "test:db": "tsx --test server/db/*.test.ts",
+    "test:postgres": "tsx --test server/db/postgres.integration.test.ts",
     "db:migrate": "tsx server/db/migrate.ts up",
     "db:migrate:status": "tsx server/db/migrate.ts status",
  

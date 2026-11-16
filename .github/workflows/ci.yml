@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typecheck, PostgreSQL tests, and production builds
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: curriculum_platform
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d curriculum_platform"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Apply migrations to disposable PostgreSQL
+        env:
+          MIGRATION_DATABASE_URL: postgres://postgres:postgres@localhost:5432/curriculum_platform?sslmode=disable
+          NODE_ENV: test
+        run: npm run db:migrate
+
+      - name: Create non-owner runtime role
+        run: |
+          psql postgres://postgres:postgres@localhost:5432/curriculum_platform \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE curriculum_runtime LOGIN PASSWORD 'runtime-test'; \
+                GRANT USAGE ON SCHEMA public, production, control_plane, curriculum_flow TO curriculum_runtime; \
+                GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public, production, control_plane, curriculum_flow TO curriculum_runtime; \
+                GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public, production, control_plane, curriculum_flow TO curriculum_runtime;"
+
+      - name: Typecheck
+        run: npm run lint
+
+      - name: Run unit and PostgreSQL acceptance tests
+        env:
+          TEST_DATABASE_URL: postgres://curriculum_runtime:runtime-test@localhost:5432/curriculum_platform
+          TEST_DATABASE_SSLMODE: disable
+          DATABASE_TEST_DISPOSABLE: '1'
+        run: npm test
+
+      - name: Build all production applications
+        run: npm run build:all
