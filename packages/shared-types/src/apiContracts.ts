@@ -97,6 +97,33 @@ export interface ProvisionInstanceApiRequest {
   databaseStrategy?: 'shared_schema_isolated' | 'dedicated_database' | 'dedicated_customer_gcp_project';
 }
 
+export type ApplicationDeploymentArchitecture =
+  | 'shared_database'
+  | 'dedicated_database'
+  | 'dedicated_infrastructure';
+
+export interface ApplicationBuilderConfigurationV1 {
+  schemaVersion: 1;
+  contractVersion: 1;
+  applicationId: string;
+  applicationVersion: string;
+  templates: Array<{ templateId: string; templateVersion: string }>;
+  enabledCapabilities: string[];
+  capabilityDependencies: Record<string, string[]>;
+  configurationVersion: number;
+  deploymentArchitecture: ApplicationDeploymentArchitecture;
+  databaseStrategy: {
+    engine: 'postgresql';
+    isolation: ApplicationDeploymentArchitecture;
+  };
+  validationEvidence: {
+    validatedAt: string;
+    validator: 'application-configuration-contract';
+    capabilityVersions: Record<string, string>;
+    checks: string[];
+  };
+}
+
 export interface SchoolProvisioningRequest {
   school: {
     name: string;
@@ -140,6 +167,7 @@ export interface SchoolProvisioningRequest {
   templateId: string;
   templateVersion: string;
   enabledFeatures: string[];
+  applicationConfiguration?: ApplicationBuilderConfigurationV1;
   featureOverrides?: Record<string, Record<string, unknown>>;
   commercial: {
     commercialModel: 'monthly' | 'annual' | 'lease_to_own';
@@ -156,10 +184,7 @@ export interface SchoolProvisioningRequest {
   };
 }
 
-export interface ApplicationInstanceConfigurationV1 {
-  schemaVersion: 1;
-  applicationId: string;
-  applicationVersion: string;
+export interface ApplicationInstanceConfigurationV1 extends ApplicationBuilderConfigurationV1 {
   tenantId: string;
   architecture: 'shared_database';
   template: { id: string; version: string };
@@ -173,7 +198,6 @@ export interface ApplicationInstanceConfigurationV1 {
     accentColor: string;
   };
   deployment: SchoolProvisioningRequest['deployment'];
-  configurationVersion: number;
   provisioningStatus: 'ready' | 'pending';
 }
 

@@ -1,16 +1,19 @@
 # Identity, Authorization, Capability Gate and Lifecycle Architecture
 
-Introduced by migration `008_identity_authorization_foundation.sql`. This is the
-foundation for School Administration & Identity Stage 2; it does not implement
-Stage 2 features.
+The identity foundation was introduced by migration
+`008_identity_authorization_foundation.sql`; migration
+`009_school_administration_domain.sql` adds a partial administration domain.
+Neither migration alone makes the Stage 2 module production-ready. See
+`SCHOOL_ADMINISTRATION_IDENTITY_STAGE2.md` for verified implementation status
+and blockers.
 
 ## 1. Canonical identity model
 
 | Concern | Canonical source |
 | --- | --- |
 | User identity | `production.users` (one table; no second users table, one password store) |
-| Tenant membership | `production.memberships` (`status`: active/revoked; `revoked_at`) |
-| Staff profile association | Future nullable FK from a staff profile table to `users.id` (+ tenant). Not created yet. |
+| Tenant membership | `production.memberships` (`status`: active/suspended/revoked; `revoked_at`) |
+| Staff profile association | `production.staff` has a nullable tenant-scoped FK to `production.memberships(tenant_id, user_id)`; staff account-linking workflows are incomplete. |
 | Student identity association | `curriculum_flow`/`production` student rows stay tenant records; any student login links via a future FK to `users.id`. Not created yet. |
 | Guardian association | Future guardian table keyed by `users.id`; reserved, not created. |
 | Role assignment | `production.membership_role_assignments` (partial unique index on active rows; revocation timestamps) |
@@ -45,7 +48,10 @@ normalized assignments from it without discarding any subject.
   `platformAdministrator`, `internalService` (`x-internal-service-key`, `INTERNAL_SERVICE_KEY` ≥ 32 chars).
 * School application access is no longer restricted to `tenant_admin`; permissions decide.
 * Tenant context is set transaction-locally (`withTenantTransaction`); control-plane access uses the
-  single `withControlPlaneTransaction` helper in `server/db/tenantContext.ts`. No runtime superuser or BYPASSRLS.
+  single `withControlPlaneTransaction` helper in `server/db/tenantContext.ts`. This does not by itself
+  make tenant identity trustworthy: `app.tenant_id` and `app.control_plane_admin` are caller-settable.
+  Separate runtime/control-plane database identities and database-verifiable tenant context remain
+  required before relying on RLS against arbitrary SQL.
 * Role assignment cannot escalate: an actor can only assign roles whose permissions it holds.
 * Invitation acceptance stays a narrow token-hash-scoped transaction (`withInvitationTokenTransaction`).
 
@@ -57,7 +63,9 @@ acceptance tests and readiness. `server.ts` keeps the global `/api/v1` fail-clos
 `evaluateProductionCapabilityGate`: a route is served only if its capability is `enabled`, declares
 acceptance tests, routes, and consistent auth/tenant rules. Unknown and unimplemented operations return 503.
 Registered but `not_started`: school_identity, student_administration, class_administration,
-staff_administration, administrative_permissions, student_lifecycle.
+staff_administration, administrative_permissions, student_lifecycle. Stage 2 handler routes and
+`GET /api/v1/application-templates` are not currently matched by enabled registrations and remain
+blocked by the gate; implemented handlers are not operational endpoints.
 
 ## 4. Application configuration contract
 

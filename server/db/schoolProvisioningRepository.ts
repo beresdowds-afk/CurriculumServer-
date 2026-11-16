@@ -14,7 +14,11 @@ import {
 } from './tenantContext';
 import { INITIAL_REGISTERED_APPLICATIONS } from '../../src/data/applicationRegistryData';
 import { buildApplicationInstanceConfiguration } from '../../src/data/applicationInstanceConfiguration';
-import { createInvitationToken, hashInvitationToken } from '../schoolProvisioning';
+import {
+  createInvitationToken,
+  hashInvitationToken,
+  validateSchoolProvisioningRequest
+} from '../schoolProvisioning';
 import { advanceLifecycle } from './applicationLifecycle';
 import { assertAuthorized, type AuthorizedPrincipal } from '../authorization/authorizedPrincipal';
 import { PERMISSIONS } from '../authorization/permissions';
@@ -255,6 +259,7 @@ export class SchoolProvisioningRepository {
     requestHash: string,
     principal: VerifiedTenantPrincipal
   ): Promise<PersistedSchoolProvisioning> {
+    input = validateSchoolProvisioningRequest(input);
     const operationId = await withControlPlaneTransaction(this.pool, principal, async client => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [idempotencyKey]);
       const current = await client.query<{
@@ -364,27 +369,29 @@ export class SchoolProvisioningRepository {
         );
         const application = INITIAL_REGISTERED_APPLICATIONS.find(item => item.appId === input.applicationId);
         if (!application) throw new Error('APPLICATION_REGISTRY_ENTRY_UNAVAILABLE');
+        const applicationConfiguration = input.applicationConfiguration ??
+          buildApplicationInstanceConfiguration({
+            applicationId: input.applicationId,
+            templateId: input.templateId,
+            templateVersion: input.templateVersion,
+            enabledCapabilities: input.enabledFeatures,
+            deploymentArchitecture: input.architecture
+          });
         const instanceResult = await client.query<{ id: string }>(
           `INSERT INTO production.application_instances
              (tenant_id, school_id, application_id, application_version, configuration_version,
               status, provisioning_status, enabled_features, deployment_architecture,
               architecture, template_id, template_version)
-           VALUES ($1, $2, $3, $4, '1', 'provisioning', 'running',
-                   $5::text[], 'shared_database', $6, $7, $8)
+           VALUES ($1, $2, $3, $4, $5, 'provisioning', 'running',
+                   $6::text[], 'shared_database', $7, $8, $9)
            RETURNING id`,
-          [tenant.id, schoolId, input.applicationId, application.version, input.enabledFeatures,
-            input.architecture, input.templateId, input.templateVersion]
+          [
+            tenant.id, schoolId, input.applicationId, application.version,
+            String(applicationConfiguration.configurationVersion), input.enabledFeatures,
+            input.architecture, input.templateId, input.templateVersion
+          ]
         );
         const instanceId = instanceResult.rows[0].id;
-        // The Application Builder selection is validated against the shared contract;
-        // nothing about feature selection is decided here.
-        const applicationConfiguration = buildApplicationInstanceConfiguration({
-          applicationId: input.applicationId,
-          templateId: input.templateId,
-          templateVersion: input.templateVersion,
-          enabledCapabilities: input.enabledFeatures,
-          deploymentArchitecture: input.architecture
-        });
         const configuration = {
           ...applicationConfiguration,
           tenantId: tenant.id,
@@ -406,8 +413,11 @@ export class SchoolProvisioningRepository {
           `INSERT INTO production.application_instance_configurations
              (tenant_id, application_instance_id, configuration_version, schema_version,
               configuration, created_by)
-           VALUES ($1, $2, 1, 1, $3::jsonb, $4)`,
-          [tenant.id, instanceId, JSON.stringify(configuration), initiatedBy]
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
+          [
+            tenant.id, instanceId, applicationConfiguration.configurationVersion,
+            applicationConfiguration.schemaVersion, JSON.stringify(configuration), initiatedBy
+          ]
         );
         await client.query(
           `INSERT INTO production.school_commercial_agreements
@@ -882,6 +892,7 @@ export class SchoolProvisioningRepository {
           AND school.organization_id = school_org.id
          WHERE membership.tenant_id = $1
            AND lower(user_record.email) = lower($2)
+           AND user_record.account_status = 'active'
            AND membership.status = 'active'
            AND tenant.status = 'approved'
          LIMIT 1`,

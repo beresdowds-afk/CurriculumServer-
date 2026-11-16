@@ -65,7 +65,12 @@ async function main() {
 
   await verifyRuntimeRole();
 
-  const result = run('npx', ['tsx', '--test', 'server/db/postgres.integration.test.ts', 'server/db/authorization.integration.test.ts'], {
+  const result = run('npx', [
+    'tsx', '--test',
+    'server/db/postgres.integration.test.ts',
+    'server/db/authorization.integration.test.ts',
+    'server/db/schoolAdministration.integration.test.ts'
+  ], {
     POSTGRES_ACCEPTANCE_REQUIRED: '1'
   });
   const output = result.stdout || '';

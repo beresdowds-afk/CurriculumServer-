@@ -3,16 +3,31 @@
 // these constants only name them for application code.
 export const PERMISSIONS = {
   schoolProfileRead: 'school.profile.read',
+  schoolProfileUpdate: 'school.profile.update',
   schoolConfigurationRead: 'school.configuration.read',
   schoolConfigurationManage: 'school.configuration.manage',
   membershipRead: 'membership.read',
   membershipRolesAssign: 'membership.roles.assign',
   studentsRead: 'students.read',
   studentsManage: 'students.manage',
+  studentsCreate: 'students.create',
+  studentsUpdate: 'students.update',
+  studentsAdmit: 'students.admit',
+  studentsTransfer: 'students.transfer',
+  studentsPromote: 'students.promote',
+  studentsGraduate: 'students.graduate',
   classesRead: 'classes.read',
   classesManage: 'classes.manage',
+  classesCreate: 'classes.create',
+  classesUpdate: 'classes.update',
   staffRead: 'staff.read',
   staffManage: 'staff.manage',
+  staffCreate: 'staff.create',
+  staffUpdate: 'staff.update',
+  staffAppoint: 'staff.appoint',
+  identityInvite: 'identity.invite',
+  identityManage: 'identity.manage',
+  permissionsManage: 'permissions.manage',
   studentLifecycleManage: 'student_lifecycle.manage'
 } as const;
 

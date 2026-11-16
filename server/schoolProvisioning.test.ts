@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { SchoolProvisioningRequest } from '../packages/shared-types/src/apiContracts';
+import { APPLICATION_TEMPLATE_REGISTRY, buildApplicationInstanceConfiguration } from '../src/data/applicationInstanceConfiguration';
+import { INITIAL_REGISTERED_FEATURES } from '../src/data/applicationRegistryData';
 import {
   createIdempotencyKey,
   createInvitationToken,
   hashInvitationToken,
   hashPassword,
+  hashProvisioningRequest,
   validateSchoolProvisioningRequest,
   verifyPassword
 } from './schoolProvisioning';
@@ -55,6 +58,82 @@ test('school provisioning validation normalizes input and accepts configurable c
   assert.equal(validated.school.officialContactEmail, 'contact@north.example');
   assert.equal(validated.configuration.currency, 'GHS');
   assert.deepEqual(validated.configuration.academicTermStructure, request.configuration.academicTermStructure);
+});
+
+test('school identity is not a mandatory application feature', () => {
+  const registration = INITIAL_REGISTERED_FEATURES.find(feature => feature.featureId === 'feat_student_registration')!;
+  const previousReadiness = registration.readiness;
+  registration.readiness = [
+    'designed', 'implemented', 'database_migrated', 'api_operational',
+    'authorization_verified', 'acceptance_tested', 'provisionable', 'production_approved'
+  ];
+  try {
+    const validated = validateSchoolProvisioningRequest({
+      ...request,
+      enabledFeatures: ['feat_student_registration']
+    });
+    assert.deepEqual(validated.enabledFeatures, ['feat_student_registration']);
+  } finally {
+    if (previousReadiness) registration.readiness = previousReadiness;
+    else delete registration.readiness;
+  }
+});
+
+test('school administration template is discoverable but draft configurations cannot be provisioned', () => {
+  const template = APPLICATION_TEMPLATE_REGISTRY.find(
+    item => item.templateId === 'school_administration_identity'
+  );
+  assert.ok(template);
+  assert.equal(template.status, 'draft');
+  assert.equal(template.provisionable, false);
+  assert.ok(template.capabilities.includes('school_identity'));
+  assert.throws(() => buildApplicationInstanceConfiguration({
+    applicationId: 'app_curriculum_flow',
+    templateId: template.templateId,
+    templateVersion: template.versions[0],
+    enabledCapabilities: ['feat_school_administration_identity'],
+    deploymentArchitecture: 'shared_database'
+  }), /registered but not provisionable/);
+});
+
+test('validated Application Builder configurations preserve the selected configuration version', () => {
+  const applicationConfiguration = buildApplicationInstanceConfiguration({
+    applicationId: 'app_curriculum_flow',
+    templateId: 'school-standard',
+    templateVersion: '1',
+    enabledCapabilities: ['feat_school_administration_identity'],
+    configurationVersion: 4,
+    deploymentArchitecture: 'shared_database'
+  });
+  const validated = validateSchoolProvisioningRequest({
+    ...request,
+    applicationConfiguration
+  });
+  assert.equal(validated.applicationConfiguration?.configurationVersion, 4);
+  assert.equal(hashProvisioningRequest({
+    ...request,
+    applicationConfiguration: {
+      ...applicationConfiguration,
+      validationEvidence: {
+        ...applicationConfiguration.validationEvidence,
+        validatedAt: '2026-11-16T00:00:00.000Z'
+      }
+    }
+  }), hashProvisioningRequest({
+    ...request,
+    applicationConfiguration: {
+      ...applicationConfiguration,
+      validationEvidence: {
+        ...applicationConfiguration.validationEvidence,
+        validatedAt: '2026-11-16T01:00:00.000Z'
+      }
+    }
+  }), 'validation timestamps do not break retry idempotency');
+  assert.throws(() => validateSchoolProvisioningRequest({
+    ...request,
+    enabledFeatures: [],
+    applicationConfiguration
+  }), /at least one production-approved/);
 });
 
 test('school provisioning rejects invalid contact data, slugs, unregistered features, and duplicate terms', () => {

@@ -14,6 +14,7 @@ import {
 } from '../schoolProvisioning';
 import { AuthorizationRepository } from '../authorization/authorizationRepository';
 import { acceptanceTestOptions, buildSchoolRequest, databaseUrl, principal } from './testSupport';
+import { buildApplicationInstanceConfiguration } from '../../src/data/applicationInstanceConfiguration';
 
 test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS', acceptanceTestOptions, async () => {
   const runtime = new PostgresRuntime({
@@ -173,7 +174,17 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
 
     const schoolRepository = new SchoolProvisioningRepository(pool);
     const schoolRequest = buildSchoolRequest;
-    const requestA = schoolRequest(`School A ${randomUUID()}`, schoolAdminEmailA);
+    const requestA = {
+      ...schoolRequest(`School A ${randomUUID()}`, schoolAdminEmailA),
+      applicationConfiguration: buildApplicationInstanceConfiguration({
+        applicationId: 'app_curriculum_flow',
+        templateId: 'school-standard',
+        templateVersion: '1',
+        enabledCapabilities: ['feat_school_administration_identity'],
+        configurationVersion: 4,
+        deploymentArchitecture: 'shared_database'
+      })
+    };
     const keyA = `school-provision-${randomUUID()}`;
     const recordA = await schoolRepository.provision(
       requestA,
@@ -189,6 +200,24 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
     assert.equal(recordA.configurationReadiness, 'ready');
     assert.equal(recordA.applicationReadiness, 'pending');
     assert.equal(recordA.administratorActivationStatus, 'delivery_pending');
+    const storedApplicationConfiguration = await withControlPlaneTransaction(pool, admin, client =>
+      client.query<{ instance_version: string; snapshot_version: number; config_version: number }>(
+        `SELECT instance.configuration_version AS instance_version,
+                snapshot.configuration_version AS snapshot_version,
+                (snapshot.configuration ->> 'configurationVersion')::int AS config_version
+         FROM production.application_instances instance
+         JOIN production.application_instance_configurations snapshot
+           ON snapshot.tenant_id = instance.tenant_id
+          AND snapshot.application_instance_id = instance.id
+         WHERE instance.id = $1`,
+        [recordA.instanceId]
+      )
+    );
+    assert.deepEqual(storedApplicationConfiguration.rows[0], {
+      instance_version: '4',
+      snapshot_version: 4,
+      config_version: 4
+    });
 
     const retryA = await schoolRepository.provision(
       requestA,
