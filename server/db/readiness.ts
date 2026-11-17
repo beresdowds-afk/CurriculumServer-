@@ -292,18 +292,23 @@ export async function inspectPlatformReadiness(
           ? 'Shared PostgreSQL provisioning is available; invitation delivery remains pending until email configuration is supplied.'
           : 'Shared PostgreSQL school records are available; this workflow does not create cloud infrastructure.';
 
+  const stage2Capabilities = PRODUCTION_CAPABILITIES.filter(capability =>
+    !['platform_liveness', 'curriculum_reference'].includes(capability.id)
+  );
+  const stage2Implemented = stage2Capabilities.length > 0 &&
+    stage2Capabilities.every(capability =>
+      capability.state === 'ready' &&
+      capability.acceptanceTests.length > 0 &&
+      capability.readinessEvidence.length > 0
+    );
+  const runtimeDependenciesReady = provisioningReady && invitationDeliveryAvailable;
   const schoolAdministrationTemplate = APPLICATION_TEMPLATE_REGISTRY.find(template =>
     template.templateId === SCHOOL_ADMINISTRATION_IDENTITY_TEMPLATE.templateId
   );
   const templatesReady = Boolean(schoolAdministrationTemplate?.status === 'published' &&
     schoolAdministrationTemplate.provisionable) &&
-    SUPPORTED_APPLICATION_TEMPLATES.length > 0 && lifecycleSchema;
-  const stage2Capabilities = PRODUCTION_CAPABILITIES.filter(capability =>
-    !['platform_liveness', 'curriculum_reference'].includes(capability.id)
-  );
-  const stage2Implemented = stage2Capabilities.length > 0 &&
-    stage2Capabilities.every(capability => capability.state === 'ready');
-  const runtimeDependenciesReady = provisioningReady && invitationDeliveryAvailable;
+    SUPPORTED_APPLICATION_TEMPLATES.length > 0 && lifecycleSchema &&
+    stage2Implemented && runtimeDependenciesReady;
   const schoolIdentityReady = provisioningReady && identity.ready && membership.ready &&
     authorization.ready && lifecycleSchema;
   const capabilities: SchoolAdministrationCapabilities = {
@@ -325,13 +330,13 @@ export async function inspectPlatformReadiness(
         ? 'Email delivery configuration is not supplied.'
         : 'Invitation outbox schema is not current.'),
     applicationTemplates: templatesReady
-      ? { ready: true, evidence: 'The school administration template is published, provisionable, and has lifecycle schema support.' }
-      : unverified('Template catalogue, capability readiness, or lifecycle schema is not verified.'),
+      ? { ready: true, evidence: 'The template is published and provisionable; mandatory capabilities, runtime dependencies, and lifecycle schema are verified.' }
+      : unverified('Template publication, mandatory capabilities, runtime dependencies, or lifecycle schema is not verified.'),
     capabilityImplementation: stage2Implemented
       ? { ready: true, evidence: 'Every registered administration capability is ready.' }
       : unverified('One or more administration capabilities are not operationally implemented.'),
     capabilityConfiguration: templatesReady
-      ? { ready: true, evidence: 'The school administration template is published and provisionable.' }
+      ? { ready: true, evidence: 'The school administration template and all mandatory provisioning prerequisites are verified.' }
       : unverified('The school administration template is not yet published and provisionable.'),
     runtimeDependencies: runtimeDependenciesReady
       ? { ready: true, evidence: 'Database, migrations, authorization, platform credentials, and invitation delivery are configured.' }

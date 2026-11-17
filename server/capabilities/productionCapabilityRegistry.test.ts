@@ -32,10 +32,17 @@ test('implemented administration handlers map to their canonical unready capabil
     ['GET', '/schools/me/students', 'student_administration'],
     ['POST', '/schools/me/students', 'student_administration'],
     ['GET', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'student_administration'],
+    ['PATCH', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'student_administration'],
+    ['GET', '/schools/me/classes', 'class_administration'],
     ['POST', '/schools/me/classes', 'class_administration'],
+    ['PATCH', '/schools/me/classes/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'class_administration'],
     ['POST', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/class', 'class_administration'],
     ['POST', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/lifecycle', 'student_lifecycle'],
     ['GET', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/history', 'student_lifecycle'],
+    ['GET', '/schools/me/staff', 'staff_administration'],
+    ['POST', '/schools/me/staff', 'staff_administration'],
+    ['GET', '/schools/me/staff/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'staff_administration'],
+    ['PATCH', '/schools/me/staff/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'staff_administration'],
     ['GET', '/application-templates', 'application_template_discovery']
   ] as const;
   for (const [method, path, capabilityId] of cases) {
