@@ -124,41 +124,130 @@ export const CurriculumServerApp: React.FC = () => {
     }
   };
 
-  // Handle URL hash changes
-  useEffect(() => {
-    const handleHash = () => {
-      const hash = window.location.hash.replace('#/', '').replace('#', '');
-      if (hash === 'home' || hash === 'landing' || hash === 'showcase' || !hash) {
-        setViewMode('public_homepage');
-      } else {
-        setViewMode('control_plane');
-        if (hash === 'control-plane-cockpit' || hash === 'tenants' || hash === 'tenant_control_center') setActiveTab('tenant_control_center');
-        else if (hash === 'universal-onboarding' || hash === 'universal_onboarding' || hash === 'onboarding') {
-          setActiveTab('universal_onboarding');
-        }
-        else if (hash === 'docker-orchestrator' || hash === 'docker' || hash === 'docker_orchestration') setActiveTab('docker_orchestration');
-        else if (hash === 'pricing-offers-manager' || hash === 'pricing' || hash === 'pricing_management') setActiveTab('pricing_management');
-        else if (hash === 'domain-manager' || hash === 'domain_management' || hash === 'domains') setActiveTab('domain_management');
-        else if (hash === 'api-webhooks' || hash === 'api_webhooks' || hash === 'webhooks') setActiveTab('api_webhooks');
-        else if (hash === 'customer-portal' || hash === 'customer_portal') setActiveTab('customer_portal');
-        else if (hash === 'curriculum-changes' || hash === 'nerdc-worker' || hash === 'curriculum_changes_audit') setActiveTab('curriculum_changes_audit');
-        else if (hash === 'iam' || hash === 'iam_governance') setActiveTab('iam_governance');
-        else if (hash === 'export-governance' || hash === 'export_governance') setActiveTab('export_governance');
-        else if (hash === 'pilot-validation' || hash === 'pilot_validation') setActiveTab('pilot_validation');
-        else if (hash === 'application-registry' || hash === 'registry' || hash === 'application_registry') setActiveTab('application_registry');
-        else if (hash === 'iiap-engine' || hash === 'iiap' || hash === 'iiap_engine') setActiveTab('iiap_engine');
-        else if (hash === 'gcp-provisioning' || hash === 'gcp' || hash === 'gcp_provisioning') setActiveTab('gcp_provisioning');
-        else if (hash === 'storage-database' || hash === 'storage' || hash === 'database' || hash === 'storage_database') setActiveTab('storage_database');
-        else if (hash === 'production-hardening' || hash === 'production_hardening') setActiveTab('production_hardening');
-        else if (hash === 'provision-school' || hash === 'provision_school') setActiveTab('provision_school');
-        else if (hash === 'version-rollout' || hash === 'version_rollout') setActiveTab('version_rollout');
-        else if (hash === 'platform_overview' || hash === 'platform-overview' || hash === 'overview') setActiveTab('platform_overview');
-      }
-    };
-    handleHash();
-    window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
-  }, []);
+  const handleHash = () => {
+  const hash = window.location.hash.replace('#/', '').replace('#', '');
+
+  // Public landing-page section links must never open the control plane.
+  const publicLandingAnchors = [
+    'overview',
+    'ecosystem',
+    'iiape',
+    'architecture',
+    'pricing',
+    'faq'
+  ];
+
+  if (!hash || hash === 'home' || hash === 'landing' ||
+      hash === 'showcase' || publicLandingAnchors.includes(hash)) {
+    setViewMode('public_homepage');
+    return;
+  }
+
+  setViewMode('control_plane');
+
+  if (hash === 'control-plane-cockpit' || hash === 'tenants' ||
+      hash === 'tenant_control_center') {
+    setActiveTab('tenant_control_center');
+  } else if (
+    hash === 'universal-onboarding' ||
+    hash === 'universal_onboarding' ||
+    hash === 'onboarding'
+  ) {
+    setActiveTab('universal_onboarding');
+  } else if (
+    hash === 'docker-orchestrator' ||
+    hash === 'docker' ||
+    hash === 'docker_orchestration'
+  ) {
+    setActiveTab('docker_orchestration');
+  } else if (
+    hash === 'pricing-offers-manager' ||
+    hash === 'pricing' ||
+    hash === 'pricing_management'
+  ) {
+    setActiveTab('pricing_management');
+  } else if (
+    hash === 'domain-manager' ||
+    hash === 'domain_management' ||
+    hash === 'domains'
+  ) {
+    setActiveTab('domain_management');
+  } else if (
+    hash === 'api-webhooks' ||
+    hash === 'api_webhooks' ||
+    hash === 'webhooks'
+  ) {
+    setActiveTab('api_webhooks');
+  } else if (
+    hash === 'customer-portal' ||
+    hash === 'customer_portal'
+  ) {
+    setActiveTab('customer_portal');
+  } else if (
+    hash === 'curriculum-changes' ||
+    hash === 'nerdc-worker' ||
+    hash === 'curriculum_changes_audit'
+  ) {
+    setActiveTab('curriculum_changes_audit');
+  } else if (hash === 'iam' || hash === 'iam_governance') {
+    setActiveTab('iam_governance');
+  } else if (
+    hash === 'export-governance' ||
+    hash === 'export_governance'
+  ) {
+    setActiveTab('export_governance');
+  } else if (
+    hash === 'pilot-validation' ||
+    hash === 'pilot_validation'
+  ) {
+    setActiveTab('pilot_validation');
+  } else if (
+    hash === 'application-registry' ||
+    hash === 'registry' ||
+    hash === 'application_registry'
+  ) {
+    setActiveTab('application_registry');
+  } else if (
+    hash === 'iiap-engine' ||
+    hash === 'iiap' ||
+    hash === 'iiap_engine'
+  ) {
+    setActiveTab('iiap_engine');
+  } else if (
+    hash === 'gcp-provisioning' ||
+    hash === 'gcp' ||
+    hash === 'gcp_provisioning'
+  ) {
+    setActiveTab('gcp_provisioning');
+  } else if (
+    hash === 'storage-database' ||
+    hash === 'storage' ||
+    hash === 'database' ||
+    hash === 'storage_database'
+  ) {
+    setActiveTab('storage_database');
+  } else if (
+    hash === 'production-hardening' ||
+    hash === 'production_hardening'
+  ) {
+    setActiveTab('production_hardening');
+  } else if (
+    hash === 'provision-school' ||
+    hash === 'provision_school'
+  ) {
+    setActiveTab('provision_school');
+  } else if (
+    hash === 'version-rollout' ||
+    hash === 'version_rollout'
+  ) {
+    setActiveTab('version_rollout');
+  } else if (
+    hash === 'platform_overview' ||
+    hash === 'platform-overview'
+  ) {
+    setActiveTab('platform_overview');
+  }
+};
 
   const handleSelectTab = (tab: ServerNavTab) => {
     setActiveTab(tab);
