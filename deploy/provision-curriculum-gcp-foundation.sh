@@ -32,8 +32,25 @@ GITHUB_BRANCH="${GITHUB_BRANCH:-main}"
 WIF_POOL_ID="${WIF_POOL_ID:-github-actions-pool}"
 WIF_PROVIDER_ID="${WIF_PROVIDER_ID:-github-actions-provider}"
 ARTIFACT_REPOSITORY="${ARTIFACT_REPOSITORY:-curriculum-registry}"
+BACKEND_SERVICE="unified-backend"
+BACKEND_RUNTIME_SA="backend-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
+LOGISTICS_TOPICS=(
+  curriculum-bus-telemetry
+  curriculum-geofence-events
+  curriculum-logistics-dead-letter
+)
+LOGISTICS_SECRETS=(
+  curriculum-logistics-gps-provider-config
+  curriculum-logistics-notification-provider-config
+)
+LOGISTICS_QUEUE="curriculum-logistics-notifications"
+LOGISTICS_SUBSCRIPTIONS=()
+LOGISTICS_SUBSCRIPTIONS_INSPECTED="false"
 
 MODE="dry-run"
+declare -A LOGISTICS_RESOURCE_STATUS=()
+declare -A LOGISTICS_API_STATUS=()
+LOGISTICS_IAM_BINDINGS=()
 
 usage() {
   sed -n '2,34p' "$0"
@@ -122,6 +139,9 @@ REQUIRED_APIS=(
   iam.googleapis.com
   iamcredentials.googleapis.com
   run.googleapis.com
+  pubsub.googleapis.com
+  cloudtasks.googleapis.com
+  secretmanager.googleapis.com
   sts.googleapis.com
   serviceusage.googleapis.com
 )
@@ -135,10 +155,16 @@ for api in "${REQUIRED_APIS[@]}"; do
       --filter="config.name=$api" \
       --format='value(config.name)' | grep -Fxq "$api"; then
     echo "  [PRESENT] $api"
+    LOGISTICS_API_STATUS["$api"]="already present"
   else
     echo "  [MISSING] $api"
     run gcloud services enable "$api" \
       --project="$PROJECT_ID"
+    if [[ "$MODE" == "apply" ]]; then
+      LOGISTICS_API_STATUS["$api"]="enabled"
+    else
+      LOGISTICS_API_STATUS["$api"]="planned (dry-run)"
+    fi
   fi
 done
 
@@ -166,6 +192,9 @@ for item in "${SERVICE_ACCOUNTS[@]}"; do
     echo "  [PRESENT] $sa_email"
   else
     echo "  [MISSING] $sa_email"
+    if [[ "$sa_email" == "$BACKEND_RUNTIME_SA" ]]; then
+      die "Expected existing backend runtime service account is missing: $sa_email; refusing to create or replace it."
+    fi
     run gcloud iam service-accounts create "$sa_id" \
       --project="$PROJECT_ID" \
       --display-name="$sa_desc" \
@@ -412,6 +441,379 @@ fi
 ensure_repository_binding "$ARTIFACT_REPOSITORY" \
   "roles/artifactregistry.writer" \
   "serviceAccount:${CI_SA}"
+
+record_logistics_status() {
+  local kind="$1"
+  local name="$2"
+  local state="$3"
+  LOGISTICS_RESOURCE_STATUS["${kind}:${name}"]="$state"
+}
+
+logistics_status() {
+  local kind="$1"
+  local name="$2"
+  printf '%s' "${LOGISTICS_RESOURCE_STATUS["${kind}:${name}"]:-pending}"
+}
+
+ensure_pubsub_topic() {
+  local topic="$1"
+  local topic_json
+  local retention
+  if topic_json="$(gcloud pubsub topics describe "$topic" \
+      --project="$PROJECT_ID" --format=json 2>/dev/null)"; then
+    retention="$(jq -r '.messageRetentionDuration // ""' <<<"$topic_json")"
+    if [[ "$retention" == "604800s" ]]; then
+      echo "  [PRESENT] Pub/Sub topic $topic (seven-day retention verified)"
+      record_logistics_status topic "$topic" "already present; seven-day retention verified"
+    else
+      echo "  [UPDATE] Pub/Sub topic $topic retention is ${retention:-unset}"
+      run gcloud pubsub topics update "$topic" \
+        --project="$PROJECT_ID" \
+        --message-retention-duration=604800s
+      if [[ "$MODE" == "apply" ]]; then
+        record_logistics_status topic "$topic" "seven-day retention reconciled"
+      else
+        record_logistics_status topic "$topic" "seven-day retention pending (dry-run)"
+      fi
+    fi
+    return
+  fi
+
+  echo "  [MISSING] Pub/Sub topic $topic"
+  run gcloud pubsub topics create "$topic" \
+    --project="$PROJECT_ID" \
+    --message-retention-duration=604800s
+  if [[ "$MODE" == "apply" ]]; then
+    record_logistics_status topic "$topic" "newly created"
+  else
+    record_logistics_status topic "$topic" "pending creation (dry-run)"
+  fi
+}
+
+ensure_pubsub_subscription() {
+  local subscription="$1"
+  local topic="$2"
+  local ack_deadline="${3:-60}"
+
+  if gcloud pubsub subscriptions describe "$subscription" \
+      --project="$PROJECT_ID" >/dev/null 2>&1; then
+    echo "  [PRESENT] Pub/Sub subscription $subscription"
+    record_logistics_status subscription "$subscription" "already present"
+    return
+  fi
+
+  echo "  [MISSING] Pull subscription $subscription (consumer must be verified before use)"
+  run gcloud pubsub subscriptions create "$subscription" \
+    --project="$PROJECT_ID" \
+    --topic="$topic" \
+    --ack-deadline="$ack_deadline" \
+    --message-retention-duration=604800s
+  if [[ "$MODE" == "apply" ]]; then
+    record_logistics_status subscription "$subscription" "newly created"
+  else
+    record_logistics_status subscription "$subscription" "pending creation (dry-run)"
+  fi
+}
+
+ensure_resource_iam_binding() {
+  local policy="$1"
+  local role="$2"
+  local member="$3"
+  local resource="$4"
+
+  if jq -e --arg role "$role" --arg member "$member" \
+      '.bindings[]? | select(.role==$role and ((.members // []) | index($member)) and (.condition == null))' \
+      <<<"$policy" >/dev/null; then
+    echo "  [PRESENT] $resource $role -> $member"
+    LOGISTICS_IAM_BINDINGS+=("$resource: $role -> $member (already present)")
+    return 0
+  fi
+
+  if jq -e --arg role "$role" --arg member "$member" \
+      '.bindings[]? | select(.role==$role and ((.members // []) | index($member)) and (.condition != null))' \
+      <<<"$policy" >/dev/null; then
+    die "Conditional binding exists for $resource / $role / $member. Review manually."
+  fi
+  return 1
+}
+
+ensure_topic_iam_binding() {
+  local topic="$1"
+  local role="$2"
+  local member="$3"
+  local policy
+  local resource="Pub/Sub topic $topic"
+
+  if ! gcloud pubsub topics describe "$topic" \
+      --project="$PROJECT_ID" >/dev/null 2>&1; then
+    echo "  [PENDING] $resource IAM after topic creation"
+    run gcloud pubsub topics add-iam-policy-binding "$topic" \
+      --project="$PROJECT_ID" \
+      --role="$role" \
+      --member="$member" \
+      --condition=None
+    LOGISTICS_IAM_BINDINGS+=("$resource: $role -> $member (pending)")
+    return
+  fi
+
+  policy="$(gcloud pubsub topics get-iam-policy "$topic" \
+    --project="$PROJECT_ID" --format=json)"
+  if ensure_resource_iam_binding "$policy" "$role" "$member" "$resource"; then
+    return
+  fi
+  run gcloud pubsub topics add-iam-policy-binding "$topic" \
+    --project="$PROJECT_ID" \
+    --role="$role" \
+    --member="$member" \
+    --condition=None
+  LOGISTICS_IAM_BINDINGS+=("$resource: $role -> $member")
+}
+
+ensure_subscription_iam_binding() {
+  local subscription="$1"
+  local role="$2"
+  local member="$3"
+  local policy
+  local resource="Pub/Sub subscription $subscription"
+
+  if ! gcloud pubsub subscriptions describe "$subscription" \
+      --project="$PROJECT_ID" >/dev/null 2>&1; then
+    echo "  [PENDING] $resource IAM after subscription creation"
+    run gcloud pubsub subscriptions add-iam-policy-binding "$subscription" \
+      --project="$PROJECT_ID" \
+      --role="$role" \
+      --member="$member" \
+      --condition=None
+    LOGISTICS_IAM_BINDINGS+=("$resource: $role -> $member (pending)")
+    return
+  fi
+
+  policy="$(gcloud pubsub subscriptions get-iam-policy "$subscription" \
+    --project="$PROJECT_ID" --format=json)"
+  if ensure_resource_iam_binding "$policy" "$role" "$member" "$resource"; then
+    return
+  fi
+  run gcloud pubsub subscriptions add-iam-policy-binding "$subscription" \
+    --project="$PROJECT_ID" \
+    --role="$role" \
+    --member="$member" \
+    --condition=None
+  LOGISTICS_IAM_BINDINGS+=("$resource: $role -> $member")
+}
+
+ensure_cloud_tasks_queue() {
+  local queue="$1"
+  local queue_json
+  local max_attempts
+  local min_backoff
+  local max_backoff
+  local max_concurrent
+  local max_rate
+
+  if ! queue_json="$(gcloud tasks queues describe "$queue" \
+      --project="$PROJECT_ID" --location="$REGION" \
+      --format=json 2>/dev/null)"; then
+    echo "  [MISSING] Cloud Tasks queue $queue ($REGION)"
+    run gcloud tasks queues create "$queue" \
+      --project="$PROJECT_ID" \
+      --location="$REGION" \
+      --max-attempts=10 \
+      --min-backoff=10s \
+      --max-backoff=3600s \
+      --max-concurrent-dispatches=10 \
+      --max-dispatches-per-second=5
+    if [[ "$MODE" == "apply" ]]; then
+      record_logistics_status queue "$queue" "newly created"
+    else
+      record_logistics_status queue "$queue" "pending creation (dry-run)"
+    fi
+    return
+  fi
+
+  max_attempts="$(jq -r '.retryConfig.maxAttempts // 0' <<<"$queue_json")"
+  min_backoff="$(jq -r '.retryConfig.minBackoff // ""' <<<"$queue_json")"
+  max_backoff="$(jq -r '.retryConfig.maxBackoff // ""' <<<"$queue_json")"
+  max_concurrent="$(jq -r '.rateLimits.maxConcurrentDispatches // 0' <<<"$queue_json")"
+  max_rate="$(jq -r '.rateLimits.maxDispatchesPerSecond // 0' <<<"$queue_json")"
+
+  if [[ "$max_attempts" == "10" && "$min_backoff" == "10s" &&
+        "$max_backoff" == "3600s" && "$max_concurrent" == "10" &&
+        "$max_rate" == "5" ]]; then
+    echo "  [PRESENT] Cloud Tasks queue $queue has requested settings"
+    record_logistics_status queue "$queue" "already present; settings verified"
+    return
+  fi
+
+  echo "  [UPDATE] Cloud Tasks queue $queue settings differ"
+  run gcloud tasks queues update "$queue" \
+    --project="$PROJECT_ID" \
+    --location="$REGION" \
+    --max-attempts=10 \
+    --min-backoff=10s \
+    --max-backoff=3600s \
+    --max-concurrent-dispatches=10 \
+    --max-dispatches-per-second=5
+  if [[ "$MODE" == "apply" ]]; then
+    record_logistics_status queue "$queue" "settings reconciled"
+  else
+    record_logistics_status queue "$queue" "settings reconciliation pending (dry-run)"
+  fi
+}
+
+ensure_queue_iam_binding() {
+  local queue="$1"
+  local role="$2"
+  local member="$3"
+  local policy
+  local resource="Cloud Tasks queue $queue"
+
+  if ! gcloud tasks queues describe "$queue" \
+      --project="$PROJECT_ID" --location="$REGION" >/dev/null 2>&1; then
+    echo "  [PENDING] $resource IAM after queue creation"
+    run gcloud tasks queues add-iam-policy-binding "$queue" \
+      --project="$PROJECT_ID" \
+      --location="$REGION" \
+      --role="$role" \
+      --member="$member" \
+      --condition=None
+    LOGISTICS_IAM_BINDINGS+=("$resource: $role -> $member (pending)")
+    return
+  fi
+
+  policy="$(gcloud tasks queues get-iam-policy "$queue" \
+    --project="$PROJECT_ID" --location="$REGION" --format=json)"
+  if ensure_resource_iam_binding "$policy" "$role" "$member" "$resource"; then
+    return
+  fi
+  run gcloud tasks queues add-iam-policy-binding "$queue" \
+    --project="$PROJECT_ID" \
+    --location="$REGION" \
+    --role="$role" \
+    --member="$member" \
+    --condition=None
+  LOGISTICS_IAM_BINDINGS+=("$resource: $role -> $member")
+}
+
+ensure_secret() {
+  local secret="$1"
+  if gcloud secrets describe "$secret" \
+      --project="$PROJECT_ID" >/dev/null 2>&1; then
+    echo "  [PRESENT] Secret Manager secret $secret"
+    record_logistics_status secret "$secret" "already present"
+    return
+  fi
+
+  echo "  [MISSING] Secret Manager secret $secret"
+  run gcloud secrets create "$secret" \
+    --project="$PROJECT_ID" \
+    --replication-policy=automatic
+  if [[ "$MODE" == "apply" ]]; then
+    record_logistics_status secret "$secret" "newly created"
+  else
+    record_logistics_status secret "$secret" "pending creation (dry-run)"
+  fi
+}
+
+ensure_secret_iam_binding() {
+  local secret="$1"
+  local role="$2"
+  local member="$3"
+  local policy
+  local resource="Secret Manager secret $secret"
+
+  if ! gcloud secrets describe "$secret" \
+      --project="$PROJECT_ID" >/dev/null 2>&1; then
+    echo "  [PENDING] $resource IAM after secret creation"
+    run gcloud secrets add-iam-policy-binding "$secret" \
+      --project="$PROJECT_ID" \
+      --role="$role" \
+      --member="$member" \
+      --condition=None
+    LOGISTICS_IAM_BINDINGS+=("$resource: $role -> $member (pending)")
+    return
+  fi
+
+  policy="$(gcloud secrets get-iam-policy "$secret" \
+    --project="$PROJECT_ID" --format=json)"
+  if ensure_resource_iam_binding "$policy" "$role" "$member" "$resource"; then
+    return
+  fi
+  run gcloud secrets add-iam-policy-binding "$secret" \
+    --project="$PROJECT_ID" \
+    --role="$role" \
+    --member="$member" \
+    --condition=None
+  LOGISTICS_IAM_BINDINGS+=("$resource: $role -> $member")
+}
+
+log "Verify existing unified-backend runtime identity"
+
+BACKEND_SERVICE_JSON="$(gcloud run services describe "$BACKEND_SERVICE" \
+  --project="$PROJECT_ID" --region="$REGION" --format=json 2>/dev/null)" ||
+  die "Cloud Run service $BACKEND_SERVICE does not exist in $REGION; refusing logistics provisioning."
+DEPLOYED_BACKEND_RUNTIME_SA="$(jq -r \
+  '.spec.template.spec.serviceAccountName // .template.serviceAccount // empty' \
+  <<<"$BACKEND_SERVICE_JSON")"
+[[ "$DEPLOYED_BACKEND_RUNTIME_SA" == "$BACKEND_RUNTIME_SA" ]] ||
+  die "Cloud Run service $BACKEND_SERVICE uses runtime identity '${DEPLOYED_BACKEND_RUNTIME_SA:-<unset>}' instead of $BACKEND_RUNTIME_SA; refusing to change it."
+echo "  [VALID] $BACKEND_SERVICE -> $DEPLOYED_BACKEND_RUNTIME_SA"
+
+log "Reconcile Campus Logistics resources"
+
+for topic in "${LOGISTICS_TOPICS[@]}"; do
+  ensure_pubsub_topic "$topic"
+done
+
+# No backend event-consumer endpoints are implemented and verified yet.
+# Therefore, do not create subscriptions that would retry against absent handlers.
+echo "  [DEFERRED] Processing subscriptions: no verified backend consumer endpoints."
+if [[ "${LOGISTICS_API_STATUS[pubsub.googleapis.com]:-}" == "planned (dry-run)" ]]; then
+  echo "  [PENDING] Existing subscriptions cannot be inspected until Pub/Sub API is enabled."
+else
+  PUBSUB_SUBSCRIPTIONS_JSON="$(gcloud pubsub subscriptions list \
+    --project="$PROJECT_ID" --format=json)" ||
+    die "Could not inspect Pub/Sub subscriptions in project $PROJECT_ID."
+  LOGISTICS_SUBSCRIPTIONS_INSPECTED="true"
+  for topic in "${LOGISTICS_TOPICS[@]}"; do
+    while IFS= read -r subscription; do
+      [[ -n "$subscription" ]] && LOGISTICS_SUBSCRIPTIONS+=("$subscription")
+    done < <(jq -r --arg topic "projects/${PROJECT_ID}/topics/${topic}" \
+      '.[]? | select(.topic==$topic) | .name | split("/")[-1]' \
+      <<<"$PUBSUB_SUBSCRIPTIONS_JSON")
+  done
+  if ((${#LOGISTICS_SUBSCRIPTIONS[@]})); then
+    printf '  [PRESENT] Existing subscriptions on logistics topics: %s\n' \
+      "$(IFS=', '; echo "${LOGISTICS_SUBSCRIPTIONS[*]}")"
+    echo "  [DEFERRED] Existing subscription consumers are not assumed or granted access."
+  else
+    echo "  [NONE] No existing subscriptions found on logistics topics."
+  fi
+fi
+
+for secret in "${LOGISTICS_SECRETS[@]}"; do
+  ensure_secret "$secret"
+done
+
+ensure_cloud_tasks_queue "$LOGISTICS_QUEUE"
+
+log "Reconcile backend resource-level IAM"
+
+BACKEND_MEMBER="serviceAccount:${BACKEND_RUNTIME_SA}"
+ensure_topic_iam_binding "curriculum-bus-telemetry" \
+  "roles/pubsub.publisher" "$BACKEND_MEMBER"
+ensure_topic_iam_binding "curriculum-geofence-events" \
+  "roles/pubsub.publisher" "$BACKEND_MEMBER"
+ensure_queue_iam_binding "$LOGISTICS_QUEUE" \
+  "roles/cloudtasks.enqueuer" "$BACKEND_MEMBER"
+for secret in "${LOGISTICS_SECRETS[@]}"; do
+  ensure_secret_iam_binding "$secret" \
+    "roles/secretmanager.secretAccessor" "$BACKEND_MEMBER"
+done
+
+for api in pubsub.googleapis.com cloudtasks.googleapis.com secretmanager.googleapis.com; do
+  echo "  [API] $api: ${LOGISTICS_API_STATUS["$api"]:-already enabled}"
+done
+
   
 log "Read-only Cloud Run service inventory"
 
@@ -459,6 +861,40 @@ WIF pool/provider:   ${WIF_POOL_ID}/${WIF_PROVIDER_ID}
 CI service account:  ${CI_SA}
 Artifact Registry:   ${ARTIFACT_REPOSITORY}
 
+CAMPUS LOGISTICS RESOURCES
+--------------------------
+Backend service:     ${BACKEND_SERVICE}
+Runtime identity:    ${BACKEND_RUNTIME_SA}
+Pub/Sub topics:
+$(for topic in "${LOGISTICS_TOPICS[@]}"; do printf '  - %s: %s\n' "$topic" "$(logistics_status topic "$topic")"; done)
+Pub/Sub subscriptions:
+$(if ((${#LOGISTICS_SUBSCRIPTIONS[@]})); then printf '  - %s (existing; consumer not verified)\n' "${LOGISTICS_SUBSCRIPTIONS[@]}"; elif [[ "$LOGISTICS_SUBSCRIPTIONS_INSPECTED" == "true" ]]; then echo '  - None found on logistics topics; creation deferred pending verified endpoints.'; else echo '  - Not inspected because Pub/Sub API is not yet enabled; creation deferred pending verified endpoints.'; fi)
+Cloud Tasks queue:
+  - ${LOGISTICS_QUEUE} (${REGION}): $(logistics_status queue "$LOGISTICS_QUEUE")
+  - Attempts/backoff/concurrency/rate: 10 / 10s-3600s / 10 / 5 per second
+Secret Manager containers:
+$(for secret in "${LOGISTICS_SECRETS[@]}"; do printf '  - %s: %s\n' "$secret" "$(logistics_status secret "$secret")"; done)
+Logistics APIs:
+$(for api in pubsub.googleapis.com cloudtasks.googleapis.com secretmanager.googleapis.com; do printf '  - %s: %s\n' "$api" "${LOGISTICS_API_STATUS["$api"]:-already enabled}"; done)
+Backend resource-level IAM:
+$(if ((${#LOGISTICS_IAM_BINDINGS[@]})); then printf '  - %s\n' "${LOGISTICS_IAM_BINDINGS[@]}"; else echo '  - Required bindings already present.'; fi)
+  - No Pub/Sub subscriber role: no processing subscriptions are currently verified.
+  - No dead-letter publisher role: backend failure-event publishing is not yet implemented.
+
+UNCONFIGURED PROVIDER CREDENTIALS
+---------------------------------
+- Add administrator-managed versions to the GPS and notification provider
+  secrets after selecting providers. This script creates containers only.
+- No fake credentials or secret versions are created.
+
+DEFERRED APPLICATION INTEGRATIONS
+---------------------------------
+- Implement authenticated telemetry/geofence ingestion and event consumers.
+- Implement Cloud Tasks dispatch handlers on ${BACKEND_SERVICE}; configure
+  parent SMS, WhatsApp, email, transport, geofence, and failure-recovery flows.
+- Persist canonical operational records in the existing PostgreSQL database.
+- Define and verify dead-letter publishing and subscription consumer behavior.
+
 PRESERVED CLOUD RUN IDENTITY MAPPINGS
 -------------------------------------
 curriculum-server             -> vertex-express
@@ -474,7 +910,7 @@ SECURITY BOUNDARIES
 - No customer project creation or billing association.
 - No Cloud Run service/job deployment or scaling changes.
 - No Workflow creation or execution.
-- No DNS, domain, Cloud SQL, bucket, or secret mutation.
+- No DNS, domain, Cloud SQL, bucket, secret-version, or credential mutation.
 - No deletion or replacement of existing resources.
 - Existing WIF provider is validated, not silently overwritten.
 
