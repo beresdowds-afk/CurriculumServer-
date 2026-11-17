@@ -72,18 +72,66 @@ jobs:
         with:
           project_id: ${{ env.PROJECT_ID }}
 
-      - name: Configure Docker authentication
-        run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
+            - name: Verify deployed Curriculum Server application
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      - name: Build and push image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/curriculum-server/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_URI }}:${{ github.sha }}
-            ${{ env.IMAGE_URI }}:latest
+          SERVICE_URL="$(gcloud run services describe "$SERVICE_NAME" \
+            --project="$PROJECT_ID" \
+            --region="$REGION" \
+            --format='value(status.url)')"
+
+          echo "Checking Cloud Run service: $SERVICE_URL"
+
+          curl --fail --show-error --silent \
+            --retry 5 --retry-delay 5 \
+            "$SERVICE_URL/healthz"
+
+          curl --fail --show-error --silent \
+            --retry 5 --retry-delay 5 \
+            "$SERVICE_URL/" \
+            -o /tmp/curriculum-server-index.html
+
+          if ! grep -qi '<title>Curriculum Server' \
+            /tmp/curriculum-server-index.html; then
+            echo "ERROR: Cloud Run is not serving the Curriculum Server HTML entry."
+            cat /tmp/curriculum-server-index.html
+            exit 1
+          fi
+
+          if ! grep -Eq 'src="[^"]+\.js' \
+            /tmp/curriculum-server-index.html; then
+            echo "ERROR: Curriculum Server JavaScript bundle reference is missing."
+            exit 1
+          fi
+
+          echo "PASS: Cloud Run serves the Curriculum Server application."
+
+      - name: Verify Curriculum Server public domains
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for DOMAIN in \
+            curriculumserver.com.ng \
+            www.curriculumserver.com.ng
+          do
+            echo "Checking https://$DOMAIN/"
+
+            curl --fail --show-error --silent \
+              --retry 5 --retry-delay 10 \
+              "https://$DOMAIN/" \
+              -o "/tmp/${DOMAIN}.html"
+
+            if ! grep -qi '<title>Curriculum Server' \
+              "/tmp/${DOMAIN}.html"; then
+              echo "ERROR: $DOMAIN does not serve Curriculum Server."
+              exit 1
+            fi
+
+            echo "PASS: $DOMAIN serves Curriculum Server."
+          done
 
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
