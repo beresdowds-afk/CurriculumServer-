@@ -30,8 +30,9 @@
 - `npm run test:postgres:acceptance`: **3 passed, 0 failed, 0 skipped** against disposable PostgreSQL 16. Runtime and migration-owner roles were separate; the runtime was non-owner, non-superuser, and not `BYPASSRLS`. Tenant and control-plane GUC-forgery attempts were denied.
 - Fresh migration application: migrations 001–010 applied in order with checksum tracking. Upgrade compatibility was also exercised by applying 001–009 to a separate disposable database and then applying migration 010 successfully.
 - `npm run build:all`: passed for the server and both frontends. Existing large-chunk warnings remain.
-- `main` CI at `c27c604` failed only at the mandatory acceptance runner output parsing described above; its earlier typecheck and unit/PostgreSQL test steps passed. After fixing the parser locally, mandatory PostgreSQL acceptance passed 3/3 with zero skips. Hosted CI for this fix and staff changes is not yet verified.
-- The CI workflow now also runs on pushes to `feature/school-administration-identity-stage2`, so future feature commits are eligible for hosted verification.
+- `main` CI at `c27c604` failed only at the mandatory acceptance runner output parsing described above; its earlier typecheck and unit/PostgreSQL test steps passed. After fixing the parser locally, mandatory PostgreSQL acceptance passed 3/3 with zero skips.
+- The feature push triggered hosted run `44044142684`, which concluded `action_required` with zero jobs. No hosted tests ran; this result is blocked by GitHub approval and is not a successful CI verification.
+- The CI workflow also runs on pushes to `feature/school-administration-identity-stage2`; future feature commits are eligible for hosted verification once approval is available.
 - No production database, customer records, cloud infrastructure, or live email provider was used.
 
 ## Not implemented or not verified
