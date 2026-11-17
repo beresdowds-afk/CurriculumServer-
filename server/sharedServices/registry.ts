@@ -35,12 +35,12 @@ export const CENTRAL_SHARED_SERVICE_REGISTRY: readonly CentralSharedServiceRegis
   {
     id: 'central_curriculum',
     name: 'Central Curriculum Retrieval',
-    version: '1.0.0',
-    description: 'Centrally owned curriculum records and retrieval service; operational retrieval is not yet provisioned.',
+    version: '2.0.0',
+    description: 'Centrally owned PostgreSQL curriculum database and retrieval service supporting multi-country frameworks, versions, topics, objectives, and coverage.',
     owner: 'Curriculum Server Platform',
     boundary: 'central_shared',
-    availability: 'unavailable',
-    provisioningStatus: 'not_provisioned',
+    availability: 'available',
+    provisioningStatus: 'provisioned',
     requiredPermissions: {
       discover: curriculumPermission('discover'),
       authorize: curriculumPermission('authorize'),
@@ -51,7 +51,15 @@ export const CENTRAL_SHARED_SERVICE_REGISTRY: readonly CentralSharedServiceRegis
     requiredDatabaseDependencies: ['central_curriculum_database'],
     requiredConfiguration: ['centralServiceDependencies'],
     entitlementRequired: true,
-    operations: ['curriculum.retrieve'],
+    operations: [
+      'curriculum.retrieve',
+      'curriculum.frameworks.list',
+      'curriculum.subjects.list',
+      'curriculum.topics.list',
+      'curriculum.objectives.list',
+      'curriculum.versions.list',
+      'curriculum.coverage.read'
+    ],
     healthCheck: {
       method: 'GET',
       path: '/api/v1/shared/curriculum/health',
@@ -61,12 +69,12 @@ export const CENTRAL_SHARED_SERVICE_REGISTRY: readonly CentralSharedServiceRegis
   {
     id: 'central_textbooks',
     name: 'Central Textbook Generation',
-    version: '1.0.0',
-    description: 'Centrally owned textbook records and generation service; operational generation is not yet provisioned.',
+    version: '2.0.0',
+    description: 'Centrally owned PostgreSQL textbook repository, generation engine, editorial approval, publishing, coverage, and private media storage service.',
     owner: 'Curriculum Server Platform',
     boundary: 'central_shared',
-    availability: 'unavailable',
-    provisioningStatus: 'not_provisioned',
+    availability: 'available',
+    provisioningStatus: 'provisioned',
     requiredPermissions: {
       discover: textbookPermission('discover'),
       authorize: textbookPermission('authorize'),
@@ -77,7 +85,14 @@ export const CENTRAL_SHARED_SERVICE_REGISTRY: readonly CentralSharedServiceRegis
     requiredDatabaseDependencies: ['central_textbook_database'],
     requiredConfiguration: ['centralServiceDependencies'],
     entitlementRequired: true,
-    operations: ['textbooks.generate'],
+    operations: [
+      'textbooks.read',
+      'textbooks.coverage.read',
+      'textbooks.versions.read',
+      'textbooks.media.read',
+      'textbooks.generate',
+      'textbooks.publish'
+    ],
     healthCheck: {
       method: 'GET',
       path: '/api/v1/shared/textbooks/health',

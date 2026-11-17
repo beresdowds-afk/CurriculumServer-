@@ -22,7 +22,6 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import { NERDC_SUBJECTS_DATABASE, NERDC_STATS } from '../data/nerdcDatabase';
-import { textbookDb } from '../services/textbookQuestionBankService';
 
 interface TestCase {
   id: string;

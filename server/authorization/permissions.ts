@@ -28,7 +28,14 @@ export const PERMISSIONS = {
   identityInvite: 'identity.invite',
   identityManage: 'identity.manage',
   permissionsManage: 'permissions.manage',
-  studentLifecycleManage: 'student_lifecycle.manage'
+  studentLifecycleManage: 'student_lifecycle.manage',
+  questionBankRead: 'question_bank.read',
+  questionBankManage: 'question_bank.manage',
+  questionBankReview: 'question_bank.review',
+  assessmentsRead: 'assessments.read',
+  assessmentsManage: 'assessments.manage',
+  sharedCurriculumConsume: 'shared.curriculum.consume',
+  sharedTextbooksConsume: 'shared.textbooks.consume'
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

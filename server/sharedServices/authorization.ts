@@ -70,10 +70,23 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(item => typeof item === 'string');
 }
 
-function entitlementFailure(row: ApplicationEntitlementRow | undefined): SharedServiceAccessFailure | undefined {
+export type SharedServiceEntitlementMode = 'strict' | 'decoupled';
+
+export function resolveSharedServiceEntitlementMode(): SharedServiceEntitlementMode {
+  if (process.env.SHARED_SERVICE_ENTITLEMENT_MODE === 'strict') return 'strict';
+  if (process.env.SHARED_SERVICE_ENTITLEMENT_MODE === 'decoupled') return 'decoupled';
+  return process.env.NODE_ENV === 'production' ? 'strict' : 'decoupled';
+}
+
+function entitlementFailure(
+  row: ApplicationEntitlementRow | undefined,
+  entitlementMode: SharedServiceEntitlementMode = 'strict'
+): SharedServiceAccessFailure | undefined {
   if (!row) return 'INVALID_APPLICATION_INSTANCE';
   if (row.application_status !== 'active') return 'APPLICATION_INSTANCE_INACTIVE';
-  if (!row.entitlement_id) return 'SERVICE_ENTITLEMENT_MISSING';
+  if (!row.entitlement_id) {
+    return entitlementMode === 'decoupled' ? undefined : 'SERVICE_ENTITLEMENT_MISSING';
+  }
   if (row.entitlement_status === 'revoked' || row.entitlement_revoked_at) return 'SERVICE_ENTITLEMENT_REVOKED';
   if (row.entitlement_status === 'suspended') return 'SERVICE_ENTITLEMENT_SUSPENDED';
   if (row.entitlement_status !== 'active' ||
@@ -89,10 +102,11 @@ export function evaluateSharedServiceAccess(input: {
   applicationInstanceId: string;
   row?: ApplicationEntitlementRow;
   hasPermissions: (permissions: readonly string[]) => boolean;
+  entitlementMode?: SharedServiceEntitlementMode;
 }): SharedServiceAccessDecision {
   const service = getCentralSharedService(input.serviceId);
   if (!service) return { allowed: false, reason: 'UNKNOWN_SERVICE' };
-  if (!['discover', 'authorize', 'health'].includes(input.operation)) {
+  if (!['discover', 'authorize', 'health', 'consume'].includes(input.operation)) {
     return { allowed: false, reason: 'OPERATION_NOT_SUPPORTED' };
   }
   if (!UUID.test(input.applicationInstanceId)) {
@@ -111,11 +125,14 @@ export function evaluateSharedServiceAccess(input: {
   if (!dependencies.includes(service.id)) {
     return { allowed: false, reason: 'SERVICE_DEPENDENCY_NOT_DECLARED' };
   }
-  const entitlementProblem = entitlementFailure(row);
+  const entitlementProblem = entitlementFailure(row, input.entitlementMode ?? 'strict');
   if (entitlementProblem) return { allowed: false, reason: entitlementProblem };
 
-  if (input.operation === 'authorize') {
-    if (!input.requestedOperation || !service.operations.includes(input.requestedOperation)) {
+  if (input.operation === 'authorize' || input.operation === 'consume') {
+    if (input.operation === 'authorize' && (!input.requestedOperation || !service.operations.includes(input.requestedOperation))) {
+      return { allowed: false, reason: 'OPERATION_NOT_SUPPORTED' };
+    }
+    if (input.operation === 'consume' && input.requestedOperation && !service.operations.includes(input.requestedOperation)) {
       return { allowed: false, reason: 'OPERATION_NOT_SUPPORTED' };
     }
     const consumptionPermission = getSharedServicePermission(service.id, 'consume');
@@ -152,9 +169,11 @@ export class SharedServiceAuthorizationRepository {
     requestedOperation?: string;
     callerKind?: 'tenant_user' | 'internal_service';
     correlationId?: string;
+    entitlementMode?: SharedServiceEntitlementMode;
   }): Promise<SharedServiceAccessDecision> {
     const service = getCentralSharedService(input.serviceId);
     if (!service) return { allowed: false, reason: 'UNKNOWN_SERVICE' };
+    const entitlementMode = input.entitlementMode ?? resolveSharedServiceEntitlementMode();
     return withTenantTransaction(this.pool, input.tenant, async client => {
       let row: ApplicationEntitlementRow | undefined;
       if (UUID.test(input.applicationInstanceId)) {
@@ -196,6 +215,7 @@ export class SharedServiceAuthorizationRepository {
         requestedOperation: input.requestedOperation,
         applicationInstanceId: input.applicationInstanceId,
         row,
+        entitlementMode,
         hasPermissions: permissions => permissions.every(permission => input.principal.hasPermission(permission))
       });
 
@@ -207,6 +227,7 @@ export class SharedServiceAuthorizationRepository {
           operation: input.operation,
           requestedOperation: input.requestedOperation,
           callerKind: input.callerKind || 'tenant_user',
+          entitlementMode,
           applicationInstanceId: input.applicationInstanceId,
           allowed: decision.allowed,
           reason: decision.reason || null,
@@ -215,6 +236,43 @@ export class SharedServiceAuthorizationRepository {
         })]
       );
       return decision;
+    });
+  }
+
+  async recordUsage(input: {
+    tenant: VerifiedTenantPrincipal;
+    principal: AuthorizedPrincipal;
+    serviceId: CentralSharedServiceId;
+    applicationInstanceId: string;
+    entitlementId?: string;
+    operation: string;
+    endpoint: string;
+    callerKind: 'tenant_user' | 'internal_service';
+    httpStatus: number;
+    units?: number;
+    correlationId?: string;
+  }): Promise<void> {
+    if (!UUID.test(input.applicationInstanceId)) return;
+    await withTenantTransaction(this.pool, input.tenant, async client => {
+      await client.query(
+        `INSERT INTO production.shared_service_usage_metrics
+           (tenant_id, application_instance_id, entitlement_id, service_id, operation,
+            endpoint, actor_user_id, caller_kind, units, http_status, correlation_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          input.tenant.tenantId,
+          input.applicationInstanceId,
+          input.entitlementId || null,
+          input.serviceId,
+          input.operation,
+          input.endpoint,
+          input.principal.userId,
+          input.callerKind,
+          Math.max(1, input.units || 1),
+          input.httpStatus,
+          input.correlationId || null
+        ]
+      );
     });
   }
 

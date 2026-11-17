@@ -693,6 +693,188 @@ class UnifiedApiClient {
   }
 
   // =============================================================
+  // STAGE 2: CENTRAL SHARED CURRICULUM & TEXTBOOK CONSUMPTION
+  // =============================================================
+
+  private buildSharedServiceHeaders(applicationInstanceId: string): Record<string, string> {
+    return { 'X-Application-Instance-ID': applicationInstanceId };
+  }
+
+  public async getCentralCurriculumFrameworks<T = unknown>(
+    applicationInstanceId: string,
+    query: { countryId?: string; authorityId?: string; page?: number; limit?: number } = {}
+  ): Promise<T> {
+    const qs = new URLSearchParams();
+    if (query.countryId) qs.set('countryId', query.countryId);
+    if (query.authorityId) qs.set('authorityId', query.authorityId);
+    if (query.page) qs.set('page', String(query.page));
+    if (query.limit) qs.set('limit', String(query.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<T>(
+      `/api/v1/shared/curriculum/frameworks${suffix}`,
+      { method: 'GET', headers: this.buildSharedServiceHeaders(applicationInstanceId) },
+      'school_flow'
+    );
+  }
+
+  public async getCentralCurriculumSubjects<T = unknown>(
+    applicationInstanceId: string,
+    query: {
+      frameworkId?: string;
+      versionId?: string;
+      levelCode?: string;
+      gradeName?: string;
+      search?: string;
+      page?: number;
+      limit?: number;
+    } = {}
+  ): Promise<T> {
+    const qs = new URLSearchParams();
+    if (query.frameworkId) qs.set('frameworkId', query.frameworkId);
+    if (query.versionId) qs.set('versionId', query.versionId);
+    if (query.levelCode) qs.set('levelCode', query.levelCode);
+    if (query.gradeName) qs.set('gradeName', query.gradeName);
+    if (query.search) qs.set('search', query.search);
+    if (query.page) qs.set('page', String(query.page));
+    if (query.limit) qs.set('limit', String(query.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<T>(
+      `/api/v1/shared/curriculum/subjects${suffix}`,
+      { method: 'GET', headers: this.buildSharedServiceHeaders(applicationInstanceId) },
+      'school_flow'
+    );
+  }
+
+  public async getCentralCurriculumSubjectDetail<T = unknown>(
+    applicationInstanceId: string,
+    subjectId: string,
+    query: { versionId?: string; classGrade?: string } = {}
+  ): Promise<T> {
+    const qs = new URLSearchParams();
+    if (query.versionId) qs.set('versionId', query.versionId);
+    if (query.classGrade) qs.set('classGrade', query.classGrade);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<T>(
+      `/api/v1/shared/curriculum/subjects/${encodeURIComponent(subjectId)}${suffix}`,
+      { method: 'GET', headers: this.buildSharedServiceHeaders(applicationInstanceId) },
+      'school_flow'
+    );
+  }
+
+  public async getCentralCurriculumCompetencies<T = unknown>(
+    applicationInstanceId: string,
+    query: { versionId?: string; subjectId?: string; topicId?: string; gradeName?: string; competencyType?: string; page?: number; limit?: number } = {}
+  ): Promise<T> {
+    const qs = new URLSearchParams();
+    if (query.versionId) qs.set('versionId', query.versionId);
+    if (query.subjectId) qs.set('subjectId', query.subjectId);
+    if (query.topicId) qs.set('topicId', query.topicId);
+    if (query.gradeName) qs.set('gradeName', query.gradeName);
+    if (query.competencyType) qs.set('competencyType', query.competencyType);
+    if (query.page) qs.set('page', String(query.page));
+    if (query.limit) qs.set('limit', String(query.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<T>(
+      `/api/v1/shared/curriculum/competencies${suffix}`,
+      { method: 'GET', headers: this.buildSharedServiceHeaders(applicationInstanceId) },
+      'school_flow'
+    );
+  }
+
+  public async getCentralCurriculumSourceDocuments<T = unknown>(
+    applicationInstanceId: string,
+    query: { frameworkId?: string; versionId?: string; authorityId?: string; page?: number; limit?: number } = {}
+  ): Promise<T> {
+    const qs = new URLSearchParams();
+    if (query.frameworkId) qs.set('frameworkId', query.frameworkId);
+    if (query.versionId) qs.set('versionId', query.versionId);
+    if (query.authorityId) qs.set('authorityId', query.authorityId);
+    if (query.page) qs.set('page', String(query.page));
+    if (query.limit) qs.set('limit', String(query.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<T>(
+      `/api/v1/shared/curriculum/source-documents${suffix}`,
+      { method: 'GET', headers: this.buildSharedServiceHeaders(applicationInstanceId) },
+      'school_flow'
+    );
+  }
+
+  public async getCentralTextbooks<T = unknown>(
+    applicationInstanceId: string,
+    query: { frameworkId?: string; curriculumVersionId?: string; subjectId?: string; classGrade?: string; page?: number; limit?: number } = {}
+  ): Promise<T> {
+    const qs = new URLSearchParams();
+    if (query.frameworkId) qs.set('frameworkId', query.frameworkId);
+    if (query.curriculumVersionId) qs.set('curriculumVersionId', query.curriculumVersionId);
+    if (query.subjectId) qs.set('subjectId', query.subjectId);
+    if (query.classGrade) qs.set('classGrade', query.classGrade);
+    if (query.page) qs.set('page', String(query.page));
+    if (query.limit) qs.set('limit', String(query.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<T>(
+      `/api/v1/shared/textbooks${suffix}`,
+      { method: 'GET', headers: this.buildSharedServiceHeaders(applicationInstanceId) },
+      'school_flow'
+    );
+  }
+
+  public async getCentralTextbookDetail<T = unknown>(
+    applicationInstanceId: string,
+    textbookId: string
+  ): Promise<T> {
+    return this.request<T>(
+      `/api/v1/shared/textbooks/${encodeURIComponent(textbookId)}`,
+      { method: 'GET', headers: this.buildSharedServiceHeaders(applicationInstanceId) },
+      'school_flow'
+    );
+  }
+
+  public async getCentralTextbookChapter<T = unknown>(
+    applicationInstanceId: string,
+    textbookId: string,
+    chapterId: string
+  ): Promise<T> {
+    return this.request<T>(
+      `/api/v1/shared/textbooks/${encodeURIComponent(textbookId)}/chapters/${encodeURIComponent(chapterId)}`,
+      { method: 'GET', headers: this.buildSharedServiceHeaders(applicationInstanceId) },
+      'school_flow'
+    );
+  }
+
+  // Instance-Owned School Question Bank & Assessments
+  public async getInstanceQuestions<T = unknown>(
+    applicationInstanceId: string,
+    query: { subjectReferenceId?: string; classGradeName?: string; questionType?: string; reviewStatus?: string } = {}
+  ): Promise<T> {
+    const qs = new URLSearchParams();
+    if (query.subjectReferenceId) qs.set('subjectReferenceId', query.subjectReferenceId);
+    if (query.classGradeName) qs.set('classGradeName', query.classGradeName);
+    if (query.questionType) qs.set('questionType', query.questionType);
+    if (query.reviewStatus) qs.set('reviewStatus', query.reviewStatus);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<T>(
+      `/api/v1/question-bank${suffix}`,
+      { method: 'GET', headers: this.buildSharedServiceHeaders(applicationInstanceId) },
+      'school_flow'
+    );
+  }
+
+  public async createInstanceQuestion<T = unknown>(
+    applicationInstanceId: string,
+    payload: Record<string, unknown>
+  ): Promise<T> {
+    return this.request<T>(
+      `/api/v1/question-bank`,
+      {
+        method: 'POST',
+        headers: this.buildSharedServiceHeaders(applicationInstanceId),
+        body: JSON.stringify(payload)
+      },
+      'school_flow'
+    );
+  }
+
+  // =============================================================
   // SHARED INFRASTRUCTURE METHODS
   // =============================================================
 

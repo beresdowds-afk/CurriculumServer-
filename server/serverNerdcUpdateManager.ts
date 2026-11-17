@@ -16,7 +16,6 @@ import {
   ImpactSeverity
 } from '../src/types/curriculumVersioning';
 import { NERDC_SUBJECTS_DATABASE } from '../src/data/nerdcDatabase';
-import { textbookDb } from '../src/services/textbookQuestionBankService';
 import { TamperEvidentAuditService } from '../src/services/tamperEvidentAuditService';
 import { ClassGrade } from '../src/types';
 
@@ -909,59 +908,30 @@ export class ServerNerdcUpdateManager {
     const reportId = `imp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const now = new Date().toISOString();
 
-    // 1. Fetch textbooks bound to previous version
-    const textbooks = textbookDb.getTextbooks(params.classGrade, params.subjectId);
-    const affectedTextbooks = textbooks.map(tb => {
-      // Check if textbook is bound to previous version
-      const isOutdated = tb.curriculumVersionId !== params.newVersionId;
-      const affectedChapters = tb.chapters.map(c => `Chapter ${c.chapterNumber}: ${c.title}`);
-      
-      let impactSeverity: ImpactSeverity = 'RECOMMENDED_REVIEW';
-      let remediationGuidance = 'Review chapter objectives against updated national benchmark.';
-
-      if (isOutdated && tb.status === 'published') {
-        impactSeverity = 'MANDATORY_REVIEW';
-        remediationGuidance = `Curriculum version delta detected (${tb.curriculumVersionId} -> ${params.newVersionId}). Conduct editorial reconciliation without overwriting original edition.`;
-      }
-
-      return {
-        textbookId: tb.id,
-        title: tb.title,
-        author: tb.author,
-        boundCurriculumVersionId: tb.curriculumVersionId,
-        affectedChapters,
-        impactSeverity,
-        remediationGuidance
-      };
-    });
-
-    // 2. Fetch questions mapped to this subject and grade
-    const questions = textbookDb.getQuestions({
-      subjectId: params.subjectId,
-      classGrade: params.classGrade
-    });
-
-    const affectedQuestions = questions.slice(0, 10).map(q => ({
-      questionId: q.id,
-      stem: q.stem.substring(0, 80) + '...',
-      topicId: q.topicId,
-      boundCurriculumVersionId: q.curriculumVersionId,
-      impactReason: `Bound to legacy version ${q.curriculumVersionId}. Evaluate cognitive alignment with ${params.newVersionId}.`,
-      severity: (q.reviewStatus === 'approved' ? 'RECOMMENDED_REVIEW' : 'INFORMATIONAL') as ImpactSeverity
-    }));
-
-    // 3. Blueprints
-    const blueprints = textbookDb.getBlueprints().filter(
-      bp => bp.subjectId === params.subjectId && bp.classGrade === params.classGrade
+    // 1. Evaluate curriculum topics/chapters and centrally registered textbook impact
+    //    (Question Bank records remain strictly school-instance owned and separated from central textbook impact).
+    const baselineSubject = NERDC_SUBJECTS_DATABASE.find(
+      s => s.id === params.subjectId || s.code.toLowerCase() === params.subjectId.toLowerCase()
     );
-    const affectedBlueprints = blueprints.map(bp => ({
-      blueprintId: bp.id,
-      examTitle: bp.title,
-      reasons: [
-        `Assessment blueprint references curriculum schema ${bp.curriculumVersionId}.`,
-        'Verify topic weightings and mark allocations against revised WAEC/NECO matrix.'
-      ]
-    }));
+    const affectedTextbooks = baselineSubject
+      ? [
+          {
+            textbookId: `central-ref-${baselineSubject.code.toLowerCase()}-${params.classGrade.toLowerCase().replace(/\s+/g, '')}`,
+            title: `${baselineSubject.name} (${params.classGrade}) Authoritative Curriculum Edition`,
+            author: 'Central Editorial Directorate',
+            boundCurriculumVersionId: params.previousVersionId,
+            affectedChapters: baselineSubject.themes.map(th => `Theme ${th.themeNumber}: ${th.title}`),
+            impactSeverity: 'MANDATORY_REVIEW' as ImpactSeverity,
+            remediationGuidance: `Curriculum version delta detected (${params.previousVersionId} -> ${params.newVersionId}). Conduct editorial reconciliation on central textbook versions without overwriting published editions.`
+          }
+        ]
+      : [];
+
+    // 2. Question Bank alignment advisories (resolved at school-instance level; never centralized)
+    const affectedQuestions: DownstreamImpactReport['affectedQuestions'] = [];
+
+    // 3. Assessment blueprint advisories (resolved at school-instance level)
+    const affectedBlueprints: DownstreamImpactReport['affectedBlueprints'] = [];
 
     // 4. Affected tenants
     const affectedTenants = [

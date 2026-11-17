@@ -11,8 +11,10 @@ import { evaluateSharedServiceAccess } from './authorization';
 
 test('central registry contains exactly the stable curriculum, textbook and deferred vehicle services', () => {
   assert.deepEqual(CENTRAL_SHARED_SERVICE_REGISTRY.map(service => service.id), CENTRAL_SHARED_SERVICE_IDS);
-  assert.equal(getCentralSharedService('central_curriculum')?.availability, 'unavailable');
-  assert.equal(getCentralSharedService('central_textbooks')?.availability, 'unavailable');
+  assert.equal(getCentralSharedService('central_curriculum')?.availability, 'available');
+  assert.equal(getCentralSharedService('central_curriculum')?.provisioningStatus, 'provisioned');
+  assert.equal(getCentralSharedService('central_textbooks')?.availability, 'available');
+  assert.equal(getCentralSharedService('central_textbooks')?.provisioningStatus, 'provisioned');
   assert.equal(getCentralSharedService('central_vehicle_tracking')?.availability, 'planned');
   assert.equal(getCentralSharedService('central_vehicle_tracking')?.provisioningStatus, 'deferred');
   assert.deepEqual(getCentralSharedService('central_vehicle_tracking')?.operations, []);

@@ -115,9 +115,34 @@ test('expired and revoked service entitlements are denied immediately', () => {
     allowed: false,
     reason: 'SERVICE_ENTITLEMENT_MISSING'
   });
+
+  // When entitlement administration is decoupled and no entitlement row exists yet,
+  // active, supported, dependency-declared instances with permission are allowed,
+  // while revoked/suspended/expired entitlements remain denied.
+  const decoupledAllowed = evaluateSharedServiceAccess({
+    serviceId: 'central_curriculum',
+    operation: 'consume',
+    requestedOperation: 'curriculum.retrieve',
+    applicationInstanceId: instanceId,
+    row: application({ entitlement_id: null, entitlement_status: null, entitlement_expires_at: null }),
+    hasPermissions: requested => requested.every(p => p === 'shared.curriculum.consume'),
+    entitlementMode: 'decoupled'
+  });
+  assert.equal(decoupledAllowed.allowed, true);
+
+  const decoupledRevoked = evaluateSharedServiceAccess({
+    serviceId: 'central_curriculum',
+    operation: 'consume',
+    requestedOperation: 'curriculum.retrieve',
+    applicationInstanceId: instanceId,
+    row: application({ entitlement_status: 'revoked', entitlement_revoked_at: new Date() }),
+    hasPermissions: requested => requested.every(p => p === 'shared.curriculum.consume'),
+    entitlementMode: 'decoupled'
+  });
+  assert.deepEqual(decoupledRevoked, { allowed: false, reason: 'SERVICE_ENTITLEMENT_REVOKED' });
 });
 
-test('deferred or unprovisioned services never authorize consumption', () => {
+test('provisioned curriculum and textbook services authorize consumption while deferred services fail closed', () => {
   const curriculum = evaluateSharedServiceAccess({
     serviceId: 'central_curriculum',
     operation: 'authorize',
@@ -127,11 +152,30 @@ test('deferred or unprovisioned services never authorize consumption', () => {
     hasPermissions: () => true
   });
   assert.deepEqual(curriculum, {
-    allowed: false,
-    reason: 'SERVICE_NOT_READY',
+    allowed: true,
     entitlementId: application().entitlement_id,
     expiresAt: application().entitlement_expires_at.toISOString()
   });
+
+  const consumeOk = evaluateSharedServiceAccess({
+    serviceId: 'central_textbooks',
+    operation: 'consume',
+    requestedOperation: 'textbooks.read',
+    applicationInstanceId: instanceId,
+    row: application({ service_dependencies: ['central_textbooks'] }),
+    hasPermissions: requested => requested.every(p => p === 'shared.textbooks.consume')
+  });
+  assert.equal(consumeOk.allowed, true);
+
+  const missingConsume = evaluateSharedServiceAccess({
+    serviceId: 'central_curriculum',
+    operation: 'authorize',
+    requestedOperation: 'curriculum.retrieve',
+    applicationInstanceId: instanceId,
+    row: application(),
+    hasPermissions: requested => requested.every(p => p === 'shared.curriculum.authorize')
+  });
+  assert.deepEqual(missingConsume, { allowed: false, reason: 'PERMISSION_DENIED' });
 
   const result = evaluateSharedServiceAccess({
     serviceId: 'central_vehicle_tracking',
@@ -145,6 +189,41 @@ test('deferred or unprovisioned services never authorize consumption', () => {
     hasPermissions: () => true
   });
   assert.deepEqual(result, { allowed: false, reason: 'OPERATION_NOT_SUPPORTED' });
+});
+
+test('usage metering records tenant-scoped consumption in production.shared_service_usage_metrics', async () => {
+  const tenantPrincipal = principal(tenantId);
+  const authorized = createAuthorizedPrincipal({
+    tenant: tenantPrincipal,
+    userId,
+    sessionId,
+    grants: [{ roleCode: 'tenant_admin', permissions: ['shared.curriculum.consume'], scopes: [] }]
+  });
+  const queries: Array<{ text: string; values?: unknown[] }> = [];
+  const pool = fakePool((text, values) => {
+    queries.push({ text, values });
+    return { rows: [], rowCount: 1 };
+  });
+
+  await new SharedServiceAuthorizationRepository(pool).recordUsage({
+    tenant: tenantPrincipal,
+    principal: authorized,
+    serviceId: 'central_curriculum',
+    applicationInstanceId: instanceId,
+    entitlementId: application().entitlement_id!,
+    operation: 'curriculum.subjects.list',
+    endpoint: 'GET /api/v1/shared/curriculum/subjects',
+    callerKind: 'tenant_user',
+    httpStatus: 200,
+    units: 1
+  });
+
+  const insert = queries.find(q => q.text.includes('INSERT INTO production.shared_service_usage_metrics'));
+  assert.ok(insert);
+  assert.equal(insert.values?.[0], tenantId);
+  assert.equal(insert.values?.[1], instanceId);
+  assert.equal(insert.values?.[3], 'central_curriculum');
+  assert.equal(insert.values?.[9], 200);
 });
 
 test('cross-tenant application IDs cannot be resolved outside the signed tenant transaction', async () => {

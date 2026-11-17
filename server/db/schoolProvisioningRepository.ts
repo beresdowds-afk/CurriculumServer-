@@ -17,6 +17,7 @@ import {
 } from './tenantContext';
 import { INITIAL_REGISTERED_APPLICATIONS } from '../../src/data/applicationRegistryData';
 import { buildApplicationInstanceConfiguration } from '../../src/data/applicationInstanceConfiguration';
+import { CENTRAL_SHARED_SERVICE_IDS, type CentralSharedServiceId } from '../../packages/shared-types/src/sharedServiceContracts';
 import {
   createInvitationToken,
   hashInvitationToken,
@@ -144,6 +145,7 @@ export interface SchoolSummary extends QueryResultRow {
   application_version: string | null;
   instance_status: string;
   enabled_features: string[];
+  central_service_dependencies?: string[];
   created_at: Date;
   activated_at: Date | null;
 }
@@ -956,16 +958,104 @@ export class SchoolProvisioningRepository {
                 school.time_zone, school.currency, school.default_language,
                 instance.id AS instance_id, instance.application_id, instance.application_version,
                 instance.status AS instance_status, instance.enabled_features,
+                COALESCE(latest_cfg.configuration->'centralServiceDependencies', '[]'::jsonb) AS central_service_dependencies,
                 instance.created_at, instance.activated_at
          FROM production.schools school
          JOIN production.tenants tenant ON tenant.id = school.tenant_id
          JOIN production.application_instances instance
            ON instance.tenant_id = school.tenant_id AND instance.school_id = school.id
+         LEFT JOIN LATERAL (
+           SELECT configuration
+           FROM production.application_instance_configurations
+           WHERE tenant_id = instance.tenant_id AND application_instance_id = instance.id
+           ORDER BY configuration_version DESC LIMIT 1
+         ) latest_cfg ON true
          WHERE instance.status IN ('ready_for_activation', 'active') AND school.tenant_id = $1
          LIMIT 1`,
         [principal.tenantId]
       );
       return result.rows[0];
+    });
+  }
+
+  async updateApplicationServiceDependencies(
+    instanceId: string,
+    centralServiceDependencies: readonly string[],
+    principal: VerifiedTenantPrincipal
+  ): Promise<{ instanceId: string; configurationVersion: number; centralServiceDependencies: CentralSharedServiceId[] }> {
+    const uniqueDeps = [...new Set(centralServiceDependencies)].sort();
+    for (const dep of uniqueDeps) {
+      if (!CENTRAL_SHARED_SERVICE_IDS.includes(dep as CentralSharedServiceId)) {
+        throw new Error(`UNKNOWN_SHARED_SERVICE_DEPENDENCY:${dep}`);
+      }
+    }
+    return withControlPlaneTransaction(this.pool, principal, async client => {
+      const current = await client.query<{
+        tenant_id: string;
+        school_id: string;
+        configuration: Record<string, unknown>;
+        current_version: number;
+      }>(
+        `SELECT instance.tenant_id, instance.school_id,
+                latest.configuration, latest.configuration_version AS current_version
+         FROM production.application_instances instance
+         JOIN LATERAL (
+           SELECT configuration, configuration_version
+           FROM production.application_instance_configurations
+           WHERE tenant_id = instance.tenant_id AND application_instance_id = instance.id
+           ORDER BY configuration_version DESC LIMIT 1
+         ) latest ON true
+         WHERE instance.id = $1
+         FOR UPDATE OF instance`,
+        [instanceId]
+      );
+      const row = current.rows[0];
+      if (!row) throw new Error('APPLICATION_INSTANCE_NOT_FOUND');
+
+      const nextVersion = row.current_version + 1;
+      const updatedSnapshot = {
+        ...row.configuration,
+        centralServiceDependencies: uniqueDeps,
+        configurationVersion: nextVersion
+      };
+      await client.query(
+        `INSERT INTO production.application_instance_configurations
+           (tenant_id, application_instance_id, configuration_version, schema_version,
+            configuration, created_by)
+         VALUES ($1, $2, $3, 1, $4::jsonb, $5)`,
+        [
+          row.tenant_id,
+          instanceId,
+          nextVersion,
+          JSON.stringify(updatedSnapshot),
+          principal.email || principal.userId || 'platform_admin'
+        ]
+      );
+      await client.query(
+        `UPDATE production.application_instances
+         SET configuration_version = $2, updated_at = now()
+         WHERE id = $1`,
+        [instanceId, String(nextVersion)]
+      );
+      await client.query(
+        `INSERT INTO production.audit_events (tenant_id, actor_subject, action, details)
+         VALUES ($1, $2, 'application_service_dependencies_updated', $3::jsonb)`,
+        [
+          row.tenant_id,
+          principal.email || principal.userId || 'platform_admin',
+          JSON.stringify({
+            applicationInstanceId: instanceId,
+            schoolId: row.school_id,
+            configurationVersion: nextVersion,
+            centralServiceDependencies: uniqueDeps
+          })
+        ]
+      );
+      return {
+        instanceId,
+        configurationVersion: nextVersion,
+        centralServiceDependencies: uniqueDeps as CentralSharedServiceId[]
+      };
     });
   }
 

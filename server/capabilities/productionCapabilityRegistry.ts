@@ -322,6 +322,146 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     acceptanceTests: ['server/sharedServices/authorization.test.ts'],
     readinessEvidence: ['signed_control_plane_transaction', 'platform_entitlement_audit'],
     state: 'ready'
+  },
+  {
+    id: 'central_curriculum_consumption',
+    description: 'Tenant-authorized retrieval of central curriculum countries, authorities, frameworks, grades, subjects, topics, objectives, competencies, source documents, versions, and coverage.',
+    routes: [
+      { method: 'GET', path: exact(
+        '/shared/curriculum/countries',
+        '/shared/curriculum/authorities',
+        '/shared/curriculum/frameworks',
+        '/shared/curriculum/grades',
+        '/shared/curriculum/subjects',
+        '/shared/curriculum/topics',
+        '/shared/curriculum/objectives',
+        '/shared/curriculum/competencies',
+        '/shared/curriculum/source-documents',
+        '/shared/curriculum/versions',
+        '/shared/curriculum/coverage'
+      ) },
+      { method: 'GET', path: /^\/shared\/curriculum\/subjects\/[A-Za-z0-9_.:-]+$/ }
+    ],
+    requiredRepositories: ['CentralCurriculumRepository', 'SharedServiceAuthorizationRepository'],
+    requiredMigrations: [14, 15, 16],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'database_permission_and_application_service_entitlement',
+      permissions: ['shared.curriculum.consume']
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: ['server/curriculum/centralCurriculum.test.ts', 'server/sharedServices/authorization.test.ts'],
+    readinessEvidence: ['postgresql_central_curriculum_database', 'tenant_entitlement_and_usage_metering'],
+    state: 'ready'
+  },
+  {
+    id: 'central_textbook_consumption',
+    description: 'Tenant-authorized retrieval of published central textbooks, chapters, versions, coverage manifests, and entitled private media assets.',
+    routes: [
+      { method: 'GET', path: exact('/shared/textbooks') },
+      { method: 'GET', path: /^\/shared\/textbooks\/[A-Za-z0-9_.:-]+$/ },
+      { method: 'GET', path: /^\/shared\/textbooks\/[A-Za-z0-9_.:-]+\/(?:coverage|versions)$/ },
+      { method: 'GET', path: /^\/shared\/textbooks\/[A-Za-z0-9_.:-]+\/chapters\/[A-Za-z0-9_.:-]+$/ },
+      { method: 'GET', path: /^\/shared\/textbooks\/[A-Za-z0-9_.:-]+\/media\/[0-9a-f-]+$/i }
+    ],
+    requiredRepositories: ['CentralTextbookRepository', 'SharedServiceAuthorizationRepository'],
+    requiredMigrations: [14, 15, 16],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'database_permission_and_application_service_entitlement',
+      permissions: ['shared.textbooks.consume']
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: ['server/textbooks/centralTextbook.test.ts', 'server/sharedServices/authorization.test.ts'],
+    readinessEvidence: ['postgresql_central_textbook_database', 'private_durable_media_storage'],
+    state: 'ready'
+  },
+  {
+    id: 'central_shared_content_write_protection',
+    description: 'Explicit 403 rejection path preventing school/tenant mutations on central curriculum and textbook APIs.',
+    routes: [
+      { method: 'POST', path: /^\/shared\/(?:curriculum|textbooks)\/(?!authorization$)[A-Za-z0-9_./:-]+$/ },
+      { method: 'PUT', path: /^\/shared\/(?:curriculum|textbooks)\/[A-Za-z0-9_./:-]+$/ },
+      { method: 'PATCH', path: /^\/shared\/(?:curriculum|textbooks)\/[A-Za-z0-9_./:-]+$/ },
+      { method: 'DELETE', path: /^\/shared\/(?:curriculum|textbooks)\/[A-Za-z0-9_./:-]+$/ }
+    ],
+    requiredRepositories: ['SharedServiceAuthorizationRepository'],
+    requiredMigrations: [14, 15, 16],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'authoritative_central_content_read_only_for_tenants',
+      permissions: ['shared.curriculum.consume', 'shared.textbooks.consume']
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: ['server/curriculum/centralCurriculum.test.ts', 'server/textbooks/centralTextbook.test.ts'],
+    readinessEvidence: ['tenant_write_rejection_handler', 'forced_postgresql_rls_control_plane_writes'],
+    state: 'ready'
+  },
+  {
+    id: 'central_editorial_administration',
+    description: 'Platform editorial administrator workflows for central curriculum migrations/versions and central textbook generation, validation, review, approval, media, supersession, and publishing.',
+    routes: [
+      { method: 'POST', path: exact(
+        '/platform/shared/curriculum/migrate-nerdc',
+        '/platform/shared/curriculum/frameworks',
+        '/platform/shared/curriculum/versions',
+        '/platform/shared/textbooks/generate-outline',
+        '/platform/shared/textbooks/generate-full',
+        '/platform/shared/textbooks/generation-jobs/recover'
+      ) },
+      { method: 'POST', path: /^\/platform\/shared\/curriculum\/versions\/[A-Za-z0-9_.:-]+\/(?:submit-review|approve|publish|supersede)$/ },
+      { method: 'GET', path: exact('/platform/shared/textbooks', '/platform/shared/textbooks/generation-jobs') },
+      { method: 'POST', path: /^\/platform\/shared\/textbooks\/generation-jobs\/[0-9a-f-]+\/retry$/i },
+      { method: 'POST', path: /^\/platform\/shared\/textbooks\/[A-Za-z0-9_.:-]+\/chapters\/[A-Za-z0-9_.:-]+\/generate$/ },
+      { method: 'POST', path: /^\/platform\/shared\/textbooks\/[A-Za-z0-9_.:-]+\/(?:validate|submit-review|approve|reject|publish|supersede|media)$/ }
+    ],
+    requiredRepositories: ['CentralCurriculumRepository', 'CentralTextbookRepository'],
+    requiredMigrations: [15, 16],
+    authentication: 'platform_administrator',
+    authorization: { rule: 'platform_editorial_administrator', permissions: [] },
+    tenantContext: 'control_plane_transaction',
+    acceptanceTests: ['server/curriculum/centralCurriculum.test.ts', 'server/textbooks/centralTextbook.test.ts'],
+    readinessEvidence: ['signed_control_plane_transaction', 'editorial_approval_and_publishing_workflow'],
+    state: 'ready'
+  },
+  {
+    id: 'instance_question_bank_and_assessments',
+    description: 'Strictly school-instance-owned Question Bank, categories, assessment blueprints, exam configurations, and assessment records.',
+    routes: [
+      { method: 'GET', path: exact('/question-bank', '/question-bank/categories', '/assessment-blueprints', '/assessments/exams', '/assessments/records') },
+      { method: 'POST', path: exact(
+        '/question-bank',
+        '/question-bank/categories',
+        '/question-bank/seed-past-questions',
+        '/question-bank/seed-theory-questions',
+        '/question-bank/seed-practical-questions',
+        '/question-bank/generate-objective',
+        '/question-bank/generate-theory',
+        '/question-bank/generate-practical',
+        '/assessment-blueprints',
+        '/assessments/exams',
+        '/assessments/records'
+      ) },
+      { method: 'POST', path: /^\/question-bank\/items\/[0-9a-f-]+\/review$/i },
+      { method: 'DELETE', path: /^\/question-bank\/items\/[0-9a-f-]+$/i }
+    ],
+    requiredRepositories: ['InstanceQuestionBankRepository'],
+    requiredMigrations: [15],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'database_permission',
+      permissions: [
+        'question_bank.read',
+        'question_bank.manage',
+        'question_bank.review',
+        'assessments.read',
+        'assessments.manage'
+      ]
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: ['server/questionBank/instanceQuestionBank.test.ts'],
+    readinessEvidence: ['tenant_isolated_instance_question_bank', 'instance_assessment_persistence'],
+    state: 'ready'
   }
 ];
 

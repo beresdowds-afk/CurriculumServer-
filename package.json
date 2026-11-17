@@ -11,19 +11,17 @@
     "build:all": "npm run build && npm run build:server && npm run build:flow",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
- 
-    "test": "tsx --test server/gcpProvisioningEngine.test.ts server/customerOnboardingManager.test.ts server/storageAndDatabaseManager.test.ts server/schoolProvisioning.test.ts server/tenantTokenService.test.ts src/services/cipaApiClient.test.ts server/db/*.test.ts server/authorization/*.test.ts server/capabilities/*.test.ts server/logistics/*.test.ts server/sharedServices/*.test.ts",
+    "test": "tsx --test server/gcpProvisioningEngine.test.ts server/customerOnboardingManager.test.ts server/storageAndDatabaseManager.test.ts server/schoolProvisioning.test.ts server/tenantTokenService.test.ts src/services/cipaApiClient.test.ts server/db/*.test.ts server/authorization/*.test.ts server/capabilities/*.test.ts server/logistics/*.test.ts server/sharedServices/*.test.ts server/curriculum/*.test.ts server/textbooks/*.test.ts server/questionBank/*.test.ts server/stage5ProductionAcceptance.test.ts",
     "test:db": "tsx --test server/db/*.test.ts",
     "test:postgres": "tsx --test server/db/postgres.integration.test.ts server/db/authorization.integration.test.ts",
     "test:postgres:acceptance": "tsx scripts/postgres-acceptance.ts",
     "db:migrate": "tsx server/db/migrate.ts up",
     "db:migrate:status": "tsx server/db/migrate.ts status",
- 
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
+    "@google/genai": "^3.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/d3": "^7.4.3",
     "@vitejs/plugin-react": "^5.0.4",
@@ -33,9 +31,7 @@
     "jspdf": "^4.2.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
- 
     "pg": "^8.16.3",
- 
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.10.1",
@@ -44,9 +40,7 @@
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
- 
     "@types/pg": "^8.15.5",
- 
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",

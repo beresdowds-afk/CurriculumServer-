@@ -1,0 +1,170 @@
+name: Provision PostgreSQL Databases
+
+on:
+  push:
+    paths:
+      - 'deploy/provision-postgresql-databases.sh'
+      - 'src/db/migrations/**'
+      - 'server/db/migrate.ts'
+      - 'server/db/readiness.ts'
+      - '.github/workflows/provision-postgresql-databases.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Provisioning mode (gcp-cloudsql or direct-postgres)'
+        required: false
+        default: 'gcp-cloudsql'
+        type: choice
+        options:
+          - gcp-cloudsql
+          - direct-postgres
+      dry_run:
+        description: 'Run in dry-run inspection mode without mutations'
+        required: false
+        default: false
+        type: boolean
+      seed_nerdc_baseline:
+        description: 'Load unverified baseline NERDC TypeScript curriculum dataset (is_official_verified=false)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: curious-subject-477114-e4
+  REGION: europe-west1
+  CLOUD_SQL_INSTANCE: curriculum-postgres-prod
+  PG_DATABASE: curriculum_platform
+  WIF_PROVIDER: projects/797788066041/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
+  CI_SERVICE_ACCOUNT: curriculum-ci-deployer@curious-subject-477114-e4.iam.gserviceaccount.com
+
+jobs:
+  verify-postgresql-provisioning:
+    name: Verify PostgreSQL 16 provisioning & migrations (001-016)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: curriculum_platform
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d curriculum_platform"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate provisioning script syntax & permissions
+        run: |
+          test -x deploy/provision-postgresql-databases.sh
+          bash -n deploy/provision-postgresql-databases.sh
+
+      - name: Run provisioning script against ephemeral PostgreSQL 16
+        env:
+          MIGRATION_DATABASE_URL: postgres://postgres:postgres@localhost:5432/curriculum_platform?sslmode=disable
+          TEST_DATABASE_URL: postgres://curriculum_runtime:ci-runtime-password-32-characters@localhost:5432/curriculum_platform?sslmode=disable
+          RUNTIME_DB_PASSWORD: ci-runtime-password-32-characters
+          CONTROL_PLANE_SECRET: ci-only-hmac-context-signing-key-32chars
+          NODE_ENV: test
+        run: |
+          ./deploy/provision-postgresql-databases.sh --mode=direct-postgres --apply --yes
+          ./deploy/provision-postgresql-databases.sh --mode=direct-postgres --verify-only
+
+      - name: Run PostgreSQL acceptance & Stage 2 curriculum/textbook/QB suites
+        env:
+          MIGRATION_DATABASE_URL: postgres://postgres:postgres@localhost:5432/curriculum_platform?sslmode=disable
+          TEST_DATABASE_URL: postgres://curriculum_runtime:ci-runtime-password-32-characters@localhost:5432/curriculum_platform?sslmode=disable
+          TEST_DATABASE_SSLMODE: disable
+          DATABASE_TEST_DISPOSABLE: '1'
+          POSTGRES_ACCEPTANCE: '1'
+          CONTROL_PLANE_SECRET: ci-only-hmac-context-signing-key-32chars
+          NODE_ENV: test
+        run: |
+          npm run test:postgres:acceptance
+          npx tsx --test server/curriculum/*.test.ts server/textbooks/*.test.ts server/questionBank/*.test.ts server/sharedServices/*.test.ts server/stage5ProductionAcceptance.test.ts
+
+  provision-target-postgresql:
+    name: Provision live PostgreSQL databases on push to main
+    needs: verify-postgresql-provisioning
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Provision managed PostgreSQL via MIGRATION_DATABASE_URL secret
+        if: ${{ secrets.MIGRATION_DATABASE_URL != '' }}
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          CONTROL_PLANE_SECRET: ${{ secrets.CONTROL_PLANE_SECRET }}
+          RUNTIME_DB_PASSWORD: ${{ secrets.RUNTIME_DB_PASSWORD }}
+          TEST_DATABASE_URL: ${{ secrets.RUNTIME_DATABASE_URL }}
+          NODE_ENV: production
+        run: |
+          ACTION_FLAG="--apply"
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            ACTION_FLAG="--dry-run"
+          fi
+          EXTRA_FLAGS=""
+          if [[ "${{ inputs.seed_nerdc_baseline }}" == "true" ]]; then
+            EXTRA_FLAGS="--seed-nerdc-baseline"
+          fi
+          ./deploy/provision-postgresql-databases.sh --mode=direct-postgres "$ACTION_FLAG" --yes $EXTRA_FLAGS
+
+      - name: Authenticate to Google Cloud via Workload Identity Federation
+        if: ${{ secrets.MIGRATION_DATABASE_URL == '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.CI_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud SDK
+        if: ${{ secrets.MIGRATION_DATABASE_URL == '' }}
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Provision GCP Cloud SQL PostgreSQL 16 & run migrations (001-016)
+        if: ${{ secrets.MIGRATION_DATABASE_URL == '' }}
+        env:
+          CONTROL_PLANE_SECRET: ${{ secrets.CONTROL_PLANE_SECRET }}
+          NODE_ENV: production
+        run: |
+          ACTION_FLAG="--apply"
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            ACTION_FLAG="--dry-run"
+          fi
+          EXTRA_FLAGS=""
+          if [[ "${{ inputs.seed_nerdc_baseline }}" == "true" ]]; then
+            EXTRA_FLAGS="--seed-nerdc-baseline"
+          fi
+          ./deploy/provision-postgresql-databases.sh --mode=gcp-cloudsql "$ACTION_FLAG" --yes $EXTRA_FLAGS

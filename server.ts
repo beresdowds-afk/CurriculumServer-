@@ -12,8 +12,13 @@ import { ServerTenantTokenService } from './server/tenantTokenService';
 import { EntitlementEnforcementService } from './src/services/entitlementEnforcementService';
 import { TamperEvidentAuditService } from './src/services/tamperEvidentAuditService';
 import { TenantLifecycleManager } from './src/services/tenantLifecycleManager';
-import { textbookDb } from './src/services/textbookQuestionBankService';
 import { textbookGenerationEngine } from './src/services/textbookGenerationEngine';
+import { CentralCurriculumError } from './server/curriculum/centralCurriculumRepository';
+import { CentralCurriculumService } from './server/curriculum/centralCurriculumService';
+import { CentralTextbookService } from './server/textbooks/centralTextbookService';
+import { CentralTextbookError } from './server/textbooks/centralTextbookRepository';
+import { InstanceQuestionBankService } from './server/questionBank/instanceQuestionBankService';
+import { InstanceQuestionBankError } from './server/questionBank/instanceQuestionBankRepository';
 import { runSecurityHardeningTestSuite } from './server/securityHardeningTests';
 import { serverBackupService } from './server/serverBackupService';
 import { defaultBackupStorageProvider } from './server/serverBackupStorage';
@@ -78,6 +83,7 @@ import {
   sharedServiceResponseDecision,
   sharedServiceDiscovery
 } from './server/sharedServices/authorization';
+import { createSlidingWindowRateLimiter } from './server/sharedServices/rateLimiter';
 import {
   hashInvitationToken,
   hashPassword,
@@ -401,35 +407,81 @@ const authorizationMiddleware = createAuthorizationMiddleware({
   internalServiceKey: () => process.env.INTERNAL_SERVICE_KEY
 });
 
+function resolveApplicationInstanceId(req: Request): string {
+  const headerInstanceId = req.headers['x-application-instance-id'];
+  const queryInstanceId = typeof req.query.applicationInstanceId === 'string'
+    ? req.query.applicationInstanceId
+    : undefined;
+  const bodyInstanceId = typeof req.body?.applicationInstanceId === 'string'
+    ? req.body.applicationInstanceId
+    : undefined;
+  if (typeof headerInstanceId === 'string') {
+    if (bodyInstanceId && headerInstanceId !== bodyInstanceId) return '';
+    return headerInstanceId;
+  }
+  return bodyInstanceId || queryInstanceId || '';
+}
+
+function getCentralCurriculumService(): CentralCurriculumService {
+  return new CentralCurriculumService(postgresRuntime.getPool());
+}
+
+function getCentralTextbookService(): CentralTextbookService {
+  const curriculumService = getCentralCurriculumService();
+  return new CentralTextbookService(postgresRuntime.getPool(), {
+    curriculumPort: curriculumService.retrieval
+  });
+}
+
+function getInstanceQuestionBankService(): InstanceQuestionBankService {
+  return new InstanceQuestionBankService(postgresRuntime.getPool());
+}
+
+const sharedServiceRateLimiter = createSlidingWindowRateLimiter({
+  windowMs: 60_000,
+  maxRequests: Math.max(10, Number(process.env.SHARED_SERVICE_RATE_LIMIT_MAX || 240)),
+  serviceLabel: 'central-shared-services'
+});
+
+const questionBankRateLimiter = createSlidingWindowRateLimiter({
+  windowMs: 60_000,
+  maxRequests: Math.max(10, Number(process.env.QUESTION_BANK_RATE_LIMIT_MAX || 180)),
+  serviceLabel: 'instance-question-bank'
+});
+
+const authLoginRateLimiter = createSlidingWindowRateLimiter({
+  windowMs: 60_000,
+  maxRequests: Math.max(5, Number(process.env.AUTH_RATE_LIMIT_MAX || 30)),
+  serviceLabel: 'school-auth-login'
+});
+
 function requireSharedServiceAccess(
   serviceId: CentralSharedServiceId,
-  operation: SharedServiceOperation
+  operation: SharedServiceOperation,
+  requestedConsumeOperation?: string
 ) {
   return (req: Request, res: Response, next: express.NextFunction) => {
     authenticateSharedServiceCaller(req, res, () => {
       void (async () => {
-        const headerInstanceId = req.headers['x-application-instance-id'];
-        const bodyInstanceId = req.body?.applicationInstanceId;
-        const applicationInstanceId = typeof headerInstanceId === 'string'
-          ? headerInstanceId
-          : typeof bodyInstanceId === 'string' ? bodyInstanceId : '';
-        const mismatchedInstanceIds = typeof headerInstanceId === 'string' &&
-          typeof bodyInstanceId === 'string' && headerInstanceId !== bodyInstanceId;
+        const applicationInstanceId = resolveApplicationInstanceId(req);
         const tenant = (req as any).trustedTenantContext;
         const principal = (req as any).authorizedPrincipal as AuthorizedPrincipal;
+        const callerKind = req.headers['x-internal-service-key'] === undefined
+          ? 'tenant_user'
+          : 'internal_service';
+        const effectiveRequestedOp = operation === 'authorize' && typeof req.body?.operation === 'string'
+          ? req.body.operation
+          : requestedConsumeOperation;
         try {
-          const decision = await new SharedServiceAuthorizationRepository(postgresRuntime.getPool()).evaluate({
+          const authRepo = new SharedServiceAuthorizationRepository(postgresRuntime.getPool());
+          const decision = await authRepo.evaluate({
             tenant,
             principal,
             serviceId,
             operation,
-            applicationInstanceId: mismatchedInstanceIds ? '' : applicationInstanceId,
-            requestedOperation: operation === 'authorize' && typeof req.body?.operation === 'string'
-              ? req.body.operation
-              : undefined,
-            callerKind: req.headers['x-internal-service-key'] === undefined
-              ? 'tenant_user'
-              : 'internal_service',
+            applicationInstanceId,
+            requestedOperation: effectiveRequestedOp,
+            callerKind,
             correlationId: (req as any).correlationId
           });
           if (operation === 'authorize' && req.body?.contractVersion !== 1) {
@@ -443,8 +495,25 @@ function requireSharedServiceAccess(
             return;
           }
           (req as any).sharedServiceDecision = decision;
+          (req as any).applicationInstanceId = applicationInstanceId;
           if (decision.allowed ||
               (operation === 'authorize' && decision.reason === 'SERVICE_NOT_READY')) {
+            if (decision.allowed && operation === 'consume') {
+              res.once('finish', () => {
+                void authRepo.recordUsage({
+                  tenant,
+                  principal,
+                  serviceId,
+                  applicationInstanceId,
+                  entitlementId: decision.entitlementId,
+                  operation: effectiveRequestedOp || `${serviceId}.consume`,
+                  endpoint: req.path,
+                  callerKind,
+                  httpStatus: res.statusCode,
+                  correlationId: (req as any).correlationId
+                }).catch(() => {});
+              });
+            }
             next();
             return;
           }
@@ -2842,477 +2911,604 @@ app.get('/api/v1/embed/portal-widget', (req: Request, res: Response) => {
 });
 
 // -------------------------------------------------------------
-// PHASE 2: TEXTBOOK & QUESTION BANK DATA FOUNDATION APIS
+// STAGE 2: INSTANCE-LEVEL QUESTION BANK & ASSESSMENTS (SCHOOL-OWNED)
+// Central curriculum and central textbook routes are strictly separated under /api/v1/shared/*.
+// Question Bank, categories, assessment blueprints, exam configs and assessment records are
+// owned exclusively by each school instance (tenant_id + application_instance_id).
 // -------------------------------------------------------------
-app.get('/api/v1/textbooks', (req: Request, res: Response) => {
-  const { classGrade, subjectId } = req.query;
-  const textbooks = textbookDb.getTextbooks(classGrade as any, subjectId as string);
-  res.json({ total: textbooks.length, textbooks });
-});
-
-app.get('/api/v1/textbooks/:id', (req: Request, res: Response) => {
-  const { id } = req.params;
-  const textbook = textbookDb.getTextbookById(id);
-  if (!textbook) {
-    res.status(404).json({ error: 'Textbook not found' });
+function handleInstanceQuestionBankError(req: Request, res: Response, err: unknown, fallbackMessage: string) {
+  if (err instanceof InstanceQuestionBankError) {
+    const status = err.code === 'NOT_FOUND' ? 404 : err.code === 'FORBIDDEN' ? 403 : 400;
+    res.status(status).json({
+      success: false,
+      error: err.message,
+      code: err.code,
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
     return;
   }
-  res.json(textbook);
-});
-
-app.get('/api/v1/textbooks/:id/coverage', (req: Request, res: Response) => {
-  const { id } = req.params;
-  const manifest = textbookDb.getCoverageManifest(id);
-  if (!manifest) {
-    res.status(404).json({ error: 'Coverage manifest not found for textbook' });
-    return;
-  }
-  res.json(manifest);
-});
-
-app.get('/api/v1/question-bank', (req: Request, res: Response) => {
-  const { subjectId, classGrade, questionType, reviewStatus } = req.query;
-  const questions = textbookDb.getQuestions({
-    subjectId: subjectId as string,
-    classGrade: classGrade as any,
-    questionType: questionType as string,
-    reviewStatus: reviewStatus as string,
+  res.status(503).json({
+    success: false,
+    error: err instanceof Error ? err.message : fallbackMessage,
+    code: 'INSTANCE_QUESTION_BANK_UNAVAILABLE',
+    correlationId: (req as any).correlationId,
+    timestamp: new Date().toISOString()
   });
-  res.json({ total: questions.length, questions });
-});
+}
 
-app.post('/api/v1/question-bank', (req: Request, res: Response) => {
-  try {
-    const payload = req.body;
-    if (!payload.stem || !payload.subjectId) {
-      res.status(400).json({ error: 'Missing required question parameters: stem, subjectId' });
-      return;
+app.use('/api/v1/question-bank', questionBankRateLimiter);
+app.use('/api/v1/assessments', questionBankRateLimiter);
+
+app.get(
+  '/api/v1/question-bank/categories',
+  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankRead),
+  async (req: Request, res: Response) => {
+    try {
+      const categories = await getInstanceQuestionBankService().listCategories(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req)
+      );
+      res.json({ success: true, total: categories.length, categories });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to list question bank categories');
     }
-    const saved = textbookDb.saveQuestion({
-      id: payload.id || `QB-${Date.now()}`,
-      subjectId: payload.subjectId,
-      classGrade: payload.classGrade || 'JSS 1',
-      curriculumVersionId: payload.curriculumVersionId || 'NERDC-2024',
-      topicId: payload.topicId || 'general',
-      learningObjectiveIds: payload.learningObjectiveIds || [],
-      questionType: payload.questionType || 'objective',
-      stem: payload.stem,
-      options: payload.options,
-      correctAnswer: payload.correctAnswer || 'A',
-      explanation: payload.explanation || '',
-      markingRubric: payload.markingRubric,
-      marks: payload.marks || 2,
-      difficulty: payload.difficulty || 'Medium',
-      cognitiveDemand: payload.cognitiveDemand || 'Application',
-      sourceType: payload.sourceType || 'teacher_authored',
-      sourceReference: payload.sourceReference,
-      version: 1,
-      creationMethod: payload.creationMethod || 'manual',
-      reviewStatus: payload.reviewStatus || 'pending_review',
-      exposureCount: 0,
-      createdAt: new Date().toISOString()
-    });
-    res.json({ success: true, question: saved });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to save question' });
   }
-});
+);
 
-app.get('/api/v1/assessment-blueprints', (req: Request, res: Response) => {
-  res.json({ blueprints: textbookDb.getBlueprints() });
-});
-
-app.get('/api/v1/generation-jobs', (req: Request, res: Response) => {
-  res.json({ jobs: textbookDb.getJobs() });
-});
-
-app.post('/api/v1/question-bank/seed-past-questions', (req: Request, res: Response) => {
-  try {
-    const list = textbookDb.seedPastQuestions();
-    res.json({ success: true, total: list.length, questions: list });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to seed past questions' });
-  }
-});
-
-app.post('/api/v1/question-bank/seed-theory-questions', (req: Request, res: Response) => {
-  try {
-    const list = textbookDb.seedTheoryQuestions();
-    res.json({ success: true, total: list.length, questions: list });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to seed theory questions' });
-  }
-});
-
-app.post('/api/v1/question-bank/seed-practical-questions', (req: Request, res: Response) => {
-  try {
-    const list = textbookDb.seedPracticalQuestions();
-    res.json({ success: true, total: list.length, questions: list });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to seed practical questions' });
-  }
-});
-
-app.post('/api/v1/question-bank/generate-practical', async (req: Request, res: Response) => {
-  try {
-    const { subjectName, classGrade, topic, count } = req.body;
-    if (!subjectName || !classGrade) {
-      res.status(400).json({ error: 'Missing required parameters: subjectName, classGrade' });
-      return;
+app.post(
+  '/api/v1/question-bank/categories',
+  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  async (req: Request, res: Response) => {
+    try {
+      const { name, description, subjectReferenceId } = req.body ?? {};
+      if (!name || typeof name !== 'string') {
+        res.status(400).json({ success: false, error: 'Category name is required', code: 'VALIDATION_FAILED' });
+        return;
+      }
+      const category = await getInstanceQuestionBankService().createCategory(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req),
+        { name, description, subjectReferenceId }
+      );
+      res.status(201).json({ success: true, category });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to create question category');
     }
+  }
+);
 
-    const systemPrompt = `You are an expert Nigerian Educational Research and Development Council (NERDC) science practical examiner and WAEC/NECO Chief Practical Item Writer.
-Generate rigorous practical and alternative-to-practical science assessment items (Chemistry, Physics, Biology, Agricultural Science) strictly aligned with Nigerian curriculum standards.
-Each question must include:
-1. stem: Detailed laboratory or field practical prompt including experimental setup description, procedure instructions, or observation requirements.
-2. correctAnswer: Concise expected analytical results, calculation values, or identification keys.
-3. explanation: Scientific principles governing the experiment and expected phenomena.
-4. marks: Integer mark allocation (typically 10 marks).
-5. difficulty: 'Easy' | 'Medium' | 'Hard'.
-6. cognitiveDemand: 'Knowledge' | 'Comprehension' | 'Application' | 'Analysis' | 'Synthesis' | 'Evaluation'.
-7. markingRubric: Array of step breakdown items, each having stepDescription and marksAwarded.`;
+app.get(
+  '/api/v1/question-bank',
+  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankRead),
+  async (req: Request, res: Response) => {
+    try {
+      const { subjectId, subjectReferenceId, classGrade, questionType, reviewStatus, difficulty, categoryId } = req.query;
+      const questions = await getInstanceQuestionBankService().listQuestions(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req),
+        {
+          subjectReferenceId: (subjectReferenceId || subjectId) as string,
+          classGradeName: classGrade as string,
+          questionType: questionType as string,
+          reviewStatus: reviewStatus as string,
+          difficulty: difficulty as string,
+          categoryId: categoryId as string
+        }
+      );
+      res.json({ success: true, total: questions.length, questions });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to load instance question bank');
+    }
+  }
+);
 
-    const userPrompt = `Generate ${count || 2} practical assessment questions for:
-- Subject: ${subjectName}
-- Class: ${classGrade}
-- Topic: ${topic || 'Laboratory Practical & Alternative to Practical'}`;
+app.post(
+  '/api/v1/question-bank',
+  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  async (req: Request, res: Response) => {
+    try {
+      const payload = req.body ?? {};
+      const subjectReferenceId = payload.subjectReferenceId || payload.subjectId;
+      if (!payload.stem || !subjectReferenceId) {
+        res.status(400).json({ success: false, error: 'Missing required question parameters: stem, subjectId' });
+        return;
+      }
+      const saved = await getInstanceQuestionBankService().createQuestion(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req),
+        {
+          id: payload.id,
+          categoryId: payload.categoryId,
+          subjectReferenceId,
+          classGradeName: payload.classGrade || payload.classGradeName || 'JSS 1',
+          curriculumVersionId: payload.curriculumVersionId || 'NERDC-9YEAR-BASIC-2024',
+          topicReferenceId: payload.topicId || payload.topicReferenceId || 'general',
+          learningObjectiveIds: payload.learningObjectiveIds || [],
+          questionType: payload.questionType || 'objective',
+          stem: payload.stem,
+          options: payload.options,
+          correctAnswer: payload.correctAnswer || 'A',
+          explanation: payload.explanation || '',
+          markingRubric: payload.markingRubric,
+          marks: payload.marks || 2,
+          difficulty: payload.difficulty || 'Medium',
+          cognitiveDemand: payload.cognitiveDemand || 'Application',
+          sourceType: payload.sourceType || 'teacher_authored',
+          sourceReference: payload.sourceReference,
+          creationMethod: payload.creationMethod || 'manual',
+          reviewStatus: payload.reviewStatus || 'pending_review',
+          metadata: payload.metadata
+        }
+      );
+      res.status(201).json({ success: true, question: saved });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to save question');
+    }
+  }
+);
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.7-flash',
-      contents: userPrompt,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            questions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  stem: { type: Type.STRING },
-                  correctAnswer: { type: Type.STRING },
-                  explanation: { type: Type.STRING },
-                  marks: { type: Type.INTEGER },
-                  difficulty: { type: Type.STRING },
-                  cognitiveDemand: { type: Type.STRING },
-                  markingRubric: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        stepDescription: { type: Type.STRING },
-                        marksAwarded: { type: Type.NUMBER },
-                      },
-                      required: ['stepDescription', 'marksAwarded'],
-                    },
+app.post(
+  '/api/v1/question-bank/items/:id/review',
+  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankReview),
+  async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { reviewStatus } = req.body ?? {};
+      const tenant = (req as any).trustedTenantContext;
+      const updated = await getInstanceQuestionBankService().reviewQuestion(
+        tenant,
+        resolveApplicationInstanceId(req),
+        id,
+        reviewStatus
+      );
+      TamperEvidentAuditService.logPlatformAction({
+        actor: tenant.email || tenant.userId || 'school_curator',
+        actorRole: tenant.role,
+        tenantId: tenant.tenantId,
+        action: reviewStatus === 'approved' ? 'question_item_approved' : reviewStatus === 'rejected' ? 'question_item_rejected' : 'question_item_reviewed',
+        target: `question:${id}`,
+        result: 'SUCCESS',
+        outcome: 'SUCCESS',
+        resourceType: 'instance_question_item',
+        resourceId: id,
+        details: `School Question ${id} updated to status '${reviewStatus}'`,
+        ipAddress: req.ip || '127.0.0.1'
+      });
+      res.json({ success: true, question: updated });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to review question item');
+    }
+  }
+);
+
+app.delete(
+  '/api/v1/question-bank/items/:id',
+  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  async (req: Request, res: Response) => {
+    try {
+      const deleted = await getInstanceQuestionBankService().deleteQuestion(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req),
+        req.params.id
+      );
+      if (!deleted) {
+        res.status(404).json({ success: false, error: 'Question not found' });
+        return;
+      }
+      res.json({ success: true, deleted: true });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to delete question item');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/question-bank/seed-past-questions',
+  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  async (req: Request, res: Response) => {
+    try {
+      const list = await getInstanceQuestionBankService().seedStarterPastQuestions(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req)
+      );
+      res.json({ success: true, total: list.length, questions: list });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to seed instance past questions');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/question-bank/seed-theory-questions',
+  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  async (req: Request, res: Response) => {
+    try {
+      const list = await getInstanceQuestionBankService().seedStarterTheoryQuestions(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req)
+      );
+      res.json({ success: true, total: list.length, questions: list });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to seed instance theory questions');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/question-bank/seed-practical-questions',
+  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  async (req: Request, res: Response) => {
+    try {
+      const list = await getInstanceQuestionBankService().seedStarterPracticalQuestions(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req)
+      );
+      res.json({ success: true, total: list.length, questions: list });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to seed instance practical questions');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/question-bank/generate-practical',
+  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  async (req: Request, res: Response) => {
+    try {
+      const { subjectName, subjectId, classGrade, topic, count } = req.body ?? {};
+      if (!subjectName || !classGrade) {
+        res.status(400).json({ error: 'Missing required parameters: subjectName, classGrade' });
+        return;
+      }
+      const response = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: `Generate ${count || 2} practical assessment questions for Subject: ${subjectName}, Class: ${classGrade}, Topic: ${topic || 'Laboratory Practical'}`,
+        config: {
+          systemInstruction: 'You are an expert science practical examiner. Return JSON with questions having stem, correctAnswer, explanation, marks, difficulty, cognitiveDemand, markingRubric.',
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              questions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    stem: { type: Type.STRING },
+                    correctAnswer: { type: Type.STRING },
+                    explanation: { type: Type.STRING },
+                    marks: { type: Type.INTEGER },
+                    difficulty: { type: Type.STRING },
+                    cognitiveDemand: { type: Type.STRING },
+                    markingRubric: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          stepDescription: { type: Type.STRING },
+                          marksAwarded: { type: Type.NUMBER }
+                        },
+                        required: ['stepDescription', 'marksAwarded']
+                      }
+                    }
                   },
-                },
-                required: ['stem', 'correctAnswer', 'explanation', 'marks', 'difficulty', 'cognitiveDemand', 'markingRubric'],
-              },
+                  required: ['stem', 'correctAnswer', 'explanation', 'marks', 'difficulty', 'cognitiveDemand', 'markingRubric']
+                }
+              }
             },
-          },
-          required: ['questions'],
-        },
-      },
-    });
-
-    const parsed = JSON.parse(response.text || '{}');
-    const createdItems: any[] = [];
-
-    if (parsed.questions && Array.isArray(parsed.questions)) {
-      for (const item of parsed.questions) {
-        const saved = textbookDb.saveQuestion({
-          id: `QB-AI-PRAC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          subjectId: 'sub-science',
-          classGrade: classGrade as any,
-          curriculumVersionId: 'NERDC-2024',
-          topicId: topic || 'practical-general',
-          learningObjectiveIds: ['obj-ai-prac-gen'],
+            required: ['questions']
+          }
+        }
+      });
+      const parsed = JSON.parse(response.text || '{}');
+      const createdItems = [];
+      const qbService = getInstanceQuestionBankService();
+      const tenant = (req as any).trustedTenantContext;
+      const instanceId = resolveApplicationInstanceId(req);
+      for (const item of parsed.questions || []) {
+        const saved = await qbService.createQuestion(tenant, instanceId, {
+          subjectReferenceId: subjectId || subjectName,
+          classGradeName: classGrade,
+          topicReferenceId: topic || 'practical-general',
           questionType: 'practical',
           stem: item.stem,
           correctAnswer: item.correctAnswer || 'See model answer',
           explanation: item.explanation || '',
           markingRubric: item.markingRubric || [],
           marks: item.marks || 10,
-          difficulty: (item.difficulty as any) || 'Medium',
-          cognitiveDemand: (item.cognitiveDemand as any) || 'Analysis',
+          difficulty: item.difficulty || 'Medium',
+          cognitiveDemand: item.cognitiveDemand || 'Analysis',
           sourceType: 'ai_practice',
-          sourceReference: 'Curriculum Server AI Practical Generator (Gemini 3.7 Flash)',
-          version: 1,
+          sourceReference: 'Instance Question Bank AI Generator',
           creationMethod: 'ai_assisted',
-          reviewStatus: 'pending_review',
-          exposureCount: 0,
-          createdAt: new Date().toISOString()
+          reviewStatus: 'pending_review'
         });
         createdItems.push(saved);
       }
+      res.json({ success: true, count: createdItems.length, questions: createdItems });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to generate practical questions');
     }
-
-    res.json({ success: true, count: createdItems.length, questions: createdItems });
-  } catch (error: any) {
-    console.error('Error generating practical questions:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate practical questions' });
   }
-});
+);
 
-app.post('/api/v1/question-bank/generate-theory', async (req: Request, res: Response) => {
-  try {
-    const { subjectName, classGrade, topic, count, questionType } = req.body;
-    if (!subjectName || !classGrade) {
-      res.status(400).json({ error: 'Missing required parameters: subjectName, classGrade' });
-      return;
-    }
-
-    const systemPrompt = `You are an expert Nigerian Educational Research and Development Council (NERDC) item writer and Chief WAEC/NECO Examiner.
-Generate rigorous theory and structured-response assessment questions strictly aligned with Nigerian curriculum standards.
-Each question must include:
-1. stem: Comprehensive question prompt with multi-part structure (e.g. (a), (b)) where appropriate.
-2. correctAnswer: Concise model answer or expected key solution.
-3. explanation: Detailed pedagogical explanation.
-4. markingRubric: Array of step breakdown steps, each having stepDescription and marksAwarded (totaling 5-10 marks).
-5. difficulty: 'Easy' | 'Medium' | 'Hard'.
-6. cognitiveDemand: 'Knowledge' | 'Comprehension' | 'Application' | 'Analysis' | 'Synthesis' | 'Evaluation'.
-7. marks: Integer mark allocation.`;
-
-    const userPrompt = `Generate ${count || 2} ${questionType || 'theory'} questions for:
-- Subject: ${subjectName}
-- Class: ${classGrade}
-- Topic: ${topic || 'Core NERDC Curriculum Topics'}`;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.7-flash',
-      contents: userPrompt,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            questions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  stem: { type: Type.STRING },
-                  correctAnswer: { type: Type.STRING },
-                  explanation: { type: Type.STRING },
-                  marks: { type: Type.INTEGER },
-                  difficulty: { type: Type.STRING },
-                  cognitiveDemand: { type: Type.STRING },
-                  markingRubric: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        stepDescription: { type: Type.STRING },
-                        marksAwarded: { type: Type.NUMBER },
-                      },
-                      required: ['stepDescription', 'marksAwarded'],
-                    },
+app.post(
+  '/api/v1/question-bank/generate-theory',
+  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  async (req: Request, res: Response) => {
+    try {
+      const { subjectName, subjectId, classGrade, topic, count, questionType } = req.body ?? {};
+      if (!subjectName || !classGrade) {
+        res.status(400).json({ error: 'Missing required parameters: subjectName, classGrade' });
+        return;
+      }
+      const response = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: `Generate ${count || 2} ${questionType || 'theory'} questions for Subject: ${subjectName}, Class: ${classGrade}, Topic: ${topic || 'Core Curriculum'}`,
+        config: {
+          systemInstruction: 'You are an expert Chief Examiner. Return JSON questions array with stem, correctAnswer, explanation, marks, difficulty, cognitiveDemand, markingRubric.',
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              questions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    stem: { type: Type.STRING },
+                    correctAnswer: { type: Type.STRING },
+                    explanation: { type: Type.STRING },
+                    marks: { type: Type.INTEGER },
+                    difficulty: { type: Type.STRING },
+                    cognitiveDemand: { type: Type.STRING },
+                    markingRubric: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          stepDescription: { type: Type.STRING },
+                          marksAwarded: { type: Type.NUMBER }
+                        },
+                        required: ['stepDescription', 'marksAwarded']
+                      }
+                    }
                   },
-                },
-                required: ['stem', 'correctAnswer', 'explanation', 'marks', 'difficulty', 'cognitiveDemand', 'markingRubric'],
-              },
+                  required: ['stem', 'correctAnswer', 'explanation', 'marks', 'difficulty', 'cognitiveDemand', 'markingRubric']
+                }
+              }
             },
-          },
-          required: ['questions'],
-        },
-      },
-    });
-
-    const parsed = JSON.parse(response.text || '{}');
-    const createdItems: any[] = [];
-
-    if (parsed.questions && Array.isArray(parsed.questions)) {
-      for (const item of parsed.questions) {
-        const saved = textbookDb.saveQuestion({
-          id: `QB-AI-THEORY-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          subjectId: 'sub-general',
-          classGrade: classGrade as any,
-          curriculumVersionId: 'NERDC-2024',
-          topicId: topic || 'general',
-          learningObjectiveIds: ['obj-ai-theory-gen'],
-          questionType: (questionType as any) || 'theory',
+            required: ['questions']
+          }
+        }
+      });
+      const parsed = JSON.parse(response.text || '{}');
+      const createdItems = [];
+      const qbService = getInstanceQuestionBankService();
+      const tenant = (req as any).trustedTenantContext;
+      const instanceId = resolveApplicationInstanceId(req);
+      for (const item of parsed.questions || []) {
+        const saved = await qbService.createQuestion(tenant, instanceId, {
+          subjectReferenceId: subjectId || subjectName,
+          classGradeName: classGrade,
+          topicReferenceId: topic || 'general',
+          questionType: questionType || 'theory',
           stem: item.stem,
           correctAnswer: item.correctAnswer || 'See model answer',
           explanation: item.explanation || '',
           markingRubric: item.markingRubric || [],
           marks: item.marks || 8,
-          difficulty: (item.difficulty as any) || 'Medium',
-          cognitiveDemand: (item.cognitiveDemand as any) || 'Application',
+          difficulty: item.difficulty || 'Medium',
+          cognitiveDemand: item.cognitiveDemand || 'Application',
           sourceType: 'ai_practice',
-          sourceReference: 'Curriculum Server AI Theory Generator (Gemini 3.7 Flash)',
-          version: 1,
+          sourceReference: 'Instance Question Bank AI Generator',
           creationMethod: 'ai_assisted',
-          reviewStatus: 'pending_review',
-          exposureCount: 0,
-          createdAt: new Date().toISOString()
+          reviewStatus: 'pending_review'
         });
         createdItems.push(saved);
       }
+      res.json({ success: true, count: createdItems.length, questions: createdItems });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to generate theory questions');
     }
-
-    res.json({ success: true, count: createdItems.length, questions: createdItems });
-  } catch (error: any) {
-    console.error('Error generating theory questions:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate theory questions' });
   }
-});
+);
 
-app.post('/api/v1/question-bank/items/:id/review', (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { reviewStatus, reviewerId } = req.body;
-    const updated = textbookDb.updateQuestionReviewStatus(id, reviewStatus, reviewerId);
-    if (!updated) {
-      res.status(404).json({ error: 'Question not found' });
-      return;
-    }
-
-    TamperEvidentAuditService.logPlatformAction({
-      actor: reviewerId || 'academic_curator',
-      actorRole: 'curator',
-      tenantId: 'platform_control_plane',
-      action: reviewStatus === 'approved' ? 'question_item_approved' : reviewStatus === 'rejected' ? 'question_item_rejected' : 'question_item_reviewed',
-      target: `question:${id}`,
-      result: 'SUCCESS',
-      outcome: 'SUCCESS',
-      resourceType: 'question_item',
-      resourceId: id,
-      details: `Question ${id} updated to status '${reviewStatus}' by ${reviewerId || 'curator'}`,
-      ipAddress: req.ip || '127.0.0.1'
-    });
-
-    res.json({ success: true, question: updated });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to update question status' });
-  }
-});
-
-app.post('/api/v1/question-bank/generate-objective', async (req: Request, res: Response) => {
-  try {
-    const { subjectName, classGrade, topic, count } = req.body;
-    if (!subjectName || !classGrade) {
-      res.status(400).json({ error: 'Missing required parameters: subjectName, classGrade' });
-      return;
-    }
-
-    const systemPrompt = `You are an expert NERDC curriculum item writer and senior WAEC/NECO chief examiner.
-Generate multiple-choice objective questions strictly aligned with Nigerian educational standards.
-Each question must include a clear stem, 4 options (A, B, C, D), correct option key, detailed pedagogical explanation, Bloom's cognitive level, and difficulty rating.`;
-
-    const userPrompt = `Generate ${count || 3} objective questions for:
-- Subject: ${subjectName}
-- Class: ${classGrade}
-- Topic: ${topic || 'General NERDC Curriculum Core Topics'}`;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.7-flash',
-      contents: userPrompt,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            questions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  stem: { type: Type.STRING },
-                  options: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        key: { type: Type.STRING },
-                        text: { type: Type.STRING },
-                      },
-                      required: ['key', 'text'],
+app.post(
+  '/api/v1/question-bank/generate-objective',
+  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  async (req: Request, res: Response) => {
+    try {
+      const { subjectName, subjectId, classGrade, topic, count } = req.body ?? {};
+      if (!subjectName || !classGrade) {
+        res.status(400).json({ error: 'Missing required parameters: subjectName, classGrade' });
+        return;
+      }
+      const response = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: `Generate ${count || 3} objective multiple-choice questions for Subject: ${subjectName}, Class: ${classGrade}, Topic: ${topic || 'General Core Topics'}`,
+        config: {
+          systemInstruction: 'Return JSON questions array with stem, options (A-D), correctAnswer, explanation, difficulty, cognitiveDemand.',
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              questions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    stem: { type: Type.STRING },
+                    options: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: { key: { type: Type.STRING }, text: { type: Type.STRING } },
+                        required: ['key', 'text']
+                      }
                     },
+                    correctAnswer: { type: Type.STRING },
+                    explanation: { type: Type.STRING },
+                    difficulty: { type: Type.STRING },
+                    cognitiveDemand: { type: Type.STRING }
                   },
-                  correctAnswer: { type: Type.STRING },
-                  explanation: { type: Type.STRING },
-                  difficulty: { type: Type.STRING },
-                  cognitiveDemand: { type: Type.STRING },
-                },
-                required: ['stem', 'options', 'correctAnswer', 'explanation', 'difficulty', 'cognitiveDemand'],
-              },
+                  required: ['stem', 'options', 'correctAnswer', 'explanation', 'difficulty', 'cognitiveDemand']
+                }
+              }
             },
-          },
-          required: ['questions'],
-        },
-      },
-    });
-
-    const parsed = JSON.parse(response.text || '{}');
-    const createdItems: any[] = [];
-
-    if (parsed.questions && Array.isArray(parsed.questions)) {
-      for (const item of parsed.questions) {
-        const saved = textbookDb.saveQuestion({
-          id: `QB-AI-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          subjectId: 'sub-general',
-          classGrade: classGrade as any,
-          curriculumVersionId: 'NERDC-2024',
-          topicId: topic || 'general',
-          learningObjectiveIds: ['obj-ai-gen'],
+            required: ['questions']
+          }
+        }
+      });
+      const parsed = JSON.parse(response.text || '{}');
+      const createdItems = [];
+      const qbService = getInstanceQuestionBankService();
+      const tenant = (req as any).trustedTenantContext;
+      const instanceId = resolveApplicationInstanceId(req);
+      for (const item of parsed.questions || []) {
+        const saved = await qbService.createQuestion(tenant, instanceId, {
+          subjectReferenceId: subjectId || subjectName,
+          classGradeName: classGrade,
+          topicReferenceId: topic || 'general',
           questionType: 'objective',
           stem: item.stem,
           options: item.options,
           correctAnswer: item.correctAnswer || 'A',
           explanation: item.explanation || '',
           marks: 2,
-          difficulty: (item.difficulty as any) || 'Medium',
-          cognitiveDemand: (item.cognitiveDemand as any) || 'Application',
+          difficulty: item.difficulty || 'Medium',
+          cognitiveDemand: item.cognitiveDemand || 'Application',
           sourceType: 'ai_practice',
-          sourceReference: 'Curriculum Server AI Practice Generator (Gemini 3.7 Flash)',
-          version: 1,
+          sourceReference: 'Instance Question Bank AI Generator',
           creationMethod: 'ai_assisted',
-          reviewStatus: 'pending_review',
-          exposureCount: 0,
-          createdAt: new Date().toISOString()
+          reviewStatus: 'pending_review'
         });
         createdItems.push(saved);
       }
+      res.json({ success: true, count: createdItems.length, questions: createdItems });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to generate objective questions');
     }
-
-    res.json({ success: true, count: createdItems.length, questions: createdItems });
-  } catch (error: any) {
-    console.error('Error generating objective questions:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate objective questions' });
   }
-});
+);
 
-// Phase 4: Textbook Generation Engine API endpoints
-app.post('/api/v1/textbooks/generate-outline', async (req: Request, res: Response) => {
-  try {
-    const { subjectIdOrCode, classGrade, authorName } = req.body;
-    if (!subjectIdOrCode || !classGrade) {
-      res.status(400).json({ error: 'Missing required parameters: subjectIdOrCode, classGrade' });
-      return;
+app.get(
+  '/api/v1/assessment-blueprints',
+  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsRead),
+  async (req: Request, res: Response) => {
+    try {
+      const blueprints = await getInstanceQuestionBankService().listBlueprints(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req)
+      );
+      res.json({ success: true, blueprints });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to load assessment blueprints');
     }
-    const textbook = await textbookGenerationEngine.generateTextbookOutline(subjectIdOrCode, classGrade, authorName);
-    res.json({ success: true, textbook });
-  } catch (error: any) {
-    console.error('Error generating textbook outline:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate textbook outline' });
   }
-});
+);
 
-app.post('/api/v1/textbooks/:id/chapters/:chapterId/generate', async (req: Request, res: Response) => {
-  try {
-    const { id, chapterId } = req.params;
-    const chapter = await textbookGenerationEngine.generateChapterContent(id, chapterId);
-    res.json({ success: true, chapter });
-  } catch (error: any) {
-    console.error('Error generating chapter content:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate chapter content' });
+app.post(
+  '/api/v1/assessment-blueprints',
+  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsManage),
+  async (req: Request, res: Response) => {
+    try {
+      const payload = req.body ?? {};
+      const blueprint = await getInstanceQuestionBankService().createBlueprint(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req),
+        {
+          title: payload.title,
+          subjectReferenceId: payload.subjectReferenceId || payload.subjectId,
+          classGradeName: payload.classGradeName || payload.classGrade,
+          term: payload.term || 'Term 1',
+          curriculumVersionId: payload.curriculumVersionId || 'NERDC-9YEAR-BASIC-2024',
+          assessmentType: payload.assessmentType || 'exam',
+          questionFormatsCount: payload.questionFormatsCount || {},
+          totalMarks: Number(payload.totalMarks || 100),
+          difficultyMix: payload.difficultyMix || {},
+          timeAllowanceMinutes: payload.timeAllowanceMinutes,
+          allowVerifiedPastQuestions: payload.allowVerifiedPastQuestions,
+          allowAiPracticeQuestions: payload.allowAiPracticeQuestions,
+          completedTopicsOnly: payload.completedTopicsOnly,
+          selectedTopicIds: payload.selectedTopicIds
+        }
+      );
+      res.status(201).json({ success: true, blueprint });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to create assessment blueprint');
+    }
   }
-});
+);
+
+app.get(
+  '/api/v1/assessments/exams',
+  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsRead),
+  async (req: Request, res: Response) => {
+    try {
+      const exams = await getInstanceQuestionBankService().listExamConfigurations(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req)
+      );
+      res.json({ success: true, exams });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to list exam configurations');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/assessments/exams',
+  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsManage),
+  async (req: Request, res: Response) => {
+    try {
+      const payload = req.body ?? {};
+      const exam = await getInstanceQuestionBankService().createExamConfiguration(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req),
+        payload
+      );
+      res.status(201).json({ success: true, exam });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to create exam configuration');
+    }
+  }
+);
+
+app.get(
+  '/api/v1/assessments/records',
+  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsRead),
+  async (req: Request, res: Response) => {
+    try {
+      const records = await getInstanceQuestionBankService().listAssessmentRecords(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req),
+        req.query.examConfigurationId as string | undefined
+      );
+      res.json({ success: true, records });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to list assessment records');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/assessments/records',
+  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsManage),
+  async (req: Request, res: Response) => {
+    try {
+      const record = await getInstanceQuestionBankService().recordAssessmentSubmission(
+        (req as any).trustedTenantContext,
+        resolveApplicationInstanceId(req),
+        req.body ?? {}
+      );
+      res.status(201).json({ success: true, record });
+    } catch (err) {
+      handleInstanceQuestionBankError(req, res, err, 'Failed to persist assessment record');
+    }
+  }
+);
 
 // -------------------------------------------------------------
 // PHASE 3 — VERSIONED CONTROL PLANE & SCHOOL FLOW API ENDPOINTS
@@ -3830,7 +4026,7 @@ app.post('/api/v1/schools/activation', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/v1/schools/auth/login', async (req: Request, res: Response) => {
+app.post('/api/v1/schools/auth/login', authLoginRateLimiter, async (req: Request, res: Response) => {
   const tenantId = typeof req.body?.tenantId === 'string' ? req.body.tenantId : '';
   const email = typeof req.body?.email === 'string' ? normalizeEmail(req.body.email) : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
@@ -3884,6 +4080,8 @@ app.get('/api/v1/application-templates', requireProvisioningPlatformAdmin, (_req
     timestamp: new Date().toISOString()
   });
 });
+
+app.use('/api/v1/shared', sharedServiceRateLimiter);
 
 const sharedServiceApiPaths: Record<CentralSharedServiceId, string> = {
   central_curriculum: '/api/v1/shared/curriculum',
@@ -3943,6 +4141,709 @@ for (const serviceId of Object.keys(sharedServiceApiPaths) as CentralSharedServi
     }
   );
 }
+
+// Tenant Write Protection: School tenants CANNOT modify central authoritative curriculum or textbooks
+const rejectTenantCentralModification = (serviceName: 'curriculum' | 'textbooks') => [
+  authorizationMiddleware.activeMembership,
+  (req: Request, res: Response) => {
+    const principal = (req as any).trustedTenantContext;
+    TamperEvidentAuditService.logPlatformAction({
+      actor: principal?.email || principal?.userId || 'unknown_tenant_actor',
+      actorRole: principal?.role || 'unknown',
+      tenantId: principal?.tenantId || 'unknown',
+      action: 'UNAUTHORIZED_CENTRAL_CONTENT_MODIFICATION',
+      target: `/api/v1/shared/${serviceName}${req.path}`,
+      result: 'BLOCKED',
+      outcome: 'BLOCKED',
+      resourceType: serviceName === 'curriculum' ? 'central_curriculum' : 'central_textbook',
+      details: `Tenant attempted disallowed ${req.method} on central authoritative ${serviceName} API`,
+      ipAddress: req.ip || '127.0.0.1'
+    });
+    res.status(403).json({
+      success: false,
+      error: `School applications cannot modify central authoritative ${serviceName} content.`,
+      code: 'AUTHORITATIVE_CONTENT_READ_ONLY',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  }
+];
+
+app.all('/api/v1/shared/curriculum*', (req: Request, res: Response, next: express.NextFunction) => {
+  if (req.method !== 'GET' && !(req.method === 'POST' && req.path === '/api/v1/shared/curriculum/authorization')) {
+    const handlers = rejectTenantCentralModification('curriculum');
+    handlers[0](req, res, () => (handlers[1] as express.RequestHandler)(req, res, next));
+    return;
+  }
+  next();
+});
+
+app.all('/api/v1/shared/textbooks*', (req: Request, res: Response, next: express.NextFunction) => {
+  if (req.method !== 'GET' && !(req.method === 'POST' && req.path === '/api/v1/shared/textbooks/authorization')) {
+    const handlers = rejectTenantCentralModification('textbooks');
+    handlers[0](req, res, () => (handlers[1] as express.RequestHandler)(req, res, next));
+    return;
+  }
+  next();
+});
+
+// -------------------------------------------------------------
+// STAGE 2: CENTRAL CURRICULUM RETRIEVAL API (/api/v1/shared/curriculum/*)
+// -------------------------------------------------------------
+const parsePositiveInt = (val: unknown): number | undefined => {
+  if (typeof val !== 'string' || !val.trim()) return undefined;
+  const n = Number(val);
+  return Number.isInteger(n) && n >= 1 ? n : undefined;
+};
+
+app.get(
+  '/api/v1/shared/curriculum/countries',
+  requireSharedServiceAccess('central_curriculum', 'consume', 'curriculum.retrieve'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await getCentralCurriculumService().retrieval.listCountries((req as any).trustedTenantContext, {
+        search: req.query.search as string | undefined,
+        page: parsePositiveInt(req.query.page),
+        limit: parsePositiveInt(req.query.limit)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central curriculum DB unavailable', code: 'CURRICULUM_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/curriculum/authorities',
+  requireSharedServiceAccess('central_curriculum', 'consume', 'curriculum.retrieve'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await getCentralCurriculumService().retrieval.listAuthorities((req as any).trustedTenantContext, {
+        countryId: req.query.countryId as string | undefined,
+        search: req.query.search as string | undefined,
+        page: parsePositiveInt(req.query.page),
+        limit: parsePositiveInt(req.query.limit)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central curriculum DB unavailable', code: 'CURRICULUM_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/curriculum/frameworks',
+  requireSharedServiceAccess('central_curriculum', 'consume', 'curriculum.frameworks.list'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await getCentralCurriculumService().retrieval.listFrameworks((req as any).trustedTenantContext, {
+        countryId: req.query.countryId as string | undefined,
+        authorityId: req.query.authorityId as string | undefined,
+        status: req.query.status as string | undefined,
+        search: req.query.search as string | undefined,
+        page: parsePositiveInt(req.query.page),
+        limit: parsePositiveInt(req.query.limit)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central curriculum DB unavailable', code: 'CURRICULUM_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/curriculum/grades',
+  requireSharedServiceAccess('central_curriculum', 'consume', 'curriculum.retrieve'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await getCentralCurriculumService().retrieval.listGrades((req as any).trustedTenantContext, {
+        frameworkId: req.query.frameworkId as string | undefined,
+        levelCode: req.query.levelCode as string | undefined,
+        page: parsePositiveInt(req.query.page),
+        limit: parsePositiveInt(req.query.limit)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central curriculum DB unavailable', code: 'CURRICULUM_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/curriculum/versions',
+  requireSharedServiceAccess('central_curriculum', 'consume', 'curriculum.versions.list'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await getCentralCurriculumService().retrieval.listVersions((req as any).trustedTenantContext, {
+        frameworkId: req.query.frameworkId as string | undefined,
+        status: req.query.status as string | undefined,
+        includeChangeHistory: req.query.includeHistory === 'true',
+        page: parsePositiveInt(req.query.page),
+        limit: parsePositiveInt(req.query.limit)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central curriculum DB unavailable', code: 'CURRICULUM_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/curriculum/subjects',
+  requireSharedServiceAccess('central_curriculum', 'consume', 'curriculum.subjects.list'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await getCentralCurriculumService().retrieval.listSubjects((req as any).trustedTenantContext, {
+        countryId: req.query.countryId as string | undefined,
+        frameworkId: req.query.frameworkId as string | undefined,
+        versionId: req.query.versionId as string | undefined,
+        levelCode: req.query.levelCode as string | undefined,
+        gradeName: req.query.gradeName as string | undefined,
+        classificationCode: req.query.classificationCode as string | undefined,
+        compulsoryOnly: req.query.compulsoryOnly === 'true',
+        search: req.query.search as string | undefined,
+        page: parsePositiveInt(req.query.page),
+        limit: parsePositiveInt(req.query.limit)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central curriculum DB unavailable', code: 'CURRICULUM_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/curriculum/subjects/:id',
+  requireSharedServiceAccess('central_curriculum', 'consume', 'curriculum.retrieve'),
+  async (req: Request, res: Response) => {
+    try {
+      const subject = await getCentralCurriculumService().retrieval.getSubjectDetail((req as any).trustedTenantContext, req.params.id, {
+        versionId: req.query.versionId as string | undefined,
+        classGrade: req.query.classGrade as string | undefined
+      });
+      if (!subject) {
+        res.status(404).json({ success: false, error: 'Curriculum subject not found', code: 'SUBJECT_NOT_FOUND' });
+        return;
+      }
+      res.json({ success: true, data: subject, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central curriculum DB unavailable', code: 'CURRICULUM_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/curriculum/topics',
+  requireSharedServiceAccess('central_curriculum', 'consume', 'curriculum.topics.list'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await getCentralCurriculumService().retrieval.listTopics((req as any).trustedTenantContext, {
+        frameworkId: req.query.frameworkId as string | undefined,
+        versionId: req.query.versionId as string | undefined,
+        subjectId: req.query.subjectId as string | undefined,
+        gradeName: req.query.gradeName as string | undefined,
+        term: req.query.term as string | undefined,
+        search: req.query.search as string | undefined,
+        page: parsePositiveInt(req.query.page),
+        limit: parsePositiveInt(req.query.limit)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central curriculum DB unavailable', code: 'CURRICULUM_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/curriculum/objectives',
+  requireSharedServiceAccess('central_curriculum', 'consume', 'curriculum.objectives.list'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await getCentralCurriculumService().retrieval.listObjectives((req as any).trustedTenantContext, {
+        versionId: req.query.versionId as string | undefined,
+        subjectId: req.query.subjectId as string | undefined,
+        topicId: req.query.topicId as string | undefined,
+        gradeName: req.query.gradeName as string | undefined,
+        search: req.query.search as string | undefined,
+        page: parsePositiveInt(req.query.page),
+        limit: parsePositiveInt(req.query.limit)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central curriculum DB unavailable', code: 'CURRICULUM_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/curriculum/competencies',
+  requireSharedServiceAccess('central_curriculum', 'consume', 'curriculum.retrieve'),
+  async (req: Request, res: Response) => {
+    try {
+      const rawType = req.query.competencyType as string | undefined;
+      const allowedTypes = ['competency', 'skill', 'learning_outcome', 'assessment_objective'] as const;
+      const competencyType = rawType && (allowedTypes as readonly string[]).includes(rawType)
+        ? (rawType as typeof allowedTypes[number])
+        : undefined;
+      const data = await getCentralCurriculumService().retrieval.listCompetencies((req as any).trustedTenantContext, {
+        versionId: req.query.versionId as string | undefined,
+        subjectId: req.query.subjectId as string | undefined,
+        topicId: req.query.topicId as string | undefined,
+        competencyType,
+        page: parsePositiveInt(req.query.page),
+        limit: parsePositiveInt(req.query.limit)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central curriculum DB unavailable', code: 'CURRICULUM_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/curriculum/source-documents',
+  requireSharedServiceAccess('central_curriculum', 'consume', 'curriculum.retrieve'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await getCentralCurriculumService().retrieval.listSourceDocuments((req as any).trustedTenantContext, {
+        frameworkId: req.query.frameworkId as string | undefined,
+        versionId: req.query.versionId as string | undefined,
+        page: parsePositiveInt(req.query.page),
+        limit: parsePositiveInt(req.query.limit)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central curriculum DB unavailable', code: 'CURRICULUM_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/curriculum/coverage',
+  requireSharedServiceAccess('central_curriculum', 'consume', 'curriculum.coverage.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await getCentralCurriculumService().coverageValidation.getCoverage((req as any).trustedTenantContext, {
+        frameworkId: req.query.frameworkId as string | undefined,
+        versionId: req.query.versionId as string | undefined,
+        subjectId: req.query.subjectId as string | undefined,
+        page: parsePositiveInt(req.query.page),
+        limit: parsePositiveInt(req.query.limit)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central curriculum DB unavailable', code: 'CURRICULUM_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+// -------------------------------------------------------------
+// STAGE 2: CENTRAL TEXTBOOK RETRIEVAL API (/api/v1/shared/textbooks/*)
+// Published-only visibility for school tenants.
+// -------------------------------------------------------------
+app.get(
+  '/api/v1/shared/textbooks',
+  requireSharedServiceAccess('central_textbooks', 'consume', 'textbooks.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await getCentralTextbookService().listTextbooks((req as any).trustedTenantContext, {
+        frameworkId: req.query.frameworkId as string | undefined,
+        curriculumVersionId: req.query.curriculumVersionId as string | undefined,
+        subjectId: req.query.subjectId as string | undefined,
+        classGrade: req.query.classGrade as string | undefined,
+        search: req.query.search as string | undefined,
+        page: parsePositiveInt(req.query.page),
+        limit: parsePositiveInt(req.query.limit)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central textbook DB unavailable', code: 'TEXTBOOK_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/textbooks/:id',
+  requireSharedServiceAccess('central_textbooks', 'consume', 'textbooks.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const book = await getCentralTextbookService().getTextbook((req as any).trustedTenantContext, req.params.id);
+      if (!book) {
+        res.status(404).json({ success: false, error: 'Published textbook not found', code: 'TEXTBOOK_NOT_FOUND' });
+        return;
+      }
+      res.json({ success: true, data: book, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central textbook DB unavailable', code: 'TEXTBOOK_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/textbooks/:id/coverage',
+  requireSharedServiceAccess('central_textbooks', 'consume', 'textbooks.coverage.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const manifest = await getCentralTextbookService().getCoverageManifest((req as any).trustedTenantContext, req.params.id);
+      if (!manifest) {
+        res.status(404).json({ success: false, error: 'Coverage manifest not found for published textbook', code: 'COVERAGE_NOT_FOUND' });
+        return;
+      }
+      res.json({ success: true, data: manifest, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central textbook DB unavailable', code: 'TEXTBOOK_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/textbooks/:id/versions',
+  requireSharedServiceAccess('central_textbooks', 'consume', 'textbooks.versions.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const versions = await getCentralTextbookService().listVersions((req as any).trustedTenantContext, req.params.id);
+      res.json({ success: true, data: versions, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central textbook DB unavailable', code: 'TEXTBOOK_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/textbooks/:id/chapters/:chapterId',
+  requireSharedServiceAccess('central_textbooks', 'consume', 'textbooks.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const book = await getCentralTextbookService().getTextbook((req as any).trustedTenantContext, req.params.id);
+      if (!book) {
+        res.status(404).json({ success: false, error: 'Published textbook not found', code: 'TEXTBOOK_NOT_FOUND' });
+        return;
+      }
+      const chapter = book.chapters.find(c => c.id === req.params.chapterId);
+      if (!chapter) {
+        res.status(404).json({ success: false, error: 'Textbook chapter not found', code: 'CHAPTER_NOT_FOUND' });
+        return;
+      }
+      res.json({ success: true, data: chapter, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ success: false, error: err?.message || 'Central textbook DB unavailable', code: 'TEXTBOOK_SERVICE_UNAVAILABLE' });
+    }
+  }
+);
+
+app.get(
+  '/api/v1/shared/textbooks/:id/media/:assetId',
+  requireSharedServiceAccess('central_textbooks', 'consume', 'textbooks.media.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const { asset, buffer } = await getCentralTextbookService().readEntitledMedia(
+        (req as any).trustedTenantContext,
+        req.params.id,
+        req.params.assetId
+      );
+      res.setHeader('Content-Type', asset.mimeType);
+      res.setHeader('Content-Length', String(buffer.length));
+      res.setHeader('X-Content-Checksum-Sha256', asset.checksumSha256);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.send(buffer);
+    } catch (err: any) {
+      const status = err instanceof CentralTextbookError && err.code === 'NOT_FOUND' ? 404 : 503;
+      res.status(status).json({
+        success: false,
+        error: err?.message || 'Media asset unavailable',
+        code: status === 404 ? 'MEDIA_NOT_FOUND' : 'TEXTBOOK_MEDIA_UNAVAILABLE'
+      });
+    }
+  }
+);
+
+// -------------------------------------------------------------
+// STAGE 2: CENTRAL EDITORIAL & PLATFORM ADMINISTRATION APIS
+// -------------------------------------------------------------
+app.post('/api/v1/platform/shared/curriculum/migrate-nerdc', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const report = await getCentralCurriculumService().importNerdcDataset(
+      (req as any).trustedTenantContext
+    );
+    res.status(200).json({ success: true, data: report, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    res.status(503).json({ success: false, error: err?.message || 'Migration failed', code: 'CURRICULUM_MIGRATION_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/curriculum/frameworks', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const result = await getCentralCurriculumService().registerFrameworkHierarchy((req as any).trustedTenantContext, req.body);
+    res.status(201).json({ success: true, data: result, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err?.message || 'Failed to register framework', code: 'VALIDATION_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/curriculum/versions', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const version = await getCentralCurriculumService().createVersion((req as any).trustedTenantContext, req.body);
+    res.status(201).json({ success: true, data: version, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err?.message || 'Failed to create curriculum version', code: 'VALIDATION_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/curriculum/versions/:id/submit-review', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const version = await getCentralCurriculumService().submitVersionForReview((req as any).trustedTenantContext, req.params.id, req.body?.notes);
+    res.json({ success: true, data: version, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralCurriculumError && err.code === 'NOT_FOUND' ? 404 : 400;
+    res.status(status).json({ success: false, error: err?.message || 'Submit review failed', code: err?.code || 'REVIEW_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/curriculum/versions/:id/approve', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const version = await getCentralCurriculumService().approveVersion((req as any).trustedTenantContext, req.params.id, req.body?.notes);
+    res.json({ success: true, data: version, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralCurriculumError && err.code === 'NOT_FOUND' ? 404 : 400;
+    res.status(status).json({ success: false, error: err?.message || 'Approval failed', code: err?.code || 'APPROVAL_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/curriculum/versions/:id/publish', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const version = await getCentralCurriculumService().publishVersion((req as any).trustedTenantContext, req.params.id);
+    res.json({ success: true, data: version, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralCurriculumError && err.code === 'NOT_FOUND' ? 404 : 400;
+    res.status(status).json({ success: false, error: err?.message || 'Publish failed', code: err?.code || 'PUBLISH_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/curriculum/versions/:id/supersede', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const version = await getCentralCurriculumService().supersedeVersion(
+      (req as any).trustedTenantContext,
+      req.params.id,
+      req.body?.supersededByVersionId,
+      req.body?.notes
+    );
+    res.json({ success: true, data: version, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralCurriculumError && err.code === 'NOT_FOUND' ? 404 : 400;
+    res.status(status).json({ success: false, error: err?.message || 'Supersession failed', code: err?.code || 'SUPERSESSION_FAILED' });
+  }
+});
+
+app.get('/api/v1/platform/shared/textbooks', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const data = await getCentralTextbookService().listTextbooks((req as any).trustedTenantContext, {
+      frameworkId: req.query.frameworkId as string | undefined,
+      subjectId: req.query.subjectId as string | undefined,
+      classGrade: req.query.classGrade as string | undefined,
+      publicationStatus: req.query.status as any,
+      page: parsePositiveInt(req.query.page),
+      limit: parsePositiveInt(req.query.limit)
+    });
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    res.status(503).json({ success: false, error: err?.message || 'Central textbook DB unavailable', code: 'TEXTBOOK_SERVICE_UNAVAILABLE' });
+  }
+});
+
+app.get('/api/v1/platform/shared/textbooks/generation-jobs', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const jobs = await getCentralTextbookService().listGenerationJobs((req as any).trustedTenantContext, {
+      status: req.query.status as any,
+      textbookId: req.query.textbookId as string | undefined
+    });
+    res.json({ success: true, data: jobs, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    res.status(503).json({ success: false, error: err?.message || 'Failed to list generation jobs', code: 'TEXTBOOK_SERVICE_UNAVAILABLE' });
+  }
+});
+
+app.post('/api/v1/platform/shared/textbooks/generation-jobs/recover', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const recovered = await getCentralTextbookService().generation.recoverInterruptedJobs((req as any).trustedTenantContext);
+    res.json({ success: true, data: recovered, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    res.status(503).json({ success: false, error: err?.message || 'Job recovery failed', code: 'RECOVERY_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/textbooks/generation-jobs/:id/retry', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const retried = await getCentralTextbookService().generation.retryJob((req as any).trustedTenantContext, req.params.id);
+    res.json({ success: true, data: retried, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralTextbookError && err.code === 'NOT_FOUND' ? 404 : 400;
+    res.status(status).json({ success: false, error: err?.message || 'Retry failed', code: err?.code || 'RETRY_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/textbooks/generate-outline', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const { subjectIdOrCode, classGrade, curriculumVersionId, authorName, publisherName, academicYear, idempotencyKey } = req.body ?? {};
+    if (!subjectIdOrCode || !classGrade) {
+      res.status(400).json({ success: false, error: 'subjectIdOrCode and classGrade are required', code: 'VALIDATION_FAILED' });
+      return;
+    }
+    const result = await getCentralTextbookService().generation.generateTextbookOutline(
+      (req as any).trustedTenantContext,
+      { subjectIdOrCode, classGrade, curriculumVersionId, authorName, publisherName, academicYear, idempotencyKey }
+    );
+    res.status(201).json({ success: true, data: result, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralTextbookError && err.code === 'VALIDATION_ERROR' ? 400 : 500;
+    res.status(status).json({ success: false, error: err?.message || 'Outline generation failed', code: err?.code || 'GENERATION_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/textbooks/generate-full', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const { subjectIdOrCode, classGrade, curriculumVersionId, authorName, publisherName, academicYear, idempotencyKey } = req.body ?? {};
+    if (!subjectIdOrCode || !classGrade) {
+      res.status(400).json({ success: false, error: 'subjectIdOrCode and classGrade are required', code: 'VALIDATION_FAILED' });
+      return;
+    }
+    const result = await getCentralTextbookService().generation.generateFullTextbook(
+      (req as any).trustedTenantContext,
+      { subjectIdOrCode, classGrade, curriculumVersionId, authorName, publisherName, academicYear, idempotencyKey }
+    );
+    res.status(201).json({ success: true, data: result, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralTextbookError && err.code === 'VALIDATION_ERROR' ? 400 : 500;
+    res.status(status).json({ success: false, error: err?.message || 'Full textbook generation failed', code: err?.code || 'GENERATION_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/textbooks/:id/chapters/:chapterId/generate', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const result = await getCentralTextbookService().generation.generateChapterContent(
+      (req as any).trustedTenantContext,
+      { textbookId: req.params.id, chapterId: req.params.chapterId, idempotencyKey: req.body?.idempotencyKey }
+    );
+    res.json({ success: true, data: result, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralTextbookError && err.code === 'NOT_FOUND' ? 404 : 400;
+    res.status(status).json({ success: false, error: err?.message || 'Chapter generation failed', code: err?.code || 'GENERATION_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/textbooks/:id/validate', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const report = await getCentralTextbookService().editorial.validateTextbook(
+      (req as any).trustedTenantContext,
+      req.params.id
+    );
+    res.json({ success: true, data: report, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralTextbookError && err.code === 'NOT_FOUND' ? 404 : 400;
+    res.status(status).json({ success: false, error: err?.message || 'Textbook validation failed', code: err?.code || 'VALIDATION_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/textbooks/:id/submit-review', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const book = await getCentralTextbookService().editorial.submitForReview(
+      (req as any).trustedTenantContext,
+      req.params.id,
+      req.body?.notes
+    );
+    res.json({ success: true, data: book, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralTextbookError && err.code === 'NOT_FOUND' ? 404 : 400;
+    res.status(status).json({ success: false, error: err?.message || 'Submit review failed', code: err?.code || 'REVIEW_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/textbooks/:id/approve', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const book = await getCentralTextbookService().editorial.approveTextbook(
+      (req as any).trustedTenantContext,
+      req.params.id,
+      req.body?.notes
+    );
+    res.json({ success: true, data: book, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralTextbookError && err.code === 'NOT_FOUND' ? 404 : 400;
+    res.status(status).json({ success: false, error: err?.message || 'Approval failed', code: err?.code || 'APPROVAL_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/textbooks/:id/reject', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const book = await getCentralTextbookService().editorial.rejectTextbook(
+      (req as any).trustedTenantContext,
+      req.params.id,
+      req.body?.reason || 'Editorial revision requested',
+      Boolean(req.body?.requestChangesOnly)
+    );
+    res.json({ success: true, data: book, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralTextbookError && err.code === 'NOT_FOUND' ? 404 : 400;
+    res.status(status).json({ success: false, error: err?.message || 'Rejection failed', code: err?.code || 'REJECTION_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/textbooks/:id/publish', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const book = await getCentralTextbookService().publishing.publishTextbook(
+      (req as any).trustedTenantContext,
+      req.params.id,
+      { versionNumber: req.body?.versionNumber, changelog: req.body?.changelog }
+    );
+    res.json({ success: true, data: book, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralTextbookError && err.code === 'NOT_FOUND'
+      ? 404
+      : err instanceof CentralTextbookError && err.code === 'APPROVAL_REQUIRED'
+        ? 409
+        : 400;
+    res.status(status).json({ success: false, error: err?.message || 'Publish failed', code: err?.code || 'PUBLISH_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/textbooks/:id/supersede', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const book = await getCentralTextbookService().publishing.supersedeTextbook(
+      (req as any).trustedTenantContext,
+      req.params.id,
+      req.body?.supersededByTextbookId,
+      req.body?.reason
+    );
+    res.json({ success: true, data: book, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralTextbookError && err.code === 'NOT_FOUND' ? 404 : 400;
+    res.status(status).json({ success: false, error: err?.message || 'Supersession failed', code: err?.code || 'SUPERSESSION_FAILED' });
+  }
+});
+
+app.post('/api/v1/platform/shared/textbooks/:id/media', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const { assetType, title, altText, mimeType, fileName, base64Content, chapterId, sectionId, accessScope } = req.body ?? {};
+    if (!title || !mimeType || !fileName || !base64Content) {
+      res.status(400).json({ success: false, error: 'title, mimeType, fileName, and base64Content are required', code: 'VALIDATION_FAILED' });
+      return;
+    }
+    const asset = await getCentralTextbookService().uploadPrivateMedia((req as any).trustedTenantContext, {
+      textbookId: req.params.id,
+      chapterId,
+      sectionId,
+      assetType: assetType || 'diagram',
+      title,
+      altText,
+      mimeType,
+      fileName,
+      content: Buffer.from(String(base64Content), 'base64'),
+      accessScope: accessScope || 'entitled_private'
+    });
+    res.status(201).json({ success: true, data: asset, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    const status = err instanceof CentralTextbookError && err.code === 'NOT_FOUND' ? 404 : 400;
+    res.status(status).json({ success: false, error: err?.message || 'Media upload failed', code: err?.code || 'MEDIA_UPLOAD_FAILED' });
+  }
+});
 
 app.post('/api/v1/platform/shared-services/entitlements', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
   const { tenantId, applicationInstanceId, serviceId, expiresAt } = req.body ?? {};
@@ -4076,6 +4977,7 @@ app.get('/api/v1/schools/me', authorizationMiddleware.requirePermission(PERMISSI
         applicationVersion: school.application_version,
         status: school.instance_status,
         enabledFeatures: school.enabled_features,
+        centralServiceDependencies: Array.isArray(school.central_service_dependencies) ? school.central_service_dependencies : [],
         createdAt: school.created_at.toISOString(),
         activatedAt: school.activated_at?.toISOString() || null
       }
@@ -5646,6 +6548,9 @@ app.get('/api/v1/sync/poll', (req: Request, res: Response) => {
 
 // -------------------------------------------------------------
 async function startServer() {
+  if (postgresRuntime.configured) {
+    textbookGenerationEngine.configurePool(postgresRuntime.getPool());
+  }
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { 
