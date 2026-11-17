@@ -12,7 +12,7 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
  
-    "test": "tsx --test server/gcpProvisioningEngine.test.ts server/customerOnboardingManager.test.ts server/storageAndDatabaseManager.test.ts server/schoolProvisioning.test.ts server/tenantTokenService.test.ts src/services/cipaApiClient.test.ts server/db/*.test.ts server/authorization/*.test.ts server/capabilities/*.test.ts server/logistics/*.test.ts",
+    "test": "tsx --test server/gcpProvisioningEngine.test.ts server/customerOnboardingManager.test.ts server/storageAndDatabaseManager.test.ts server/schoolProvisioning.test.ts server/tenantTokenService.test.ts src/services/cipaApiClient.test.ts server/db/*.test.ts server/authorization/*.test.ts server/capabilities/*.test.ts server/logistics/*.test.ts server/sharedServices/*.test.ts",
     "test:db": "tsx --test server/db/*.test.ts",
     "test:postgres": "tsx --test server/db/postgres.integration.test.ts server/db/authorization.integration.test.ts",
     "test:postgres:acceptance": "tsx scripts/postgres-acceptance.ts",

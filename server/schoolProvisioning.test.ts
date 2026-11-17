@@ -103,6 +103,7 @@ test('validated Application Builder configurations preserve the selected configu
     templateVersion: '1',
     enabledCapabilities: ['feat_school_administration_identity'],
     configurationVersion: 4,
+    centralServiceDependencies: ['central_curriculum', 'central_textbooks'],
     deploymentArchitecture: 'shared_database'
   });
   const validated = validateSchoolProvisioningRequest({
@@ -110,6 +111,9 @@ test('validated Application Builder configurations preserve the selected configu
     applicationConfiguration
   });
   assert.equal(validated.applicationConfiguration?.configurationVersion, 4);
+  assert.deepEqual(validated.applicationConfiguration?.centralServiceDependencies, [
+    'central_curriculum', 'central_textbooks'
+  ]);
   assert.equal(hashProvisioningRequest({
     ...request,
     applicationConfiguration: {

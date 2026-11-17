@@ -110,6 +110,7 @@ export interface ApplicationBuilderConfigurationV1 {
   templates: Array<{ templateId: string; templateVersion: string }>;
   enabledCapabilities: string[];
   capabilityDependencies: Record<string, string[]>;
+  centralServiceDependencies?: string[];
   configurationVersion: number;
   deploymentArchitecture: ApplicationDeploymentArchitecture;
   databaseStrategy: {

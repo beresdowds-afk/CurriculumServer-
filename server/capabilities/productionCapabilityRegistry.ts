@@ -259,6 +259,54 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     acceptanceTests: [],
     readinessEvidence: [],
     state: 'not_started'
+  },
+  {
+    id: 'central_shared_service_foundation',
+    description: 'Tenant-authorized discovery, authorization and health foundations for centrally owned shared services.',
+    routes: [
+      { method: 'GET', path: /^\/shared\/(?:curriculum|textbooks|vehicle-tracking)\/(?:discovery|health)$/ },
+      { method: 'POST', path: /^\/shared\/(?:curriculum|textbooks|vehicle-tracking)\/authorization$/ }
+    ],
+    requiredRepositories: ['SharedServiceAuthorizationRepository'],
+    requiredMigrations: [14],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'database_permission_and_application_service_entitlement',
+      permissions: [
+        'shared.curriculum.discover',
+        'shared.curriculum.authorize',
+        'shared.curriculum.health',
+        'shared.textbooks.discover',
+        'shared.textbooks.authorize',
+        'shared.textbooks.health',
+        'shared.vehicle_tracking.discover',
+        'shared.vehicle_tracking.authorize',
+        'shared.vehicle_tracking.health'
+      ]
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: ['server/sharedServices/authorization.test.ts', 'server/sharedServices/registry.test.ts'],
+    readinessEvidence: ['database_entitlement_boundary', 'tenant_authorization_and_audit_path'],
+    state: 'ready'
+  },
+  {
+    id: 'shared_service_platform_administration',
+    description: 'Platform-administrator service entitlement grants and revocations.',
+    routes: [
+      { method: 'POST', path: exact('/platform/shared-services/entitlements') },
+      { method: 'POST', path: /^\/platform\/shared-services\/entitlements\/[0-9a-f-]+\/revoke$/i }
+    ],
+    requiredRepositories: ['SharedServiceAuthorizationRepository'],
+    requiredMigrations: [14],
+    authentication: 'platform_administrator',
+    authorization: {
+      rule: 'platform_administrator_service_entitlement_management',
+      permissions: []
+    },
+    tenantContext: 'control_plane_transaction',
+    acceptanceTests: ['server/sharedServices/authorization.test.ts'],
+    readinessEvidence: ['signed_control_plane_transaction', 'platform_entitlement_audit'],
+    state: 'ready'
   }
 ];
 

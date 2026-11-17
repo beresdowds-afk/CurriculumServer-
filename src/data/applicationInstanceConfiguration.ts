@@ -11,6 +11,7 @@ import {
 } from './applicationRegistryData';
 import { SCHOOL_ADMINISTRATION_IDENTITY_TEMPLATE } from '../../packages/shared-types/src/schoolAdministrationTemplate';
 import type { ApplicationBuilderConfigurationV1 } from '../../packages/shared-types/src/apiContracts';
+import { CENTRAL_SHARED_SERVICE_IDS } from '../../packages/shared-types/src/sharedServiceContracts';
 import {
   LOGISTICS_FEATURE_TEMPLATE,
   validateLogisticsFeatureConfiguration
@@ -89,6 +90,7 @@ export interface ApplicationConfigurationInput {
   templateId: string;
   templateVersion: string;
   enabledCapabilities: string[];
+  centralServiceDependencies?: string[];
   configurationVersion?: number;
   deploymentArchitecture: DeploymentArchitecture;
   featureConfigurations?: ApplicationBuilderConfigurationV1['featureConfigurations'];
@@ -141,6 +143,15 @@ export function validateApplicationInstanceConfiguration(
     for (const id of config.enabledCapabilities) {
       const canonical = canonicalFeatureId(id);
       if (canonical !== id) errors.push(`Use canonical capability '${canonical}' instead of '${id}'.`);
+    }
+    const serviceDependencies = config.centralServiceDependencies;
+    if (serviceDependencies !== undefined) {
+      if (!Array.isArray(serviceDependencies) ||
+          serviceDependencies.some(id => typeof id !== 'string' ||
+            !CENTRAL_SHARED_SERVICE_IDS.includes(id as typeof CENTRAL_SHARED_SERVICE_IDS[number])) ||
+          new Set(serviceDependencies).size !== serviceDependencies.length) {
+        errors.push('Central service dependencies must be unique registered central service identifiers.');
+      }
     }
     errors.push(...validateProvisionableFeatures(config.applicationId ?? '', config.enabledCapabilities).errors);
     // The identity capability must never depend on unrelated modules.
@@ -224,6 +235,7 @@ export function buildApplicationInstanceConfiguration(
     templates: [{ templateId: input.templateId, templateVersion: input.templateVersion }],
     enabledCapabilities: [...input.enabledCapabilities].sort(),
     capabilityDependencies: Object.fromEntries(selected.map(f => [f.featureId, f.dependencies])),
+    centralServiceDependencies: [...new Set(input.centralServiceDependencies ?? [])].sort(),
     configurationVersion: input.configurationVersion ?? 1,
     deploymentArchitecture: input.deploymentArchitecture,
     databaseStrategy: { engine: 'postgresql', isolation: input.deploymentArchitecture },
