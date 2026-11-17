@@ -49,6 +49,7 @@ CREATE TABLE production.logistics_guardian_students (
   starts_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   ends_at TIMESTAMPTZ,
   PRIMARY KEY (tenant_id, id),
+  UNIQUE (tenant_id, school_id, id),
   UNIQUE (tenant_id, school_id, guardian_id, student_id),
   FOREIGN KEY (tenant_id, school_id, guardian_id)
     REFERENCES production.logistics_guardians (tenant_id, school_id, id),
@@ -71,6 +72,7 @@ CREATE TABLE production.logistics_pickup_authorizations (
   additional_approved_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (tenant_id, id),
+  UNIQUE (tenant_id, school_id, id),
   FOREIGN KEY (tenant_id, school_id, guardian_student_id)
     REFERENCES production.logistics_guardian_students (tenant_id, school_id, id),
   CHECK (ends_at > starts_at),
@@ -95,6 +97,7 @@ CREATE TABLE production.logistics_pickup_passes (
   created_by UUID NOT NULL REFERENCES production.users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (tenant_id, id),
+  UNIQUE (tenant_id, school_id, id),
   UNIQUE (tenant_id, school_id, idempotency_key),
   FOREIGN KEY (tenant_id, school_id, pickup_authorization_id)
     REFERENCES production.logistics_pickup_authorizations (tenant_id, school_id, id),
@@ -168,6 +171,7 @@ CREATE TABLE production.logistics_gate_events (
   occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (tenant_id, id),
   UNIQUE (tenant_id, correlation_id),
+  UNIQUE (tenant_id, school_id, id),
   FOREIGN KEY (tenant_id, school_id, gate_location_id)
     REFERENCES production.logistics_gate_locations (tenant_id, school_id, id),
   FOREIGN KEY (tenant_id, school_id, student_id)
@@ -373,6 +377,7 @@ CREATE TABLE production.logistics_dining_meals (
   starts_at TIMESTAMPTZ NOT NULL,
   ends_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (tenant_id, id),
+  UNIQUE (tenant_id, school_id, id),
   UNIQUE (tenant_id, school_id, dining_hall, service_date, service_period),
   FOREIGN KEY (tenant_id, school_id)
     REFERENCES production.schools (tenant_id, id) ON DELETE CASCADE,
@@ -456,6 +461,7 @@ CREATE TABLE production.logistics_route_stops (
   stop_order INTEGER NOT NULL CHECK (stop_order > 0),
   stop_name TEXT NOT NULL,
   PRIMARY KEY (tenant_id, id),
+  UNIQUE (tenant_id, school_id, id),
   UNIQUE (tenant_id, route_id, stop_order),
   FOREIGN KEY (tenant_id, school_id, route_id)
     REFERENCES production.logistics_routes (tenant_id, school_id, id)

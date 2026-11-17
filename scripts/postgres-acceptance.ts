@@ -74,7 +74,8 @@ async function main() {
     'tsx', '--test',
     'server/db/postgres.integration.test.ts',
     'server/db/authorization.integration.test.ts',
-    'server/db/schoolAdministration.integration.test.ts'
+    'server/db/schoolAdministration.integration.test.ts',
+    'server/logistics/logisticsRepository.integration.test.ts'
   ], {
     POSTGRES_ACCEPTANCE_REQUIRED: '1'
   });
