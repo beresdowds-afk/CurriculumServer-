@@ -70,6 +70,14 @@ import { evaluateProductionCapabilityGate } from './server/capabilities/producti
 import { LogisticsError, LogisticsRepository } from './server/logistics/logisticsRepository';
 import { validateLogisticsFeatureConfiguration } from './src/data/logisticsFeatureTemplate';
 import type { AuthorizedPrincipal } from './server/authorization/authorizedPrincipal';
+import type { CentralSharedServiceId, SharedServiceOperation } from './packages/shared-types/src/sharedServiceContracts';
+import {
+  SharedServiceAuthorizationRepository,
+  authenticateSharedServiceCaller,
+  sharedServiceHealth,
+  sharedServiceResponseDecision,
+  sharedServiceDiscovery
+} from './server/sharedServices/authorization';
 import {
   hashInvitationToken,
   hashPassword,
@@ -178,7 +186,7 @@ app.use((req: Request, res: Response, next: express.NextFunction) => {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Correlation-ID, X-Tenant-ID, X-Requested-With');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Correlation-ID, X-Tenant-ID, X-Application-Instance-ID, X-Requested-With');
   }
 
   if (req.method === 'OPTIONS') {
@@ -392,6 +400,81 @@ const authorizationMiddleware = createAuthorizationMiddleware({
   authorization: () => new AuthorizationRepository(postgresRuntime.getPool()),
   internalServiceKey: () => process.env.INTERNAL_SERVICE_KEY
 });
+
+function requireSharedServiceAccess(
+  serviceId: CentralSharedServiceId,
+  operation: SharedServiceOperation
+) {
+  return (req: Request, res: Response, next: express.NextFunction) => {
+    authenticateSharedServiceCaller(req, res, () => {
+      void (async () => {
+        const headerInstanceId = req.headers['x-application-instance-id'];
+        const bodyInstanceId = req.body?.applicationInstanceId;
+        const applicationInstanceId = typeof headerInstanceId === 'string'
+          ? headerInstanceId
+          : typeof bodyInstanceId === 'string' ? bodyInstanceId : '';
+        const mismatchedInstanceIds = typeof headerInstanceId === 'string' &&
+          typeof bodyInstanceId === 'string' && headerInstanceId !== bodyInstanceId;
+        const tenant = (req as any).trustedTenantContext;
+        const principal = (req as any).authorizedPrincipal as AuthorizedPrincipal;
+        try {
+          const decision = await new SharedServiceAuthorizationRepository(postgresRuntime.getPool()).evaluate({
+            tenant,
+            principal,
+            serviceId,
+            operation,
+            applicationInstanceId: mismatchedInstanceIds ? '' : applicationInstanceId,
+            requestedOperation: operation === 'authorize' && typeof req.body?.operation === 'string'
+              ? req.body.operation
+              : undefined,
+            callerKind: req.headers['x-internal-service-key'] === undefined
+              ? 'tenant_user'
+              : 'internal_service',
+            correlationId: (req as any).correlationId
+          });
+          if (operation === 'authorize' && req.body?.contractVersion !== 1) {
+            res.status(400).json({
+              success: false,
+              error: 'Authorization contract version 1 is required.',
+              code: 'INVALID_CONTRACT_VERSION',
+              correlationId: (req as any).correlationId,
+              timestamp: new Date().toISOString()
+            });
+            return;
+          }
+          (req as any).sharedServiceDecision = decision;
+          if (decision.allowed ||
+              (operation === 'authorize' && decision.reason === 'SERVICE_NOT_READY')) {
+            next();
+            return;
+          }
+          const status = decision.reason === 'SERVICE_NOT_READY' ? 503
+            : decision.reason === 'OPERATION_NOT_SUPPORTED' ? 400 : 403;
+          res.status(status).json({
+            success: false,
+            error: status === 503
+              ? 'The shared service is not provisioned.'
+              : 'Shared service access is not authorized.',
+            code: decision.reason || 'SERVICE_ACCESS_DENIED',
+            correlationId: (req as any).correlationId,
+            timestamp: new Date().toISOString()
+          });
+        } catch {
+          res.status(503).json({
+            success: false,
+            error: 'Shared service authorization is temporarily unavailable.',
+            code: 'SHARED_SERVICE_AUTHORIZATION_UNAVAILABLE',
+            correlationId: (req as any).correlationId,
+            timestamp: new Date().toISOString()
+          });
+        }
+      })();
+    }, {
+      tenantUser: authorizationMiddleware.activeMembership,
+      internalService: authorizationMiddleware.internalService
+    });
+  };
+}
 
 function requireStorageSuperAdmin(req: Request, res: Response, next: express.NextFunction) {
   if (!hasSecureControlPlaneSecret()) {
@@ -3800,6 +3883,155 @@ app.get('/api/v1/application-templates', requireProvisioningPlatformAdmin, (_req
     correlationId: (_req as any).correlationId,
     timestamp: new Date().toISOString()
   });
+});
+
+const sharedServiceApiPaths: Record<CentralSharedServiceId, string> = {
+  central_curriculum: '/api/v1/shared/curriculum',
+  central_textbooks: '/api/v1/shared/textbooks',
+  central_vehicle_tracking: '/api/v1/shared/vehicle-tracking'
+};
+
+for (const serviceId of Object.keys(sharedServiceApiPaths) as CentralSharedServiceId[]) {
+  const basePath = sharedServiceApiPaths[serviceId];
+  app.get(
+    `${basePath}/discovery`,
+    requireSharedServiceAccess(serviceId, 'discover'),
+    (req: Request, res: Response) => {
+      const data = sharedServiceDiscovery(serviceId);
+      if (!data) {
+        res.status(404).json({ success: false, error: 'Shared service was not found.', code: 'UNKNOWN_SERVICE' });
+        return;
+      }
+      res.json({
+        success: true,
+        data,
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+    }
+  );
+  app.post(
+    `${basePath}/authorization`,
+    requireSharedServiceAccess(serviceId, 'authorize'),
+    (req: Request, res: Response) => {
+      const operation = typeof req.body?.operation === 'string' ? req.body.operation : '';
+      const decision = (req as any).sharedServiceDecision;
+      res.json({
+        success: true,
+        data: sharedServiceResponseDecision(serviceId, operation, decision),
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+    }
+  );
+  app.get(
+    `${basePath}/health`,
+    requireSharedServiceAccess(serviceId, 'health'),
+    (req: Request, res: Response) => {
+      const health = sharedServiceHealth(serviceId);
+      if (!health) {
+        res.status(404).json({ success: false, error: 'Shared service was not found.', code: 'UNKNOWN_SERVICE' });
+        return;
+      }
+      const ready = health.status === 'healthy';
+      res.status(ready ? 200 : 503).json({
+        success: ready,
+        ...(ready ? { data: health } : { error: 'Shared service is not ready.', code: 'SERVICE_NOT_READY', health }),
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+    }
+  );
+}
+
+app.post('/api/v1/platform/shared-services/entitlements', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  const { tenantId, applicationInstanceId, serviceId, expiresAt } = req.body ?? {};
+  const parsedExpiry = typeof expiresAt === 'string' ? new Date(expiresAt) : undefined;
+  if (typeof tenantId !== 'string' || typeof applicationInstanceId !== 'string' ||
+      typeof serviceId !== 'string' || !parsedExpiry || !Number.isFinite(parsedExpiry.getTime())) {
+    res.status(400).json({
+      success: false,
+      error: 'Tenant, application instance, service and expiry are required.',
+      code: 'VALIDATION_FAILED',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+  try {
+    const entitlement = await new SharedServiceAuthorizationRepository(postgresRuntime.getPool()).grantEntitlement({
+      actor: (req as any).trustedTenantContext,
+      tenantId,
+      applicationInstanceId,
+      serviceId,
+      expiresAt: parsedExpiry
+    });
+    res.status(201).json({
+      success: true,
+      data: { id: entitlement.id, expiresAt: entitlement.expiresAt.toISOString() },
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    const status = message === 'UNKNOWN_SERVICE' ? 404
+      : message === 'INVALID_APPLICATION_INSTANCE' ? 404
+        : message === 'INVALID_ENTITLEMENT_EXPIRY' ? 400 : 503;
+    res.status(status).json({
+      success: false,
+      error: status === 503 ? 'Shared service entitlement management is unavailable.' : message,
+      code: status === 503 ? 'DATABASE_UNAVAILABLE' : message,
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+app.post('/api/v1/platform/shared-services/entitlements/:entitlementId/revoke', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+  if (!reason || reason.length > 500) {
+    res.status(400).json({
+      success: false,
+      error: 'A revocation reason of at most 500 characters is required.',
+      code: 'VALIDATION_FAILED',
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+  try {
+    const revoked = await new SharedServiceAuthorizationRepository(postgresRuntime.getPool()).revokeEntitlement({
+      actor: (req as any).trustedTenantContext,
+      entitlementId: req.params.entitlementId,
+      reason
+    });
+    if (!revoked) {
+      res.status(404).json({
+        success: false,
+        error: 'Active service entitlement was not found.',
+        code: 'ENTITLEMENT_NOT_FOUND',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    res.json({
+      success: true,
+      data: { entitlementId: req.params.entitlementId, status: 'revoked' },
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    const status = message === 'INVALID_ENTITLEMENT_ID' ? 400 : 503;
+    res.status(status).json({
+      success: false,
+      error: status === 503 ? 'Shared service entitlement revocation is unavailable.' : message,
+      code: status === 503 ? 'DATABASE_UNAVAILABLE' : message,
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 app.get('/api/v1/schools/me', authorizationMiddleware.requirePermission(PERMISSIONS.schoolProfileRead), async (req: Request, res: Response) => {

@@ -76,6 +76,21 @@ test('unknown routes remain blocked and do not inherit an unrelated capability',
   assert.equal(evaluateProductionCapabilityGate('POST', '/nonexistent').allowed, false);
 });
 
+test('shared-service foundation routes are capability-gated without exposing unfinished operations', () => {
+  for (const [method, path] of [
+    ['GET', '/shared/curriculum/discovery'],
+    ['POST', '/shared/curriculum/authorization'],
+    ['GET', '/shared/textbooks/health'],
+    ['GET', '/shared/vehicle-tracking/discovery'],
+    ['POST', '/platform/shared-services/entitlements'],
+    ['POST', '/platform/shared-services/entitlements/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/revoke']
+  ]) {
+    assert.equal(evaluateProductionCapabilityGate(method, path).allowed, true, `${method} ${path}`);
+  }
+  assert.equal(evaluateProductionCapabilityGate('GET', '/shared/curriculum/records').allowed, false);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/shared/vehicle-tracking/ingest').allowed, false);
+});
+
 test('a configured or disabled capability cannot bypass the registry', () => {
   for (const state of ['configured', 'degraded', 'disabled'] as const) {
     const unavailable = {

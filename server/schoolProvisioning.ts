@@ -102,6 +102,7 @@ export function validateSchoolProvisioningRequest(value: unknown): SchoolProvisi
       templateId: request.templateId.trim(),
       templateVersion: request.templateVersion.trim(),
       enabledCapabilities: request.enabledFeatures,
+      centralServiceDependencies: request.applicationConfiguration?.centralServiceDependencies,
       deploymentArchitecture: request.architecture,
       featureConfigurations: request.applicationConfiguration?.featureConfigurations
     });
@@ -124,6 +125,7 @@ export function validateSchoolProvisioningRequest(value: unknown): SchoolProvisi
         templateId: request.templateId.trim(),
         templateVersion: request.templateVersion.trim(),
         enabledCapabilities: request.enabledFeatures,
+        centralServiceDependencies: supplied.centralServiceDependencies,
         configurationVersion: supplied.configurationVersion,
         deploymentArchitecture: request.architecture,
         featureConfigurations: supplied.featureConfigurations

@@ -45,6 +45,7 @@ const REQUIRED_TABLES = [
   'production.school_provisioning_requests',
   'production.school_provisioning_operations',
   'production.application_instance_configurations',
+  'production.application_service_entitlements',
   'production.school_commercial_agreements',
   'production.school_configuration_versions',
   'production.application_instance_deployments',
