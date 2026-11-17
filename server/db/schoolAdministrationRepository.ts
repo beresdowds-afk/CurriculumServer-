@@ -1,3 +1,11 @@
+import type {
+  CreateSchoolClassRequest,
+  CreateSchoolStudentRequest,
+  CreateSchoolStaffRequest,
+  UpdateSchoolClassRequest,
+  UpdateSchoolStaffRequest,
+  UpdateSchoolStudentRequest
+} from '../../packages/shared-types/src/apiContracts';
 import type { AuthorizedPrincipal } from '../authorization/authorizedPrincipal';
 import { assertAuthorized } from '../authorization/authorizedPrincipal';
 import { PERMISSIONS } from '../authorization/permissions';
@@ -34,6 +42,8 @@ export interface StudentListOptions {
   classId?: string;
 }
 
+export type UpdateStudentInput = UpdateSchoolStudentRequest;
+
 export interface StudentPage {
   records: StudentRecord[];
   page: number;
@@ -53,6 +63,42 @@ export interface StudentHistoryRecord {
   occurred_at: Date;
 }
 
+export interface StaffRecord {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  user_id: string | null;
+  department_id: string | null;
+  staff_number: string;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  designation: string;
+  status: 'active' | 'suspended' | 'departed';
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface StaffListOptions {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: StaffRecord['status'];
+}
+
+export interface StaffPage {
+  records: StaffRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export type CreateStaffInput = CreateSchoolStaffRequest & {
+  schoolId: string;
+};
+
+export type UpdateStaffInput = UpdateSchoolStaffRequest;
+
 export interface ClassRecord {
   id: string;
   tenant_id: string;
@@ -65,19 +111,29 @@ export interface ClassRecord {
   created_at: Date;
 }
 
-export interface CreateStudentInput {
-  schoolId: string;
-  admissionNumber: string;
-  firstName: string;
-  lastName: string;
+export interface ClassListOptions {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: ClassRecord['status'];
 }
 
-export interface CreateClassInput {
-  schoolId: string;
-  name: string;
-  academicYear: string;
-  section: string;
+export interface ClassPage {
+  records: ClassRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
 }
+
+export type UpdateClassInput = UpdateSchoolClassRequest;
+
+export type CreateStudentInput = CreateSchoolStudentRequest & {
+  schoolId: string;
+};
+
+export type CreateClassInput = CreateSchoolClassRequest & {
+  schoolId: string;
+};
 
 export type StudentTransition =
   | { type: 'admit' }
@@ -93,6 +149,7 @@ export class SchoolAdministrationError extends Error {
       | 'FORBIDDEN'
       | 'STUDENT_NOT_FOUND'
       | 'CLASS_NOT_FOUND'
+      | 'STAFF_NOT_FOUND'
       | 'INVALID_STUDENT_TRANSITION'
       | 'INVALID_INPUT',
     message: string = code
@@ -144,6 +201,273 @@ function normalizeText(value: string, maximumLength: number): string {
 
 export class SchoolAdministrationRepository {
   constructor(private readonly pool: DatabasePool) {}
+
+  async listClasses(
+    actor: AuthorizedPrincipal,
+    schoolId: string,
+    options: ClassListOptions = {}
+  ): Promise<ClassPage> {
+    assertAuthorized(actor, PERMISSIONS.classesRead);
+    const page = Math.max(1, Math.floor(options.page ?? 1));
+    const pageSize = Math.min(100, Math.max(1, Math.floor(options.pageSize ?? 25)));
+    const search = options.search?.trim().slice(0, 100) || null;
+    return withTenantTransaction(this.pool, actor.tenant, async client => {
+      const values: unknown[] = [actor.tenantId, schoolId];
+      const filters = ['class_record.tenant_id = $1', 'class_record.school_id = $2'];
+      if (options.status) {
+        values.push(options.status);
+        filters.push(`class_record.status = $${values.length}`);
+      }
+      if (search) {
+        values.push(`%${search}%`);
+        filters.push(`(class_record.name ILIKE $${values.length}
+          OR class_record.section ILIKE $${values.length}
+          OR class_record.academic_year ILIKE $${values.length})`);
+      }
+      const where = filters.join(' AND ');
+      const total = await client.query<{ total: string }>(
+        `SELECT count(*)::text AS total FROM production.classes class_record WHERE ${where}`,
+        values
+      );
+      const records = await client.query<ClassRecord>(
+        `SELECT id, tenant_id, school_id, name, academic_year, section, status,
+                class_teacher_staff_id, created_at
+         FROM production.classes class_record WHERE ${where}
+         ORDER BY academic_year DESC, lower(name), lower(section), id
+         LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+        [...values, pageSize, (page - 1) * pageSize]
+      );
+      return { records: records.rows, page, pageSize, total: Number(total.rows[0].total) };
+    });
+  }
+
+  async updateStudent(
+    actor: AuthorizedPrincipal,
+    schoolId: string,
+    studentId: string,
+    input: UpdateStudentInput
+  ): Promise<StudentRecord> {
+    assertAuthorized(actor, PERMISSIONS.studentsUpdate);
+    const fields: Array<[keyof UpdateStudentInput, string, string]> = [];
+    if (input.admissionNumber !== undefined) {
+      fields.push(['admissionNumber', 'admission_number', normalizeText(input.admissionNumber, 100)]);
+    }
+    if (input.firstName !== undefined) fields.push(['firstName', 'first_name', normalizeText(input.firstName, 100)]);
+    if (input.lastName !== undefined) fields.push(['lastName', 'last_name', normalizeText(input.lastName, 100)]);
+    if (!fields.length) throw new SchoolAdministrationError('INVALID_INPUT', 'At least one student field is required.');
+
+    return withTenantTransaction(this.pool, actor.tenant, async client => {
+      const assignments = fields.map(([, column], index) => `${column} = $${index + 4}`);
+      const result = await client.query<StudentRecord>(
+        `UPDATE production.students SET ${assignments.join(', ')}, updated_at = now()
+         WHERE tenant_id = $1 AND school_id = $2 AND id = $3
+         RETURNING id, tenant_id, school_id, class_id, admission_number,
+                   first_name, last_name, lifecycle_status, created_at, updated_at`,
+        [actor.tenantId, schoolId, studentId, ...fields.map(([, , value]) => value)]
+      );
+      const student = result.rows[0];
+      if (!student) throw new SchoolAdministrationError('STUDENT_NOT_FOUND');
+      await client.query(
+        `INSERT INTO production.audit_events (tenant_id, actor_subject, action, details)
+         VALUES ($1, $2, 'student_record_updated', $3::jsonb)`,
+        [
+          actor.tenantId,
+          actor.userId,
+          JSON.stringify({
+            schoolId,
+            studentId,
+            changedFields: fields.map(([field]) => field)
+          })
+        ]
+      );
+      return student;
+    });
+  }
+
+  async updateClass(
+    actor: AuthorizedPrincipal,
+    schoolId: string,
+    classId: string,
+    input: UpdateClassInput
+  ): Promise<ClassRecord> {
+    assertAuthorized(actor, PERMISSIONS.classesUpdate);
+    const fields: Array<[keyof UpdateClassInput, string, string]> = [];
+    if (input.name !== undefined) fields.push(['name', 'name', normalizeText(input.name, 100)]);
+    if (input.academicYear !== undefined) {
+      fields.push(['academicYear', 'academic_year', normalizeText(input.academicYear, 20)]);
+    }
+    if (input.section !== undefined) fields.push(['section', 'section', normalizeText(input.section, 80)]);
+    if (!fields.length) throw new SchoolAdministrationError('INVALID_INPUT', 'At least one class field is required.');
+
+    return withTenantTransaction(this.pool, actor.tenant, async client => {
+      const assignments = fields.map(([, column], index) => `${column} = $${index + 4}`);
+      const result = await client.query<ClassRecord>(
+        `UPDATE production.classes SET ${assignments.join(', ')}
+         WHERE tenant_id = $1 AND school_id = $2 AND id = $3
+         RETURNING id, tenant_id, school_id, name, academic_year, section,
+                   status, class_teacher_staff_id, created_at`,
+        [actor.tenantId, schoolId, classId, ...fields.map(([, , value]) => value)]
+      );
+      const classRecord = result.rows[0];
+      if (!classRecord) throw new SchoolAdministrationError('CLASS_NOT_FOUND');
+      await client.query(
+        `INSERT INTO production.audit_events (tenant_id, actor_subject, action, details)
+         VALUES ($1, $2, 'class_record_updated', $3::jsonb)`,
+        [
+          actor.tenantId,
+          actor.userId,
+          JSON.stringify({
+            schoolId,
+            classId,
+            changedFields: fields.map(([field]) => field)
+          })
+        ]
+      );
+      return classRecord;
+    });
+  }
+
+  async listStaff(
+    actor: AuthorizedPrincipal,
+    schoolId: string,
+    options: StaffListOptions = {}
+  ): Promise<StaffPage> {
+    assertAuthorized(actor, PERMISSIONS.staffRead);
+    const page = Math.max(1, Math.floor(options.page ?? 1));
+    const pageSize = Math.min(100, Math.max(1, Math.floor(options.pageSize ?? 25)));
+    const search = options.search?.trim().slice(0, 100) || null;
+    return withTenantTransaction(this.pool, actor.tenant, async client => {
+      const values: unknown[] = [actor.tenantId, schoolId];
+      const filters = ['staff.tenant_id = $1', 'staff.school_id = $2'];
+      if (options.status) {
+        values.push(options.status);
+        filters.push(`staff.status = $${values.length}`);
+      }
+      if (search) {
+        values.push(`%${search}%`);
+        filters.push(`(staff.staff_number ILIKE $${values.length}
+          OR staff.first_name ILIKE $${values.length}
+          OR staff.last_name ILIKE $${values.length}
+          OR staff.email ILIKE $${values.length}
+          OR staff.designation ILIKE $${values.length})`);
+      }
+      const where = filters.join(' AND ');
+      const total = await client.query<{ total: string }>(
+        `SELECT count(*)::text AS total FROM production.staff staff WHERE ${where}`,
+        values
+      );
+      const records = await client.query<StaffRecord>(
+        `SELECT staff.id, staff.tenant_id, staff.school_id, staff.user_id,
+                staff.department_id, staff.staff_number, staff.first_name,
+                staff.last_name, staff.email, staff.designation, staff.status,
+                staff.created_at, staff.updated_at
+         FROM production.staff staff WHERE ${where}
+         ORDER BY lower(staff.last_name), lower(staff.first_name), staff.id
+         LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+        [...values, pageSize, (page - 1) * pageSize]
+      );
+      return { records: records.rows, page, pageSize, total: Number(total.rows[0].total) };
+    });
+  }
+
+  async getStaff(actor: AuthorizedPrincipal, schoolId: string, staffId: string): Promise<StaffRecord> {
+    assertAuthorized(actor, PERMISSIONS.staffRead);
+    return withTenantTransaction(this.pool, actor.tenant, async client => {
+      const result = await client.query<StaffRecord>(
+        `SELECT id, tenant_id, school_id, user_id, department_id, staff_number,
+                first_name, last_name, email, designation, status, created_at, updated_at
+         FROM production.staff
+         WHERE tenant_id = $1 AND school_id = $2 AND id = $3`,
+        [actor.tenantId, schoolId, staffId]
+      );
+      if (!result.rows[0]) throw new SchoolAdministrationError('STAFF_NOT_FOUND');
+      return result.rows[0];
+    });
+  }
+
+  async createStaff(actor: AuthorizedPrincipal, input: CreateStaffInput): Promise<StaffRecord> {
+    assertAuthorized(actor, PERMISSIONS.staffCreate);
+    const staffNumber = normalizeText(input.staffNumber, 64);
+    const firstName = normalizeText(input.firstName, 100);
+    const lastName = normalizeText(input.lastName, 100);
+    const designation = normalizeText(input.designation, 120);
+    const email = input.email?.trim().toLowerCase() || null;
+    if (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+      throw new SchoolAdministrationError('INVALID_INPUT', 'A valid staff email is required.');
+    }
+    return withTenantTransaction(this.pool, actor.tenant, async client => {
+      const result = await client.query<StaffRecord>(
+        `INSERT INTO production.staff
+           (tenant_id, school_id, department_id, staff_number, first_name,
+            last_name, email, designation)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, tenant_id, school_id, user_id, department_id, staff_number,
+                   first_name, last_name, email, designation, status, created_at, updated_at`,
+        [
+          actor.tenantId, input.schoolId, input.departmentId ?? null,
+          staffNumber, firstName, lastName, email, designation
+        ]
+      );
+      const staff = result.rows[0];
+      await this.recordStaffAudit(client, actor, staff, 'staff_record_created', ['created']);
+      return staff;
+    });
+  }
+
+  async updateStaff(
+    actor: AuthorizedPrincipal,
+    schoolId: string,
+    staffId: string,
+    input: UpdateStaffInput
+  ): Promise<StaffRecord> {
+    assertAuthorized(actor, PERMISSIONS.staffUpdate);
+    const fields: Array<[keyof UpdateStaffInput, string, unknown]> = [];
+    if (input.staffNumber !== undefined) fields.push(['staffNumber', 'staff_number', normalizeText(input.staffNumber, 64)]);
+    if (input.firstName !== undefined) fields.push(['firstName', 'first_name', normalizeText(input.firstName, 100)]);
+    if (input.lastName !== undefined) fields.push(['lastName', 'last_name', normalizeText(input.lastName, 100)]);
+    if (input.designation !== undefined) fields.push(['designation', 'designation', normalizeText(input.designation, 120)]);
+    if (input.email !== undefined) {
+      const email = input.email?.trim().toLowerCase() || null;
+      if (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+        throw new SchoolAdministrationError('INVALID_INPUT', 'A valid staff email is required.');
+      }
+      fields.push(['email', 'email', email]);
+    }
+    if (input.departmentId !== undefined) fields.push(['departmentId', 'department_id', input.departmentId]);
+    if (fields.length === 0) throw new SchoolAdministrationError('INVALID_INPUT', 'At least one staff field is required.');
+
+    return withTenantTransaction(this.pool, actor.tenant, async client => {
+      const assignments = fields.map(([, column], index) => `${column} = $${index + 4}`);
+      const result = await client.query<StaffRecord>(
+        `UPDATE production.staff SET ${assignments.join(', ')}, updated_at = now()
+         WHERE tenant_id = $1 AND school_id = $2 AND id = $3
+         RETURNING id, tenant_id, school_id, user_id, department_id, staff_number,
+                   first_name, last_name, email, designation, status, created_at, updated_at`,
+        [actor.tenantId, schoolId, staffId, ...fields.map(([, , value]) => value)]
+      );
+      const staff = result.rows[0];
+      if (!staff) throw new SchoolAdministrationError('STAFF_NOT_FOUND');
+      await this.recordStaffAudit(client, actor, staff, 'staff_record_updated', fields.map(([key]) => key));
+      return staff;
+    });
+  }
+
+  private async recordStaffAudit(
+    client: DatabaseClient,
+    actor: AuthorizedPrincipal,
+    staff: StaffRecord,
+    action: string,
+    changedFields: string[]
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO production.audit_events (tenant_id, actor_subject, action, details)
+       VALUES ($1, $2, $3, $4::jsonb)`,
+      [
+        actor.tenantId, actor.userId, action,
+        JSON.stringify({ schoolId: staff.school_id, staffId: staff.id, changedFields })
+      ]
+    );
+  }
 
   async listStudents(
     actor: AuthorizedPrincipal,
@@ -223,7 +547,7 @@ export class SchoolAdministrationRepository {
     assertAuthorized(actor, PERMISSIONS.classesCreate);
     const name = normalizeText(input.name, 100);
     const academicYear = normalizeText(input.academicYear, 20);
-    const section = normalizeText(input.section, 80);
+    const section = normalizeText(input.section ?? 'General', 80);
     return withTenantTransaction(this.pool, actor.tenant, async client => {
       const result = await client.query<ClassRecord>(
         `INSERT INTO production.classes (tenant_id, school_id, name, academic_year, section)

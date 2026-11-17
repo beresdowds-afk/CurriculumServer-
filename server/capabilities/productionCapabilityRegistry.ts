@@ -43,6 +43,8 @@ export interface CapabilityRegistration {
 const exact = (...paths: string[]) => new RegExp(`^(?:${paths.map(p => p.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('|')})$`);
 const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const uuidPath = (suffix = '') => new RegExp(`^/schools/me/students/${uuid}${suffix}$`, 'i');
+const classUuidPath = () => new RegExp(`^/schools/me/classes/${uuid}$`, 'i');
+const staffUuidPath = () => new RegExp(`^/schools/me/staff/${uuid}$`, 'i');
 const unavailableAdministrationRoute = (resource: string) =>
   new RegExp(`^/schools/me/${resource}(?:/.*)?$`);
 
@@ -118,7 +120,8 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     routes: [
       { method: 'GET', path: exact('/schools/me/students') },
       { method: 'POST', path: exact('/schools/me/students') },
-      { method: 'GET', path: uuidPath() }
+      { method: 'GET', path: uuidPath() },
+      { method: 'PATCH', path: uuidPath() }
     ],
     requiredRepositories: ['SchoolAdministrationRepository'],
     requiredMigrations: [9],
@@ -133,7 +136,9 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     id: 'class_administration',
     description: 'School class creation and student class assignment APIs.',
     routes: [
+      { method: 'GET', path: exact('/schools/me/classes') },
       { method: 'POST', path: exact('/schools/me/classes') },
+      { method: 'PATCH', path: classUuidPath() },
       { method: 'POST', path: uuidPath('/class') }
     ],
     requiredRepositories: ['SchoolAdministrationRepository'],
@@ -147,21 +152,24 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
   },
   {
     id: 'staff_administration',
-    description: 'School staff directory, invitations, and membership lifecycle.',
+    description: 'School staff records and directory.',
     routes: [
-      { method: 'GET', path: unavailableAdministrationRoute('staff') },
-      { method: 'POST', path: unavailableAdministrationRoute('staff') },
-      { method: 'PATCH', path: unavailableAdministrationRoute('staff') },
-      { method: 'DELETE', path: unavailableAdministrationRoute('staff') }
+      { method: 'GET', path: exact('/schools/me/staff') },
+      { method: 'GET', path: staffUuidPath() },
+      { method: 'POST', path: exact('/schools/me/staff') },
+      { method: 'PATCH', path: staffUuidPath() }
     ],
     requiredRepositories: ['SchoolAdministrationRepository', 'AuthorizationRepository'],
     requiredMigrations: [9],
     authentication: 'tenant_user_session',
-    authorization: { rule: 'database_permission', permissions: ['staff.read', 'staff.manage'] },
+    authorization: {
+      rule: 'database_permission',
+      permissions: ['staff.read', 'staff.create', 'staff.update']
+    },
     tenantContext: 'transaction_local_tenant',
-    acceptanceTests: [],
+    acceptanceTests: ['server/db/schoolAdministration.integration.test.ts'],
     readinessEvidence: [],
-    state: 'not_started'
+    state: 'implemented'
   },
   {
     id: 'administrative_permissions',

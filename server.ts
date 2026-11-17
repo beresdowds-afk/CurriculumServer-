@@ -59,6 +59,10 @@ import { PERMISSIONS } from './server/authorization/permissions';
 import {
   SchoolAdministrationError,
   SchoolAdministrationRepository,
+  type UpdateClassInput,
+  type UpdateStudentInput,
+  type CreateStaffInput,
+  type UpdateStaffInput,
   type StudentLifecycleStatus,
   type StudentTransition
 } from './server/db/schoolAdministrationRepository';
@@ -3408,15 +3412,18 @@ app.put('/api/v1/schools/me/config', authorizationMiddleware.requirePermission(P
 
 function schoolAdministrationFailure(req: Request, res: Response, error: unknown): void {
   const databaseCode = (error as { code?: string })?.code;
+  const forbidden = error instanceof Error && error.message === 'FORBIDDEN';
   const code = error instanceof SchoolAdministrationError
     ? error.code
+    : forbidden
+      ? 'FORBIDDEN'
     : databaseCode === '23505'
       ? 'CONFLICT'
       : databaseCode === '23503' || databaseCode === '22P02'
         ? 'VALIDATION_FAILED'
         : 'DATABASE_UNAVAILABLE';
   const status = code === 'FORBIDDEN' ? 403
-    : code === 'STUDENT_NOT_FOUND' || code === 'CLASS_NOT_FOUND' ? 404
+    : code === 'STUDENT_NOT_FOUND' || code === 'CLASS_NOT_FOUND' || code === 'STAFF_NOT_FOUND' ? 404
       : code === 'CONFLICT' || code === 'INVALID_STUDENT_TRANSITION' ? 409
         : code === 'VALIDATION_FAILED' || code === 'INVALID_INPUT' ? 400
           : 503;
@@ -3542,6 +3549,36 @@ app.get('/api/v1/schools/me/students/:studentId', authorizationMiddleware.active
   }
 });
 
+app.patch('/api/v1/schools/me/students/:studentId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const body = req.body as Record<string, unknown> | undefined;
+    const data: UpdateStudentInput = {};
+    for (const field of ['admissionNumber', 'firstName', 'lastName'] as const) {
+      if (body && Object.hasOwn(body, field)) {
+        if (typeof body[field] !== 'string') {
+          res.status(400).json({
+            success: false,
+            error: 'Student update data is invalid.',
+            code: 'VALIDATION_FAILED',
+            correlationId: (req as any).correlationId,
+            timestamp: new Date().toISOString()
+          });
+          return;
+        }
+        data[field] = body[field];
+      }
+    }
+    const result = await getSchoolAdministrationRepository().updateStudent(
+      (req as any).authorizedPrincipal, schoolId, req.params.studentId, data
+    );
+    res.json({ success: true, data: result, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
 app.post('/api/v1/schools/me/students/:studentId/lifecycle', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
@@ -3635,6 +3672,200 @@ app.post('/api/v1/schools/me/classes', authorizationMiddleware.activeMembership,
       }
     );
     res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/classes', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const page = typeof req.query.page === 'string' ? Number(req.query.page) : undefined;
+    const pageSize = typeof req.query.pageSize === 'string' ? Number(req.query.pageSize) : undefined;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    if ((page !== undefined && (!Number.isInteger(page) || page < 1)) ||
+        (pageSize !== undefined && (!Number.isInteger(pageSize) || pageSize < 1)) ||
+        (status !== undefined && !['active', 'archived'].includes(status))) {
+      res.status(400).json({
+        success: false,
+        error: 'Class filters are invalid.',
+        code: 'VALIDATION_FAILED',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    const data = await getSchoolAdministrationRepository().listClasses(
+      (req as any).authorizedPrincipal,
+      schoolId,
+      {
+        page,
+        pageSize,
+        search: typeof req.query.search === 'string' ? req.query.search : undefined,
+        status: status as 'active' | 'archived' | undefined
+      }
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.patch('/api/v1/schools/me/classes/:classId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const body = req.body as Record<string, unknown> | undefined;
+    const data: UpdateClassInput = {};
+    for (const field of ['name', 'academicYear', 'section'] as const) {
+      if (body && Object.hasOwn(body, field)) {
+        if (typeof body[field] !== 'string') {
+          res.status(400).json({
+            success: false,
+            error: 'Class update data is invalid.',
+            code: 'VALIDATION_FAILED',
+            correlationId: (req as any).correlationId,
+            timestamp: new Date().toISOString()
+          });
+          return;
+        }
+        data[field] = body[field];
+      }
+    }
+    const result = await getSchoolAdministrationRepository().updateClass(
+      (req as any).authorizedPrincipal, schoolId, req.params.classId, data
+    );
+    res.json({ success: true, data: result, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/staff', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const page = typeof req.query.page === 'string' ? Number(req.query.page) : undefined;
+    const pageSize = typeof req.query.pageSize === 'string' ? Number(req.query.pageSize) : undefined;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    if ((page !== undefined && (!Number.isInteger(page) || page < 1)) ||
+        (pageSize !== undefined && (!Number.isInteger(pageSize) || pageSize < 1)) ||
+        (status !== undefined && !['active', 'suspended', 'departed'].includes(status))) {
+      res.status(400).json({
+        success: false,
+        error: 'Staff filters are invalid.',
+        code: 'VALIDATION_FAILED',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    const data = await getSchoolAdministrationRepository().listStaff(
+      (req as any).authorizedPrincipal,
+      schoolId,
+      {
+        page,
+        pageSize,
+        search: typeof req.query.search === 'string' ? req.query.search : undefined,
+        status: status as 'active' | 'suspended' | 'departed' | undefined
+      }
+    );
+    res.json({
+      success: true,
+      data,
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/staff', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const body = req.body as Record<string, unknown> | undefined;
+    if (body?.email !== undefined && typeof body.email !== 'string' ||
+        body?.departmentId !== undefined && body.departmentId !== null && typeof body.departmentId !== 'string') {
+      res.status(400).json({
+        success: false,
+        error: 'Staff contact or department data is invalid.',
+        code: 'VALIDATION_FAILED',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    const data = await getSchoolAdministrationRepository().createStaff(
+      (req as any).authorizedPrincipal,
+      {
+        schoolId,
+        staffNumber: typeof body?.staffNumber === 'string' ? body.staffNumber : '',
+        firstName: typeof body?.firstName === 'string' ? body.firstName : '',
+        lastName: typeof body?.lastName === 'string' ? body.lastName : '',
+        designation: typeof body?.designation === 'string' ? body.designation : '',
+        email: typeof body?.email === 'string' ? body.email : null,
+        departmentId: typeof body?.departmentId === 'string' ? body.departmentId : null
+      }
+    );
+    res.status(201).json({
+      success: true,
+      data,
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/staff/:staffId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().getStaff(
+      (req as any).authorizedPrincipal, schoolId, req.params.staffId
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.patch('/api/v1/schools/me/staff/:staffId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const body = req.body as Record<string, unknown> | undefined;
+    const data: UpdateStaffInput = {};
+    for (const [field, valid] of [
+      ['staffNumber', (value: unknown) => typeof value === 'string'],
+      ['firstName', (value: unknown) => typeof value === 'string'],
+      ['lastName', (value: unknown) => typeof value === 'string'],
+      ['email', (value: unknown) => typeof value === 'string' || value === null],
+      ['designation', (value: unknown) => typeof value === 'string'],
+      ['departmentId', (value: unknown) => typeof value === 'string' || value === null]
+    ] as const) {
+      if (body && Object.hasOwn(body, field)) {
+        if (!valid(body[field])) {
+          res.status(400).json({
+            success: false,
+            error: 'Staff update data is invalid.',
+            code: 'VALIDATION_FAILED',
+            correlationId: (req as any).correlationId,
+            timestamp: new Date().toISOString()
+          });
+          return;
+        }
+        Object.assign(data, { [field]: body[field] });
+      }
+    }
+    const result = await getSchoolAdministrationRepository().updateStaff(
+      (req as any).authorizedPrincipal, schoolId, req.params.staffId, data
+    );
+    res.json({ success: true, data: result, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
   } catch (error) {
     schoolAdministrationFailure(req, res, error);
   }

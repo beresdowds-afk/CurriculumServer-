@@ -87,6 +87,16 @@ test('school administration persists student lifecycle and enforces scoped tenan
         )
       );
     }
+    const staffB = await withTenantTransaction(pool, principal(tenantIds[1]), async client => {
+      const result = await client.query<{ id: string }>(
+        `INSERT INTO production.staff
+           (tenant_id, school_id, staff_number, first_name, last_name, designation)
+         VALUES ($1, $2, 'B-STAFF-001', 'Staff', 'TenantB', 'Teacher')
+         RETURNING id`,
+        [tenantIds[1], schoolIds[1]]
+      );
+      return result.rows[0].id;
+    });
 
     const tenantActors = tenantIds.map((tenantId, index) =>
       createAuthorizedPrincipal({
@@ -100,12 +110,60 @@ test('school administration persists student lifecycle and enforces scoped tenan
         }]
       })
     );
+    const staffA = await repository.createStaff(tenantActors[0], {
+      schoolId: schoolIds[0],
+      staffNumber: 'A-STAFF-001',
+      firstName: 'Grace',
+      lastName: 'Staff',
+      email: 'grace.staff@test.invalid',
+      designation: 'Teacher'
+    });
+    assert.equal(staffA.user_id, null, 'creating a staff profile must not create or link an identity');
+    assert.equal((await repository.listStaff(tenantActors[0], schoolIds[0], { search: 'grace' })).total, 1);
+    const updatedStaff = await repository.updateStaff(tenantActors[0], schoolIds[0], staffA.id, {
+      designation: 'Science Teacher'
+    });
+    assert.equal(updatedStaff.designation, 'Science Teacher');
+    await assert.rejects(
+      repository.getStaff(tenantActors[0], schoolIds[1], staffB),
+      (error: unknown) => error instanceof SchoolAdministrationError && error.code === 'STAFF_NOT_FOUND'
+    );
+    const staffReadOnlyActor = createAuthorizedPrincipal({
+      tenant: principal(tenantIds[0]),
+      userId: userIds[0],
+      sessionId: randomUUID(),
+      grants: [{ roleCode: 'teacher', permissions: [PERMISSIONS.staffRead], scopes: [] }]
+    });
+    await assert.rejects(
+      repository.createStaff(staffReadOnlyActor, {
+        schoolId: schoolIds[0],
+        staffNumber: 'A-STAFF-002',
+        firstName: 'Not',
+        lastName: 'Allowed',
+        designation: 'Teacher'
+      }),
+      /FORBIDDEN/
+    );
+    const audit = await withTenantTransaction(pool, principal(tenantIds[0]), client =>
+      client.query<{ details: Record<string, unknown> }>(
+        `SELECT details FROM production.audit_events
+         WHERE tenant_id = $1 AND action = 'staff_record_created'
+        ORDER BY occurred_at DESC LIMIT 1`,
+        [tenantIds[0]]
+      )
+    );
+    assert.deepEqual(audit.rows[0]?.details.changedFields, ['created']);
+    assert.equal(JSON.stringify(audit.rows[0]?.details).includes('grace.staff'), false);
     const studentA = await repository.createStudent(tenantActors[0], {
       schoolId: schoolIds[0],
       admissionNumber: 'A-001',
       firstName: 'Ada',
       lastName: 'Test'
     });
+    const updatedStudent = await repository.updateStudent(tenantActors[0], schoolIds[0], studentA.id, {
+      firstName: 'Ada Updated'
+    });
+    assert.equal(updatedStudent.first_name, 'Ada Updated');
     await assert.rejects(
       repository.createStudent(tenantActors[0], {
         schoolId: schoolIds[0],
@@ -120,16 +178,6 @@ test('school administration persists student lifecycle and enforces scoped tenan
       admissionNumber: 'B-001',
       firstName: 'Tenant',
       lastName: 'B'
-    });
-    const staffB = await withTenantTransaction(pool, principal(tenantIds[1]), async client => {
-      const result = await client.query<{ id: string }>(
-        `INSERT INTO production.staff
-           (tenant_id, school_id, staff_number, first_name, last_name, designation)
-         VALUES ($1, $2, 'B-STAFF-001', 'Staff', 'TenantB', 'Teacher')
-         RETURNING id`,
-        [tenantIds[1], schoolIds[1]]
-      );
-      return result.rows[0].id;
     });
     const forgedTenant = await pool.connect();
     try {
@@ -183,6 +231,15 @@ test('school administration persists student lifecycle and enforces scoped tenan
       academicYear: '2026-2027',
       section: 'B'
     });
+    assert.equal((await repository.listClasses(tenantActors[0], schoolIds[0], { search: 'Grade' })).total, 2);
+    const updatedClass = await repository.updateClass(tenantActors[0], schoolIds[0], secondClass.id, {
+      section: 'C'
+    });
+    assert.equal(updatedClass.section, 'C');
+    await assert.rejects(
+      repository.updateClass(tenantActors[0], schoolIds[0], classIds[1], { name: 'Cross Tenant' }),
+      (error: unknown) => error instanceof SchoolAdministrationError && error.code === 'CLASS_NOT_FOUND'
+    );
     const scopedStudent = await repository.createStudent(tenantActors[0], {
       schoolId: schoolIds[0],
       admissionNumber: 'A-002',
