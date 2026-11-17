@@ -92,33 +92,89 @@ export const CurriculumFlowApp: React.FC = () => {
   const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
   const [isSchemeModalOpen, setIsSchemeModalOpen] = useState(false);
 
-  // Handle URL hash changes
-  useEffect(() => {
-    const handleHash = () => {
-      const hash = window.location.hash.replace('#/', '').replace('#', '');
-      if (hash === 'home' || hash === 'landing' || hash === 'flow_home' || hash === 'about' || !hash) {
-        setViewMode('public_homepage');
-      } else {
-        setViewMode('school_workspace');
-        if (hash === 'command_center' || hash === 'overview') setActiveTab('command_center');
-        else if (hash === 'curriculum_explorer' || hash === 'curriculum') setActiveTab('curriculum_explorer');
-        else if (hash === 'lesson_approval_chain' || hash === 'lessons') setActiveTab('lesson_approval_chain');
-        else if (hash === 'delivery_tracker' || hash === 'delivery') setActiveTab('delivery_tracker');
-        else if (hash === 'question_bank' || hash === 'questions') setActiveTab('question_bank');
-        else if (hash === 'secure_examination' || hash === 'cbt' || hash === 'exams') setActiveTab('secure_examination');
-        else if (hash === 'academic_records' || hash === 'broadsheet') setActiveTab('academic_records');
-        else if (hash === 'student_registers' || hash === 'students') setActiveTab('student_registers');
-        else if (hash === 'biometric_attendance' || hash === 'biometric') setActiveTab('biometric_attendance');
-        else if (hash === 'account_management' || hash === 'bursary') setActiveTab('account_management');
-        else if (hash === 'teacher_dashboard') setActiveTab('teacher_dashboard');
-        else if (hash === 'student_dashboard') setActiveTab('student_dashboard');
-        else if (hash === 'parent_dashboard') setActiveTab('parent_dashboard');
-      }
-    };
-    handleHash();
-    window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
-  }, []);
+const handleHash = () => {
+  const hash = window.location.hash.replace('#/', '').replace('#', '');
+
+  // These hashes belong to the public landing page.
+  const publicLandingAnchors = [
+    'about',
+    'academics',
+    'teaching',
+    'finance',
+    'security',
+    'faq',
+    'portal-login'
+  ];
+
+  if (
+    !hash ||
+    hash === 'home' ||
+    hash === 'landing' ||
+    hash === 'flow_home' ||
+    publicLandingAnchors.includes(hash)
+  ) {
+    setViewMode('public_homepage');
+    return;
+  }
+
+  setViewMode('school_workspace');
+
+  if (hash === 'command_center' || hash === 'overview') {
+    setActiveTab('command_center');
+  } else if (
+    hash === 'curriculum_explorer' ||
+    hash === 'curriculum'
+  ) {
+    setActiveTab('curriculum_explorer');
+  } else if (
+    hash === 'lesson_approval_chain' ||
+    hash === 'lessons'
+  ) {
+    setActiveTab('lesson_approval_chain');
+  } else if (
+    hash === 'delivery_tracker' ||
+    hash === 'delivery'
+  ) {
+    setActiveTab('delivery_tracker');
+  } else if (
+    hash === 'question_bank' ||
+    hash === 'questions'
+  ) {
+    setActiveTab('question_bank');
+  } else if (
+    hash === 'secure_examination' ||
+    hash === 'cbt' ||
+    hash === 'exams'
+  ) {
+    setActiveTab('secure_examination');
+  } else if (
+    hash === 'academic_records' ||
+    hash === 'broadsheet'
+  ) {
+    setActiveTab('academic_records');
+  } else if (
+    hash === 'student_registers' ||
+    hash === 'students'
+  ) {
+    setActiveTab('student_registers');
+  } else if (
+    hash === 'biometric_attendance' ||
+    hash === 'biometric'
+  ) {
+    setActiveTab('biometric_attendance');
+  } else if (
+    hash === 'account_management' ||
+    hash === 'bursary'
+  ) {
+    setActiveTab('account_management');
+  } else if (hash === 'teacher_dashboard') {
+    setActiveTab('teacher_dashboard');
+  } else if (hash === 'student_dashboard') {
+    setActiveTab('student_dashboard');
+  } else if (hash === 'parent_dashboard') {
+    setActiveTab('parent_dashboard');
+  }
+};
 
   const handleSelectTab = (tab: FlowNavTab) => {
     setActiveTab(tab);
