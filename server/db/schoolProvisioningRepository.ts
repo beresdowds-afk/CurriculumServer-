@@ -9,6 +9,9 @@ import type { DatabaseClient, DatabasePool } from './postgres';
 import { inTransaction } from './postgres';
 import {
   withControlPlaneTransaction,
+  setInvitationTenantContext,
+  setInvitationTokenContext,
+  withTenantLoginTransaction,
   withTenantTransaction,
   type VerifiedTenantPrincipal
 } from './tenantContext';
@@ -151,10 +154,7 @@ async function withInvitationTokenTransaction<T>(
   operation: (client: DatabaseClient) => Promise<T>
 ): Promise<T> {
   return inTransaction(pool, async client => {
-    await client.query(
-      "SELECT set_config('app.invitation_token_hash', $1, true)",
-      [tokenHash.toString('hex')]
-    );
+    await setInvitationTokenContext(client, tokenHash);
     return operation(client);
   });
 }
@@ -162,15 +162,13 @@ async function withInvitationTokenTransaction<T>(
 async function withSchoolLoginTransaction<T>(
   pool: DatabasePool,
   tenantId: string,
+  email: string,
   operation: (client: DatabaseClient) => Promise<T>
 ): Promise<T> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantId)) {
     throw new Error('TENANT_NOT_FOUND');
   }
-  return inTransaction(pool, async client => {
-    await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
-    return operation(client);
-  });
+  return withTenantLoginTransaction(pool, tenantId, email, operation);
 }
 
 function mapProvisioningRow(row: ProvisioningRow, idempotentReplay: boolean): PersistedSchoolProvisioning {
@@ -787,7 +785,7 @@ export class SchoolProvisioningRepository {
       );
       const candidate = candidateResult.rows[0];
       if (!candidate) throw new Error('INVITATION_INVALID_OR_EXPIRED');
-      await client.query("SELECT set_config('app.tenant_id', $1, true)", [candidate.tenant_id]);
+      await setInvitationTenantContext(client, candidate.tenant_id, tokenHash);
       const invitationResult = await client.query<InvitationRow>(
         `SELECT id, tenant_id, school_id, administrator_name, administrator_email,
                 expires_at, status AS invitation_status
@@ -879,7 +877,7 @@ export class SchoolProvisioningRepository {
   }
 
   async authenticateAdministrator(tenantId: string, email: string): Promise<SchoolAccount | undefined> {
-    return withSchoolLoginTransaction(this.pool, tenantId, async client => {
+    return withSchoolLoginTransaction(this.pool, tenantId, email, async client => {
       const result = await client.query<AccountRow>(
         `SELECT user_record.id AS user_id, membership.tenant_id, school_org.name AS school_name,
                 user_record.email, user_record.full_name, user_record.password_hash, membership.role

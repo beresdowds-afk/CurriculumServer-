@@ -12,6 +12,10 @@ test('database readiness never reports success when configuration is absent', as
   assert.equal(readiness.database.connectionVerified, false);
   assert.equal(readiness.database.error, 'configuration_missing');
   assert.equal(readiness.provisioning.executionAvailable, false);
+  assert.equal(readiness.capabilities.capabilityImplementation.ready, false);
+  assert.equal(readiness.capabilities.capabilityConfiguration.ready, false);
+  assert.equal(readiness.capabilities.runtimeDependencies.ready, false);
+  assert.equal(readiness.capabilities.applicationReadiness.ready, false);
 });
 
 test('database readiness preserves authentication failures without exposing driver text', async () => {

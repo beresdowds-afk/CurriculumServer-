@@ -43,6 +43,7 @@ jobs:
       - name: Apply migrations to disposable PostgreSQL
         env:
           MIGRATION_DATABASE_URL: postgres://postgres:postgres@localhost:5432/curriculum_platform?sslmode=disable
+          CONTROL_PLANE_SECRET: test-only-control-plane-context-key-32-chars
           NODE_ENV: test
         run: npm run db:migrate
 
@@ -53,6 +54,7 @@ jobs:
             -c "CREATE ROLE curriculum_runtime LOGIN PASSWORD 'runtime-test'; \
                 GRANT USAGE ON SCHEMA public, production, control_plane, curriculum_flow TO curriculum_runtime; \
                 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public, production, control_plane, curriculum_flow TO curriculum_runtime; \
+                REVOKE ALL ON control_plane.authorization_context_keys FROM curriculum_runtime; \
                 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public, production, control_plane, curriculum_flow TO curriculum_runtime;"
 
       - name: Typecheck
@@ -63,6 +65,7 @@ jobs:
           TEST_DATABASE_URL: postgres://curriculum_runtime:runtime-test@localhost:5432/curriculum_platform
           TEST_DATABASE_SSLMODE: disable
           DATABASE_TEST_DISPOSABLE: '1'
+          CONTROL_PLANE_SECRET: test-only-control-plane-context-key-32-chars
         run: npm test
 
       - name: Run mandatory PostgreSQL acceptance tests (no skips permitted)
@@ -72,6 +75,7 @@ jobs:
           TEST_DATABASE_SSLMODE: disable
           DATABASE_TEST_DISPOSABLE: '1'
           POSTGRES_ACCEPTANCE: '1'
+          CONTROL_PLANE_SECRET: test-only-control-plane-context-key-32-chars
         run: npm run test:postgres:acceptance
 
       - name: Build all production applications

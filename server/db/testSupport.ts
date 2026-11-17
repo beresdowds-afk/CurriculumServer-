@@ -3,6 +3,9 @@ import { randomUUID } from 'node:crypto';
 import type { SchoolProvisioningRequest } from '../../packages/shared-types/src/apiContracts';
 import { createVerifiedTenantPrincipal } from './tenantContext';
 
+export const TEST_CONTROL_PLANE_SECRET = 'test-only-control-plane-context-key-32-chars';
+process.env.CONTROL_PLANE_SECRET ||= TEST_CONTROL_PLANE_SECRET;
+
 export const databaseUrl = process.env.TEST_DATABASE_URL;
 export const acceptanceEnabled = process.env.DATABASE_TEST_DISPOSABLE === '1' && Boolean(databaseUrl);
 // Set by `npm run test:postgres:acceptance`; mandatory runs may never skip.

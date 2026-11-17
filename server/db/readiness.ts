@@ -1,13 +1,17 @@
 import type { DatabasePool } from './postgres';
 import { classifyDatabaseError, DatabaseFailure, postgresRuntime } from './postgres';
 import { discoverMigrations, inspectMigrations } from './migrations';
-import { SUPPORTED_APPLICATION_TEMPLATES } from '../../src/data/applicationInstanceConfiguration';
-import { deriveFeatureReadiness, INITIAL_REGISTERED_FEATURES } from '../../src/data/applicationRegistryData';
+import {
+  APPLICATION_TEMPLATE_REGISTRY,
+  SUPPORTED_APPLICATION_TEMPLATES
+} from '../../src/data/applicationInstanceConfiguration';
+import { SCHOOL_ADMINISTRATION_IDENTITY_TEMPLATE } from '../../packages/shared-types/src/schoolAdministrationTemplate';
 import {
   hasConfiguredPlatformAdminAccounts,
   hasInvitationEmailConfiguration,
   hasSecureControlPlaneSecret
 } from '../schoolProvisioning';
+import { PRODUCTION_CAPABILITIES } from '../capabilities/productionCapabilityRegistry';
 
 const REQUIRED_TABLES = [
   'control_plane.customers',
@@ -72,6 +76,10 @@ export interface SchoolAdministrationCapabilities {
   tenantRls: CapabilityReadiness;
   invitationDelivery: CapabilityReadiness;
   applicationTemplates: CapabilityReadiness;
+  capabilityImplementation: CapabilityReadiness;
+  capabilityConfiguration: CapabilityReadiness;
+  runtimeDependencies: CapabilityReadiness;
+  applicationReadiness: CapabilityReadiness;
   provisioning: CapabilityReadiness;
 }
 
@@ -89,6 +97,10 @@ function allUnverified(reason: string): SchoolAdministrationCapabilities {
     tenantRls: unverified(reason),
     invitationDelivery: unverified(reason),
     applicationTemplates: unverified(reason),
+    capabilityImplementation: unverified(reason),
+    capabilityConfiguration: unverified(reason),
+    runtimeDependencies: unverified(reason),
+    applicationReadiness: unverified(reason),
     provisioning: unverified(reason)
   };
 }
@@ -147,6 +159,8 @@ export async function inspectPlatformReadiness(
   let requiredTablesAvailable = false;
   let rlsPoliciesAvailable = false;
   let tenantSecurityAvailable = false;
+  let authorizationContextKeyAvailable = false;
+  let runtimeCanAccessAuthorizationContextKey = true;
   let error: string | undefined;
   let identity = unverified('Not verified.');
   let membership = unverified('Not verified.');
@@ -190,6 +204,22 @@ export async function inspectPlatformReadiness(
       runtimeRole.rows.length === 1 &&
       !runtimeRole.rows[0].superuser &&
       !runtimeRole.rows[0].bypass_rls;
+    const contextKey = await pool.query<{
+      configured: boolean;
+      runtime_can_access: boolean;
+    }>(
+      `SELECT production.authorization_context_key_configured() AS configured,
+              (has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'SELECT')
+               OR has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'INSERT')
+               OR has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'UPDATE')
+               OR has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'DELETE')
+               OR has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'TRUNCATE')
+               OR has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'REFERENCES')
+               OR has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'TRIGGER')
+              ) AS runtime_can_access`
+    );
+    authorizationContextKeyAvailable = contextKey.rows[0]?.configured === true;
+    runtimeCanAccessAuthorizationContextKey = contextKey.rows[0]?.runtime_can_access !== false;
     if (requiredTablesAvailable) {
       const checks = await pool.query<{
         membership_columns: number;
@@ -230,7 +260,9 @@ export async function inspectPlatformReadiness(
       outboxSchema = row.outbox_dead_letter && row.invitation_token_version;
       lifecycleSchema = row.lifecycle_column;
     }
-    const trustedTenantContextAvailable = rlsPoliciesAvailable && hasSecureControlPlaneSecret();
+    const trustedTenantContextAvailable = rlsPoliciesAvailable &&
+      authorizationContextKeyAvailable && !runtimeCanAccessAuthorizationContextKey &&
+      hasSecureControlPlaneSecret();
     tenantSecurityAvailable = trustedTenantContextAvailable;
     if (!migrationsCurrent) error = 'migrations_not_current';
     else if (!requiredTablesAvailable) error = 'required_tables_unavailable';
@@ -242,7 +274,9 @@ export async function inspectPlatformReadiness(
       : classifyDatabaseError(failure);
   }
 
-  const trustedTenantContextAvailable = rlsPoliciesAvailable && hasSecureControlPlaneSecret();
+  const trustedTenantContextAvailable = rlsPoliciesAvailable &&
+    authorizationContextKeyAvailable && !runtimeCanAccessAuthorizationContextKey &&
+    hasSecureControlPlaneSecret();
   const provisioningReady = connectionVerified && migrationsCurrent &&
     requiredTablesAvailable && rlsPoliciesAvailable && trustedTenantContextAvailable &&
     hasConfiguredPlatformAdminAccounts();
@@ -258,11 +292,18 @@ export async function inspectPlatformReadiness(
           ? 'Shared PostgreSQL provisioning is available; invitation delivery remains pending until email configuration is supplied.'
           : 'Shared PostgreSQL school records are available; this workflow does not create cloud infrastructure.';
 
-  const templatesReady = SUPPORTED_APPLICATION_TEMPLATES.length > 0 &&
-    INITIAL_REGISTERED_FEATURES
-      .filter(feature => feature.featureId === 'feat_school_administration_identity')
-      .every(feature => deriveFeatureReadiness(feature).productionReady) &&
-    lifecycleSchema;
+  const schoolAdministrationTemplate = APPLICATION_TEMPLATE_REGISTRY.find(template =>
+    template.templateId === SCHOOL_ADMINISTRATION_IDENTITY_TEMPLATE.templateId
+  );
+  const templatesReady = Boolean(schoolAdministrationTemplate?.status === 'published' &&
+    schoolAdministrationTemplate.provisionable) &&
+    SUPPORTED_APPLICATION_TEMPLATES.length > 0 && lifecycleSchema;
+  const stage2Capabilities = PRODUCTION_CAPABILITIES.filter(capability =>
+    !['platform_liveness', 'curriculum_reference'].includes(capability.id)
+  );
+  const stage2Implemented = stage2Capabilities.length > 0 &&
+    stage2Capabilities.every(capability => capability.state === 'ready');
+  const runtimeDependenciesReady = provisioningReady && invitationDeliveryAvailable;
   const schoolIdentityReady = provisioningReady && identity.ready && membership.ready &&
     authorization.ready && lifecycleSchema;
   const capabilities: SchoolAdministrationCapabilities = {
@@ -276,16 +317,26 @@ export async function inspectPlatformReadiness(
     membership,
     authorization,
     tenantRls: rlsPoliciesAvailable && trustedTenantContextAvailable
-      ? { ready: true, evidence: 'Required tables have forced RLS; runtime role is non-owner, non-superuser, without BYPASSRLS.' }
-      : unverified('Forced RLS, a restricted runtime role, or secure token signing is not verified.'),
+      ? { ready: true, evidence: 'Forced RLS, a restricted runtime role, an unreadable authorization key, and signed database contexts are verified.' }
+      : unverified('Forced RLS, a restricted runtime role, an unreadable authorization key, and signed database contexts are not all verified.'),
     invitationDelivery: outboxSchema && invitationDeliveryAvailable
       ? { ready: true, evidence: 'Outbox schema (dead-letter, token versions) present and email configuration supplied; live provider delivery is not verified.' }
       : unverified(outboxSchema
         ? 'Email delivery configuration is not supplied.'
         : 'Invitation outbox schema is not current.'),
     applicationTemplates: templatesReady
-      ? { ready: true, evidence: 'Supported template catalogue and production-ready identity capability recorded; lifecycle schema present.' }
+      ? { ready: true, evidence: 'The school administration template is published, provisionable, and has lifecycle schema support.' }
       : unverified('Template catalogue, capability readiness, or lifecycle schema is not verified.'),
+    capabilityImplementation: stage2Implemented
+      ? { ready: true, evidence: 'Every registered administration capability is ready.' }
+      : unverified('One or more administration capabilities are not operationally implemented.'),
+    capabilityConfiguration: templatesReady
+      ? { ready: true, evidence: 'The school administration template is published and provisionable.' }
+      : unverified('The school administration template is not yet published and provisionable.'),
+    runtimeDependencies: runtimeDependenciesReady
+      ? { ready: true, evidence: 'Database, migrations, authorization, platform credentials, and invitation delivery are configured.' }
+      : unverified('One or more database, authorization, platform, or invitation-delivery dependencies are unavailable.'),
+    applicationReadiness: unverified('Per-instance application health evidence is not available from platform readiness.'),
     provisioning: schoolIdentityReady
       ? { ready: true, evidence: 'Connection, migrations, RLS, platform credentials, identity, membership and authorization verified.' }
       : unverified('Provisioning prerequisites are not all verified.')

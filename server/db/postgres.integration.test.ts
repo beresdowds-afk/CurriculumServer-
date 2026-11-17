@@ -67,6 +67,24 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
     assert.equal(readiness.database.rlsPoliciesAvailable, true);
     assert.equal(readiness.database.trustedTenantContextAvailable, true);
     assert.equal(readiness.database.tenantSecurityAvailable, true);
+    assert.equal(readiness.capabilities.capabilityImplementation.ready, false);
+    assert.equal(readiness.capabilities.capabilityConfiguration.ready, false);
+    assert.equal(readiness.capabilities.runtimeDependencies.ready, false);
+    assert.equal(readiness.capabilities.applicationReadiness.ready, false);
+    assert.equal((await pool.query<{ can_access: boolean }>(
+      `SELECT
+         has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'SELECT')
+         OR has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'INSERT')
+         OR has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'UPDATE')
+         OR has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'DELETE')
+         OR has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'TRUNCATE')
+         OR has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'REFERENCES')
+         OR has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'TRIGGER')
+         AS can_access`
+    )).rows[0]?.can_access, false, 'the runtime role must have no access to the context signing key');
+    await assert.rejects(pool.query(
+      'SELECT key_value FROM control_plane.authorization_context_keys'
+    ), /permission denied/);
     const role = await pool.query<{ rolbypassrls: boolean }>(
       'SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user'
     );
@@ -105,6 +123,34 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
     const instanceA = await repository.createInstance(tenantAPrincipal, {
       organisationId: organisationA.id, name: 'Tenant A Flow', tenantSlug: tenantA
     });
+
+    const forgedContext = await pool.connect();
+    try {
+      await forgedContext.query('BEGIN');
+      await forgedContext.query(
+        `SELECT set_config('app.tenant_id', $1, true),
+                set_config('app.control_plane_admin', 'true', true)`,
+        [tenantB]
+      );
+      const forgedTenant = await forgedContext.query(
+        'SELECT id FROM control_plane.customers WHERE id = $1',
+        [customerB.id]
+      );
+      const forgedControlPlane = await forgedContext.query(
+        'SELECT production.is_verified_control_plane_context() AS allowed'
+      );
+      assert.equal(forgedTenant.rowCount, 0, 'a forged tenant GUC must not grant cross-tenant access');
+      assert.equal(forgedControlPlane.rows[0]?.allowed, false,
+        'a forged control-plane GUC must not grant privileged access');
+      await assert.rejects(forgedContext.query(
+        `INSERT INTO control_plane.customers (tenant_id, name, email)
+         VALUES ($1, 'Forged Control Plane', $2)`,
+        [tenantB, `forged-${randomUUID()}@test.invalid`]
+      ), /row-level security policy/);
+    } finally {
+      await forgedContext.query('ROLLBACK');
+      forgedContext.release();
+    }
 
     const request = await repository.createProvisioningRequest(tenantAPrincipal, {
       idempotencyKey: `request-${tenantA}`,

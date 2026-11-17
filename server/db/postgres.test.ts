@@ -13,6 +13,8 @@ import {
 } from './postgres';
 import { createVerifiedTenantPrincipal, withTenantTransaction } from './tenantContext';
 
+process.env.CONTROL_PLANE_SECRET ||= 'unit-test-only-context-key-32-characters';
+
 function fakeResult<R extends QueryResultRow>(rows: R[] = []): QueryResult<R> {
   return { rows, command: 'SELECT', rowCount: rows.length, oid: 0, fields: [] };
 }
@@ -161,7 +163,7 @@ test('transactions roll back and always release their connection', async () => {
   assert.equal(pool.released, 1);
 });
 
-test('tenant transactions require verified context and set tenant scope locally', async () => {
+test('tenant transactions require verified context and set a signed scope locally', async () => {
   const pool = new FakePool({});
   const missing = { valid: false };
   assert.throws(() => createVerifiedTenantPrincipal(missing), /verified tenant security context/);
@@ -187,7 +189,9 @@ test('tenant transactions require verified context and set tenant scope locally'
   await withTenantTransaction(pool, principal, async client => {
     await client.query('SELECT 1');
   });
-  assert.deepEqual(pool.queries, ['BEGIN', "SELECT set_config('app.tenant_id', $1, true)", 'SELECT 1', 'COMMIT']);
+  assert.equal(pool.queries[0], 'BEGIN');
+  assert.match(pool.queries[1], /set_config\('app\.authorization_context_signature', \$3, true\)/);
+  assert.deepEqual(pool.queries.slice(2), ['SELECT 1', 'COMMIT']);
   assert.equal(pool.released, 1);
   await assert.rejects(withTenantTransaction(pool, undefined as never, async () => undefined));
 });

@@ -121,6 +121,42 @@ test('school administration persists student lifecycle and enforces scoped tenan
       firstName: 'Tenant',
       lastName: 'B'
     });
+    const staffB = await withTenantTransaction(pool, principal(tenantIds[1]), async client => {
+      const result = await client.query<{ id: string }>(
+        `INSERT INTO production.staff
+           (tenant_id, school_id, staff_number, first_name, last_name, designation)
+         VALUES ($1, $2, 'B-STAFF-001', 'Staff', 'TenantB', 'Teacher')
+         RETURNING id`,
+        [tenantIds[1], schoolIds[1]]
+      );
+      return result.rows[0].id;
+    });
+    const forgedTenant = await pool.connect();
+    try {
+      await forgedTenant.query('BEGIN');
+      await forgedTenant.query(
+        `SELECT set_config('app.tenant_id', $1, true),
+                set_config('app.control_plane_admin', 'true', true)`,
+        [tenantIds[1]]
+      );
+      for (const [table, id] of [
+        ['production.students', studentB.id],
+        ['production.classes', classIds[1]],
+        ['production.staff', staffB]
+      ]) {
+        const result = await forgedTenant.query(
+          `SELECT id FROM ${table} WHERE tenant_id = $1 AND id = $2`,
+          [tenantIds[1], id]
+        );
+        assert.equal(result.rowCount, 0, `forged PostgreSQL context must not read ${table}`);
+      }
+      assert.equal((await forgedTenant.query(
+        'SELECT production.is_verified_control_plane_context() AS allowed'
+      )).rows[0]?.allowed, false);
+    } finally {
+      await forgedTenant.query('ROLLBACK');
+      forgedTenant.release();
+    }
     await repository.transitionStudent(tenantActors[0], schoolIds[0], studentA.id, { type: 'admit' });
     await repository.assignStudentToClass(tenantActors[0], schoolIds[0], studentA.id, classIds[0]);
     await repository.transitionStudent(tenantActors[0], schoolIds[0], studentA.id, { type: 'reinstate', reason: 'invalid' })
