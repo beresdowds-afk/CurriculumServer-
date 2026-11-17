@@ -75,7 +75,8 @@ async function main() {
     'server/db/postgres.integration.test.ts',
     'server/db/authorization.integration.test.ts',
     'server/db/schoolAdministration.integration.test.ts',
-    'server/logistics/logisticsRepository.integration.test.ts'
+    'server/logistics/logisticsRepository.integration.test.ts',
+    'server/logistics/hostelAllocation.integration.test.ts'
   ], {
     POSTGRES_ACCEPTANCE_REQUIRED: '1'
   });
@@ -85,7 +86,7 @@ async function main() {
   const count = (label: string) => Number(
     output.match(new RegExp(`(?:ℹ ${label} |# ${label} )(\\d+)`))?.[1] ?? NaN
   );
-  if (count('tests') !== 3 || count('pass') !== 3 ||
+  if (count('tests') !== 5 || count('pass') !== 5 ||
       count('skipped') !== 0 || count('fail') !== 0) {
     fail('acceptance run was incomplete (tests skipped or missing).');
   }

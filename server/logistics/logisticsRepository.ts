@@ -1781,6 +1781,271 @@ export class LogisticsRepository {
     };
   }
 
+  private async assertCanManageBuilding(
+    client: DatabaseClient,
+    actor: AuthorizedPrincipal,
+    schoolId: string,
+    buildingId: string
+  ): Promise<void> {
+    if (actor.roles.includes('principal') || actor.roles.includes('tenant_admin')) return;
+    const assigned = await client.query(
+      `SELECT 1 FROM production.logistics_hostel_assignments
+       WHERE tenant_id = $1 AND school_id = $2 AND building_id = $3 AND user_id = $4
+         AND revoked_at IS NULL AND starts_at <= now()
+         AND (ends_at IS NULL OR ends_at > now())`,
+      [actor.tenantId, schoolId, buildingId, actor.userId]
+    );
+    if (!assigned.rowCount) throw new LogisticsError('FORBIDDEN', 'You are not assigned to this hostel building.');
+  }
+
+  private async lockBed(client: DatabaseClient, actor: AuthorizedPrincipal, schoolId: string, bedId: string) {
+    const bed = await client.query<{ id: string; room_id: string; building_id: string; status: string }>(
+      `SELECT bed.id, bed.room_id, room.building_id, bed.status
+       FROM production.logistics_hostel_beds bed
+       JOIN production.logistics_hostel_rooms room
+         ON room.tenant_id = bed.tenant_id AND room.school_id = bed.school_id AND room.id = bed.room_id
+       WHERE bed.tenant_id = $1 AND bed.school_id = $2 AND bed.id = $3
+       FOR UPDATE OF bed`,
+      [actor.tenantId, schoolId, bedId]
+    );
+    if (!bed.rows[0]) throw new LogisticsError('NOT_FOUND', 'Hostel bed not found.');
+    if (bed.rows[0].status !== 'available') throw new LogisticsError('CONFLICT', 'The bed is not available.');
+    return bed.rows[0];
+  }
+
+  private async insertAllocation(
+    client: DatabaseClient,
+    actor: AuthorizedPrincipal,
+    schoolId: string,
+    studentId: string,
+    bedId: string
+  ): Promise<string> {
+    try {
+      const result = await client.query<{ id: string }>(
+        `INSERT INTO production.logistics_bed_allocations
+           (tenant_id, school_id, student_id, bed_id, allocated_by, approved_by)
+         VALUES ($1, $2, $3, $4, $5::uuid, $5::uuid) RETURNING id`,
+        [actor.tenantId, schoolId, studentId, bedId, actor.userId]
+      );
+      return result.rows[0].id;
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') {
+        throw new LogisticsError('CONFLICT', 'The bed or student already has an active allocation.');
+      }
+      throw error;
+    }
+  }
+
+  async createHostelBuilding(actor: AuthorizedPrincipal, input: {
+    name: string; approvedCapacity: number;
+  }): Promise<{ id: string }> {
+    const name = input.name?.trim();
+    if (!name || name.length > 120 || !Number.isInteger(input.approvedCapacity) || input.approvedCapacity < 0) {
+      throw new LogisticsError('INVALID_INPUT', 'A building name and non-negative integer capacity are required.');
+    }
+    return this.inSchool(actor, 'hostel_management', ['logistics.hostel.manage'], async (client, schoolId) => {
+      if (actor.roles.includes('housemaster') && !actor.roles.includes('principal') && !actor.roles.includes('tenant_admin')) {
+        throw new LogisticsError('FORBIDDEN', 'Only school administrators can create hostel buildings.');
+      }
+      const result = await client.query<{ id: string }>(
+        `INSERT INTO production.logistics_hostel_buildings (tenant_id, school_id, name, approved_capacity)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [actor.tenantId, schoolId, name, input.approvedCapacity]
+      );
+      await this.audit(client, actor, schoolId, 'hostel_building_created', 'hostel_building', result.rows[0].id, {
+        approvedCapacity: input.approvedCapacity
+      });
+      return { id: result.rows[0].id };
+    });
+  }
+
+  async createHostelRoom(actor: AuthorizedPrincipal, input: {
+    buildingId: string; roomNumber: string; capacity: number; floor?: string; wing?: string;
+  }): Promise<{ id: string }> {
+    const buildingId = validateUuid(input.buildingId);
+    const roomNumber = input.roomNumber?.trim();
+    if (!roomNumber || roomNumber.length > 40 || !Number.isInteger(input.capacity) || input.capacity < 1) {
+      throw new LogisticsError('INVALID_INPUT', 'A room number and positive integer capacity are required.');
+    }
+    return this.inSchool(actor, 'hostel_management', ['logistics.hostel.manage'], async (client, schoolId) => {
+      await this.assertCanManageBuilding(client, actor, schoolId, buildingId);
+      try {
+        const result = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_hostel_rooms
+             (tenant_id, school_id, building_id, room_number, capacity, floor, wing)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          [actor.tenantId, schoolId, buildingId, roomNumber, input.capacity,
+            input.floor?.trim() ?? '', input.wing?.trim() ?? '']
+        );
+        await this.audit(client, actor, schoolId, 'hostel_room_created', 'hostel_room', result.rows[0].id, {
+          buildingId, capacity: input.capacity
+        });
+        return { id: result.rows[0].id };
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code === '23503') throw new LogisticsError('NOT_FOUND', 'Hostel building not found.');
+        if (code === '23505') throw new LogisticsError('CONFLICT', 'Room number already exists in this building.');
+        if (code === '23514') throw new LogisticsError('CONFLICT', (error as Error).message);
+        throw error;
+      }
+    });
+  }
+
+  async createHostelBed(actor: AuthorizedPrincipal, input: {
+    roomId: string; bedNumber: string;
+  }): Promise<{ id: string }> {
+    const roomId = validateUuid(input.roomId);
+    const bedNumber = input.bedNumber?.trim();
+    if (!bedNumber || bedNumber.length > 40) throw new LogisticsError('INVALID_INPUT', 'A bed number is required.');
+    return this.inSchool(actor, 'hostel_management', ['logistics.hostel.manage'], async (client, schoolId) => {
+      const room = await client.query<{ building_id: string }>(
+        `SELECT building_id FROM production.logistics_hostel_rooms
+         WHERE tenant_id = $1 AND school_id = $2 AND id = $3`,
+        [actor.tenantId, schoolId, roomId]
+      );
+      if (!room.rows[0]) throw new LogisticsError('NOT_FOUND', 'Hostel room not found.');
+      await this.assertCanManageBuilding(client, actor, schoolId, room.rows[0].building_id);
+      try {
+        const result = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_hostel_beds (tenant_id, school_id, room_id, bed_number)
+           VALUES ($1, $2, $3, $4) RETURNING id`,
+          [actor.tenantId, schoolId, roomId, bedNumber]
+        );
+        await this.audit(client, actor, schoolId, 'hostel_bed_created', 'hostel_bed', result.rows[0].id, { roomId });
+        return { id: result.rows[0].id };
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code === '23505') throw new LogisticsError('CONFLICT', 'Bed number already exists in this room.');
+        if (code === '23514') throw new LogisticsError('CONFLICT', (error as Error).message);
+        throw error;
+      }
+    });
+  }
+
+  async allocateBed(actor: AuthorizedPrincipal, input: {
+    studentId: string; bedId: string;
+  }): Promise<{ allocationId: string }> {
+    const studentId = validateUuid(input.studentId);
+    const bedId = validateUuid(input.bedId);
+    return this.inSchool(actor, 'hostel_management', ['logistics.hostel.manage'], async (client, schoolId) => {
+      const bed = await this.lockBed(client, actor, schoolId, bedId);
+      await this.assertCanManageBuilding(client, actor, schoolId, bed.building_id);
+      const student = await client.query(
+        `SELECT 1 FROM production.students
+         WHERE tenant_id = $1 AND school_id = $2 AND id = $3 AND lifecycle_status IN ('admitted', 'active')
+         FOR UPDATE`,
+        [actor.tenantId, schoolId, studentId]
+      );
+      if (!student.rowCount) throw new LogisticsError('NOT_FOUND', 'Active school student not found.');
+      const allocationId = await this.insertAllocation(client, actor, schoolId, studentId, bedId);
+      await this.audit(client, actor, schoolId, 'hostel_bed_allocated', 'bed_allocation', allocationId, { studentId, bedId });
+      return { allocationId };
+    });
+  }
+
+  async transferStudent(actor: AuthorizedPrincipal, input: {
+    studentId: string; toBedId: string;
+  }): Promise<{ allocationId: string; previousAllocationId: string }> {
+    const studentId = validateUuid(input.studentId);
+    const toBedId = validateUuid(input.toBedId);
+    return this.inSchool(actor, 'hostel_management', ['logistics.hostel.manage'], async (client, schoolId) => {
+      const current = await client.query<{ id: string; bed_id: string; room_id: string; building_id: string }>(
+        `SELECT allocation.id, allocation.bed_id, bed.room_id, room.building_id
+         FROM production.logistics_bed_allocations allocation
+         JOIN production.logistics_hostel_beds bed
+           ON bed.tenant_id = allocation.tenant_id AND bed.school_id = allocation.school_id AND bed.id = allocation.bed_id
+         JOIN production.logistics_hostel_rooms room
+           ON room.tenant_id = bed.tenant_id AND room.school_id = bed.school_id AND room.id = bed.room_id
+         WHERE allocation.tenant_id = $1 AND allocation.school_id = $2
+           AND allocation.student_id = $3 AND allocation.ended_at IS NULL
+         FOR UPDATE OF allocation`,
+        [actor.tenantId, schoolId, studentId]
+      );
+      const from = current.rows[0];
+      if (!from) throw new LogisticsError('NOT_FOUND', 'The student has no active bed allocation.');
+      if (from.bed_id === toBedId) throw new LogisticsError('CONFLICT', 'The student already occupies this bed.');
+      const target = await this.lockBed(client, actor, schoolId, toBedId);
+      await this.assertCanManageBuilding(client, actor, schoolId, from.building_id);
+      await this.assertCanManageBuilding(client, actor, schoolId, target.building_id);
+      await client.query(
+        `UPDATE production.logistics_bed_allocations
+         SET ended_at = clock_timestamp(), ended_by = $4
+         WHERE tenant_id = $1 AND school_id = $2 AND id = $3`,
+        [actor.tenantId, schoolId, from.id, actor.userId]
+      );
+      const allocationId = await this.insertAllocation(client, actor, schoolId, studentId, toBedId);
+      await client.query(
+        `INSERT INTO production.logistics_student_movements
+           (tenant_id, school_id, student_id, movement_type, from_room_id, to_room_id, recorded_by)
+         VALUES ($1, $2, $3, 'room_transfer', $4, $5, $6)`,
+        [actor.tenantId, schoolId, studentId, from.room_id, target.room_id, actor.userId]
+      );
+      await this.audit(client, actor, schoolId, 'hostel_student_transferred', 'bed_allocation', allocationId, {
+        studentId, fromBedId: from.bed_id, toBedId, previousAllocationId: from.id
+      });
+      return { allocationId, previousAllocationId: from.id };
+    });
+  }
+
+  async vacateAllocation(actor: AuthorizedPrincipal, allocationIdInput: string): Promise<{ id: string; endedAt: Date }> {
+    const allocationId = validateUuid(allocationIdInput);
+    return this.inSchool(actor, 'hostel_management', ['logistics.hostel.manage'], async (client, schoolId) => {
+      const found = await client.query<{ building_id: string; ended_at: Date | null }>(
+        `SELECT room.building_id, allocation.ended_at
+         FROM production.logistics_bed_allocations allocation
+         JOIN production.logistics_hostel_beds bed
+           ON bed.tenant_id = allocation.tenant_id AND bed.school_id = allocation.school_id AND bed.id = allocation.bed_id
+         JOIN production.logistics_hostel_rooms room
+           ON room.tenant_id = bed.tenant_id AND room.school_id = bed.school_id AND room.id = bed.room_id
+         WHERE allocation.tenant_id = $1 AND allocation.school_id = $2 AND allocation.id = $3
+         FOR UPDATE OF allocation`,
+        [actor.tenantId, schoolId, allocationId]
+      );
+      if (!found.rows[0]) throw new LogisticsError('NOT_FOUND', 'Allocation not found.');
+      if (found.rows[0].ended_at) throw new LogisticsError('CONFLICT', 'The allocation has already ended.');
+      await this.assertCanManageBuilding(client, actor, schoolId, found.rows[0].building_id);
+      const updated = await client.query<{ ended_at: Date }>(
+        `UPDATE production.logistics_bed_allocations
+         SET ended_at = clock_timestamp(), ended_by = $4
+         WHERE tenant_id = $1 AND school_id = $2 AND id = $3 RETURNING ended_at`,
+        [actor.tenantId, schoolId, allocationId, actor.userId]
+      );
+      await this.audit(client, actor, schoolId, 'hostel_allocation_vacated', 'bed_allocation', allocationId, {});
+      return { id: allocationId, endedAt: updated.rows[0].ended_at };
+    });
+  }
+
+  async listBedAllocations(actor: AuthorizedPrincipal, input: {
+    page?: number; pageSize?: number; studentId?: string; status?: string;
+  }): Promise<{ items: Record<string, unknown>[]; page: number; pageSize: number }> {
+    const { page, pageSize, offset } = parsePage(input.page, input.pageSize);
+    const studentId = input.studentId ? validateUuid(input.studentId) : null;
+    if (input.status && !['active', 'ended'].includes(input.status)) {
+      throw new LogisticsError('INVALID_INPUT', 'Status must be active or ended.');
+    }
+    return this.inSchool(actor, 'hostel_management',
+      ['logistics.hostel.read', 'logistics.hostel.manage'], async (client, schoolId) => {
+        const result = await client.query(
+          `SELECT allocation.id, allocation.student_id AS "studentId", allocation.bed_id AS "bedId",
+                  bed.bed_number AS "bedNumber", room.room_number AS "roomNumber",
+                  room.building_id AS "buildingId", allocation.allocated_at AS "allocatedAt",
+                  allocation.ended_at AS "endedAt"
+           FROM production.logistics_bed_allocations allocation
+           JOIN production.logistics_hostel_beds bed
+             ON bed.tenant_id = allocation.tenant_id AND bed.school_id = allocation.school_id AND bed.id = allocation.bed_id
+           JOIN production.logistics_hostel_rooms room
+             ON room.tenant_id = bed.tenant_id AND room.school_id = bed.school_id AND room.id = bed.room_id
+           WHERE allocation.tenant_id = $1 AND allocation.school_id = $2
+             AND ($3::uuid IS NULL OR allocation.student_id = $3)
+             AND ($4::text IS NULL OR ($4::text = 'active') = (allocation.ended_at IS NULL))
+           ORDER BY allocation.allocated_at DESC, allocation.id
+           LIMIT $5 OFFSET $6`,
+          [actor.tenantId, schoolId, studentId, input.status ?? null, pageSize, offset]
+        );
+        return { items: result.rows, page, pageSize };
+      });
+  }
+
   private async audit(
     client: DatabaseClient,
     actor: AuthorizedPrincipal,

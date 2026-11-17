@@ -2019,6 +2019,56 @@ app.get(
   }
 );
 
+const logisticsHostelRoute = (
+  method: 'post' | 'get' | 'delete',
+  path: string,
+  permission: string,
+  handler: (req: Request) => Promise<unknown>,
+  status = 200
+) => {
+  app[method](path, authorizationMiddleware.requirePermission(permission), async (req: Request, res: Response) => {
+    try {
+      const data = await handler(req);
+      res.status(status).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  });
+};
+const bodyText = (value: unknown) => (typeof value === 'string' ? value : '');
+
+// Tenant and school are always derived from the authenticated principal; bodies never carry them.
+logisticsHostelRoute('post', '/api/v1/logistics/hostel/buildings', 'logistics.hostel.manage', req =>
+  logisticsRepository().createHostelBuilding(logisticsActor(req), {
+    name: bodyText(req.body?.name), approvedCapacity: Number(req.body?.approvedCapacity)
+  }), 201);
+logisticsHostelRoute('post', '/api/v1/logistics/hostel/rooms', 'logistics.hostel.manage', req =>
+  logisticsRepository().createHostelRoom(logisticsActor(req), {
+    buildingId: bodyText(req.body?.buildingId), roomNumber: bodyText(req.body?.roomNumber),
+    capacity: Number(req.body?.capacity), floor: bodyText(req.body?.floor), wing: bodyText(req.body?.wing)
+  }), 201);
+logisticsHostelRoute('post', '/api/v1/logistics/hostel/beds', 'logistics.hostel.manage', req =>
+  logisticsRepository().createHostelBed(logisticsActor(req), {
+    roomId: bodyText(req.body?.roomId), bedNumber: bodyText(req.body?.bedNumber)
+  }), 201);
+logisticsHostelRoute('post', '/api/v1/logistics/hostel/allocations', 'logistics.hostel.manage', req =>
+  logisticsRepository().allocateBed(logisticsActor(req), {
+    studentId: bodyText(req.body?.studentId), bedId: bodyText(req.body?.bedId)
+  }), 201);
+logisticsHostelRoute('post', '/api/v1/logistics/hostel/transfers', 'logistics.hostel.manage', req =>
+  logisticsRepository().transferStudent(logisticsActor(req), {
+    studentId: bodyText(req.body?.studentId), toBedId: bodyText(req.body?.toBedId)
+  }));
+logisticsHostelRoute('post', '/api/v1/logistics/hostel/allocations/:allocationId/vacate', 'logistics.hostel.manage', req =>
+  logisticsRepository().vacateAllocation(logisticsActor(req), req.params.allocationId));
+logisticsHostelRoute('get', '/api/v1/logistics/hostel/allocations', 'logistics.hostel.read', req =>
+  logisticsRepository().listBedAllocations(logisticsActor(req), {
+    page: req.query.page === undefined ? undefined : Number(req.query.page),
+    pageSize: req.query.pageSize === undefined ? undefined : Number(req.query.pageSize),
+    studentId: typeof req.query.studentId === 'string' ? req.query.studentId : undefined,
+    status: typeof req.query.status === 'string' ? req.query.status : undefined
+  }));
+
 app.get(
   '/api/v1/logistics/exeats',
   authorizationMiddleware.requirePermission('logistics.exeat.read'),
