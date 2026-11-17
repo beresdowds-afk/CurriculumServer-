@@ -2,6 +2,27 @@
 name: Deploy Curriculum Flow
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      # Curriculum Flow-specific source and configuration
+      - 'apps/curriculum-flow/**'
+      - 'vite.flow.config.ts'
+
+      # Shared application dependencies
+      - 'src/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'tailwind.config.*'
+      - 'postcss.config.*'
+
+      # Shared build and deployment configuration
+      - 'apps/curriculum-flow/Dockerfile'
+      - '.github/workflows/deploy-curriculum-flow.yml'
+
   workflow_dispatch:
 
 permissions:
@@ -51,18 +72,66 @@ jobs:
         with:
           project_id: ${{ env.PROJECT_ID }}
 
-      - name: Configure Docker authentication
-        run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
+            - name: Verify deployed Curriculum Flow application
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      - name: Build and push image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/curriculum-flow/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_URI }}:${{ github.sha }}
-            ${{ env.IMAGE_URI }}:latest
+          SERVICE_URL="$(gcloud run services describe "$SERVICE_NAME" \
+            --project="$PROJECT_ID" \
+            --region="$REGION" \
+            --format='value(status.url)')"
+
+          echo "Checking Cloud Run service: $SERVICE_URL"
+
+          curl --fail --show-error --silent \
+            --retry 5 --retry-delay 5 \
+            "$SERVICE_URL/healthz"
+
+          curl --fail --show-error --silent \
+            --retry 5 --retry-delay 5 \
+            "$SERVICE_URL/" \
+            -o /tmp/curriculum-flow-index.html
+
+          if ! grep -qi '<title>Curriculum Flow' \
+            /tmp/curriculum-flow-index.html; then
+            echo "ERROR: Cloud Run is not serving the Curriculum Flow HTML entry."
+            cat /tmp/curriculum-flow-index.html
+            exit 1
+          fi
+
+          if ! grep -Eq 'src="[^"]+\.js' \
+            /tmp/curriculum-flow-index.html; then
+            echo "ERROR: Curriculum Flow JavaScript bundle reference is missing."
+            exit 1
+          fi
+
+          echo "PASS: Cloud Run serves the Curriculum Flow application."
+
+      - name: Verify Curriculum Flow public domains
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for DOMAIN in \
+            curriculumflow.com.ng \
+            www.curriculumflow.com.ng
+          do
+            echo "Checking https://$DOMAIN/"
+
+            curl --fail --show-error --silent \
+              --retry 5 --retry-delay 10 \
+              "https://$DOMAIN/" \
+              -o "/tmp/${DOMAIN}.html"
+
+            if ! grep -qi '<title>Curriculum Flow' \
+              "/tmp/${DOMAIN}.html"; then
+              echo "ERROR: $DOMAIN does not serve Curriculum Flow."
+              exit 1
+            fi
+
+            echo "PASS: $DOMAIN serves Curriculum Flow."
+          done
 
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
