@@ -3289,7 +3289,7 @@ app.post('/api/v1/schools/auth/login', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/v1/application-templates', (_req: Request, res: Response) => {
+app.get('/api/v1/application-templates', requireProvisioningPlatformAdmin, (_req: Request, res: Response) => {
   res.json({
     success: true,
     data: APPLICATION_TEMPLATE_REGISTRY,
