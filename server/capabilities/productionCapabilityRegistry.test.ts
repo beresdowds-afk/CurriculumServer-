@@ -6,6 +6,7 @@ import {
 } from './productionCapabilityRegistry';
 
 const notReady = [
+  'central_iam',
   'school_provisioning',
   'school_identity',
   'student_administration',
@@ -16,6 +17,15 @@ const notReady = [
   'campus_logistics',
   'application_template_discovery'
 ];
+
+test('legacy authentication endpoints remain blocked by central IAM readiness', () => {
+  for (const path of ['/server/auth/login', '/server/auth/verify', '/schools/auth/login', '/flow/auth/login']) {
+    const decision = evaluateProductionCapabilityGate('POST', path);
+    assert.equal(decision.allowed, false, path);
+    assert.equal(decision.reason, 'capability_not_ready', path);
+    assert.equal(decision.capabilityId, 'central_iam', path);
+  }
+});
 
 test('database-backed capabilities remain blocked until operational readiness is evidenced', () => {
   for (const id of notReady) {
