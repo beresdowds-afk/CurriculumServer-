@@ -82,8 +82,11 @@ async function main() {
   const output = result.stdout || '';
   process.stdout.write(output);
   if (result.status !== 0) fail('acceptance tests failed.');
-  const count = (label: string) => Number(output.match(new RegExp(`ℹ ${label} (\\d+)`))?.[1] ?? NaN);
-  if (!(count('pass') >= 2) || count('skipped') !== 0 || count('fail') !== 0) {
+  const count = (label: string) => Number(
+    output.match(new RegExp(`(?:ℹ ${label} |# ${label} )(\\d+)`))?.[1] ?? NaN
+  );
+  if (count('tests') !== 3 || count('pass') !== 3 ||
+      count('skipped') !== 0 || count('fail') !== 0) {
     fail('acceptance run was incomplete (tests skipped or missing).');
   }
 }

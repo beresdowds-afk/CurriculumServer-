@@ -325,6 +325,81 @@ export interface SchoolConfigurationResponse {
   gradingConfiguration: Record<string, unknown>;
 }
 
+export interface SchoolStaffRecord {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  user_id: string | null;
+  department_id: string | null;
+  staff_number: string;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  designation: string;
+  status: 'active' | 'suspended' | 'departed';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SchoolStaffPage {
+  records: SchoolStaffRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface CreateSchoolStaffRequest {
+  staffNumber: string;
+  firstName: string;
+  lastName: string;
+  email?: string | null;
+  designation: string;
+  departmentId?: string | null;
+}
+
+export type UpdateSchoolStaffRequest = Partial<CreateSchoolStaffRequest>;
+
+export interface SchoolAdministrationStudent {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  class_id: string | null;
+  admission_number: string;
+  first_name: string;
+  last_name: string;
+  lifecycle_status: 'applicant' | 'admitted' | 'active' | 'transferred' | 'graduated' | 'withdrawn' | 'legacy_unverified';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSchoolStudentRequest {
+  admissionNumber: string;
+  firstName: string;
+  lastName: string;
+}
+
+export type UpdateSchoolStudentRequest = Partial<CreateSchoolStudentRequest>;
+
+export interface SchoolAdministrationClass {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  name: string;
+  academic_year: string;
+  section: string;
+  status: 'active' | 'archived';
+  class_teacher_staff_id: string | null;
+  created_at: string;
+}
+
+export interface CreateSchoolClassRequest {
+  name: string;
+  academicYear: string;
+  section?: string;
+}
+
+export type UpdateSchoolClassRequest = Partial<CreateSchoolClassRequest>;
+
 // -------------------------------------------------------------
 // CURRICULUM FLOW (SCHOOL ERP) CONTRACTS
 // -------------------------------------------------------------
