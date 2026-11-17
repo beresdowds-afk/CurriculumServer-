@@ -134,6 +134,104 @@ export const INITIAL_REGISTERED_FEATURES: RegisteredFeature[] = [
     ]
   },
   {
+    featureId: 'feat_logistics_support',
+    name: 'Campus Logistics & Support',
+    description: 'Versioned logistics feature template for gate security, guardian pickup, hostels, exeats, dining, transport, and library operations.',
+    applicationAssociation: 'app_curriculum_flow',
+    dependencies: ['feat_school_administration_identity', 'feat_student_registration'],
+    requiredPermissions: [
+      'logistics.configuration.read',
+      'logistics.gate.manage',
+      'logistics.hostel.manage',
+      'logistics.transport.manage'
+    ],
+    apiDependencies: ['/api/v1/logistics'],
+    databaseRequirements: ['production.logistics_feature_configurations'],
+    storageRequirements: ['production_storage_adapter_for_library_files'],
+    configOptions: {
+      templateId: 'campus-logistics-support',
+      templateVersion: '1.0.0',
+      optionalCapabilities: [
+        'gate_security', 'guardian_pickup', 'hostel_management', 'exeat_management',
+        'dining_management', 'school_transport', 'digital_library',
+        'gps_geofencing', 'device_management'
+      ]
+    },
+    version: '1.0.0',
+    availabilityStatus: 'beta',
+    honestyStatus: 'partial_stub',
+    readiness: ['designed', 'implemented']
+  },
+  {
+    featureId: 'feat_logistics_gate_security',
+    name: 'Gate Security & Guardian Pickup',
+    description: 'Server-authorized guardian pickup and gate event management.',
+    applicationAssociation: 'app_curriculum_flow',
+    dependencies: ['feat_school_administration_identity', 'feat_student_registration'],
+    requiredPermissions: ['logistics.gate.manage', 'logistics.guardians.manage'],
+    apiDependencies: ['/api/v1/logistics/gate', '/api/v1/logistics/pickup-passes'],
+    databaseRequirements: ['production.logistics_guardians', 'production.logistics_gate_events'],
+    storageRequirements: [],
+    configOptions: { pickupRequiresPin: true, pickupReusablePasses: false },
+    version: '1.0.0',
+    availabilityStatus: 'beta',
+    honestyStatus: 'partial_stub',
+    readiness: ['designed', 'implemented']
+  },
+  {
+    featureId: 'feat_logistics_elibrary',
+    name: 'Digital Library',
+    description: 'Durable school-owned resource metadata and review lifecycle; file delivery requires a storage adapter.',
+    applicationAssociation: 'app_curriculum_flow',
+    dependencies: ['feat_school_administration_identity', 'feat_student_registration'],
+    requiredPermissions: ['logistics.library.read', 'logistics.library.manage'],
+    apiDependencies: ['/api/v1/logistics/library'],
+    databaseRequirements: ['production.logistics_library_resources'],
+    storageRequirements: ['production_storage_adapter_for_library_files'],
+    configOptions: {},
+    version: '1.0.0',
+    availabilityStatus: 'beta',
+    honestyStatus: 'partial_stub',
+    readiness: ['designed', 'implemented']
+  },
+  {
+    featureId: 'feat_logistics_boarding_house',
+    name: 'Boarding House Management',
+    description: 'Hostel capacity, bed allocations, student movement, exeats, roll calls, and dining records.',
+    applicationAssociation: 'app_curriculum_flow',
+    dependencies: ['feat_school_administration_identity', 'feat_student_registration'],
+    requiredPermissions: ['logistics.hostel.manage', 'logistics.exeat.approve', 'logistics.dining.manage'],
+    apiDependencies: ['/api/v1/logistics/hostels', '/api/v1/logistics/exeats', '/api/v1/logistics/dining'],
+    databaseRequirements: [
+      'production.logistics_hostel_beds',
+      'production.logistics_bed_allocations',
+      'production.logistics_exeats',
+      'production.logistics_dining_attendance'
+    ],
+    storageRequirements: [],
+    configOptions: { boardingSchool: true, hostelCapacity: 0 },
+    version: '1.0.0',
+    availabilityStatus: 'beta',
+    honestyStatus: 'partial_stub',
+    readiness: ['designed', 'implemented']
+  },
+  {
+    featureId: 'feat_logistics_transportation',
+    name: 'School Transport',
+    description: 'School-owned or outsourced vehicle, driver, route, trip, and passenger records.',
+    applicationAssociation: 'app_curriculum_flow',
+    dependencies: ['feat_school_administration_identity', 'feat_student_registration'],
+    requiredPermissions: ['logistics.transport.manage'],
+    apiDependencies: ['/api/v1/logistics/transport', '/api/v1/logistics/trips'],
+    databaseRequirements: ['production.logistics_vehicles', 'production.logistics_routes', 'production.logistics_trips'],
+    storageRequirements: [],
+    configOptions: { transportOwnership: 'outsourced' },
+    version: '1.0.0',
+    availabilityStatus: 'beta',
+    honestyStatus: 'partial_stub',
+    readiness: ['designed', 'implemented']
+  },
+  {
     featureId: 'feat_student_registration',
     name: 'Student & Guardian Registration',
     description: 'Enrolment records, guardian contact linkage, medical records, and demography tracking.',

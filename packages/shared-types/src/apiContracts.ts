@@ -122,6 +122,11 @@ export interface ApplicationBuilderConfigurationV1 {
     capabilityVersions: Record<string, string>;
     checks: string[];
   };
+  featureConfigurations?: Record<string, {
+    templateId: string;
+    templateVersion: string;
+    settings: Record<string, unknown>;
+  }>;
 }
 
 export interface SchoolProvisioningRequest {

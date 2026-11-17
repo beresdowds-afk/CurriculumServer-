@@ -13,6 +13,7 @@ const notReady = [
   'staff_administration',
   'administrative_permissions',
   'student_lifecycle',
+  'campus_logistics',
   'application_template_discovery'
 ];
 
@@ -36,6 +37,7 @@ test('implemented administration handlers map to their canonical unready capabil
     ['POST', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/class', 'class_administration'],
     ['POST', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/lifecycle', 'student_lifecycle'],
     ['GET', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/history', 'student_lifecycle'],
+    ['POST', '/logistics/pickup-passes', 'campus_logistics'],
     ['GET', '/application-templates', 'application_template_discovery']
   ] as const;
   for (const [method, path, capabilityId] of cases) {

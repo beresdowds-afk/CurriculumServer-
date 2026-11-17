@@ -49,7 +49,7 @@ import {
 import { INITIAL_SCHOOL_BRAND } from '../../../src/data/brandManagementData';
 import { UserProfile, SubjectCurriculum, UserRole } from '../../../src/types';
 import { NERDC_SUBJECTS_DATABASE } from '../../../src/data/nerdcDatabase';
-import { unifiedApiClient } from '../../../src/services/unifiedApiClient';
+import { unifiedApiClient, type AuthenticatedSessionClaims } from '../../../src/services/unifiedApiClient';
 import { CurriculumFlowPublicHome } from '../../../src/components/CurriculumFlowPublicHome';
 import { SchoolRegistrationWizard } from '../../../src/components/SchoolRegistrationWizard';
 
@@ -59,42 +59,32 @@ export const CurriculumFlowApp: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<UserProfile>(MOCK_USERS[0]); // Default: Principal Dr. Mustapha
   const [activeTab, setActiveTab] = useState<FlowNavTab>('command_center');
   const [schoolBrand, setSchoolBrand] = useState(INITIAL_SCHOOL_BRAND);
-  const [activeTenantId, setActiveTenantId] = useState<string>('tenant_apex_001');
-  const [schoolProfile, setSchoolProfile] = useState<any>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const authenticatedUser: AuthenticatedSessionClaims | null = unifiedApiClient.getSchoolFlowSession();
 
-  // Authenticate and synchronize school configuration from authoritative unified backend
+  // Synchronize school configuration only from an already authenticated session.
   useEffect(() => {
     let isMounted = true;
     const syncSchoolContext = async () => {
+      if (!unifiedApiClient.isAuthenticated('school_flow')) return;
       try {
-        // Authenticate into school instance with backend
-        await unifiedApiClient.loginSchool(
-          activeTenantId,
-          currentUser.email || currentUser.id,
-          undefined,
-          currentUser.role
-        ).catch(() => null);
-
-        // Fetch authoritative school profile & branding from PostgreSQL
-        const profile = await unifiedApiClient.getSchoolProfile(activeTenantId).catch(() => null);
+        const profile = await unifiedApiClient.getMySchool();
 
         if (isMounted && profile) {
-          setSchoolProfile(profile);
           setSchoolBrand(prev => ({
             ...prev,
-            schoolName: profile.schoolName,
-            motto: profile.tagline || prev.motto
+            schoolName: profile.displayName,
+            motto: profile.motto || prev.motto
           }));
         }
       } catch (err) {
-        console.warn('Curriculum Flow backend sync warning:', err);
+        console.warn('Curriculum Flow authenticated school profile is unavailable:', err);
       }
     };
 
     syncSchoolContext();
     return () => { isMounted = false; };
-  }, [activeTenantId, currentUser.role]);
+  }, [authenticatedUser?.tenantId]);
 
   // Modals state
   const [selectedSubjectDetail, setSelectedSubjectDetail] = useState<SubjectCurriculum | null>(null);
@@ -310,7 +300,7 @@ export const CurriculumFlowApp: React.FC = () => {
             )}
 
             {activeTab === 'logistics_suite' && (
-              <LogisticsSupportSuiteTab />
+              <LogisticsSupportSuiteTab authenticatedUser={authenticatedUser} />
             )}
 
             {activeTab === 'quality_assurance' && (

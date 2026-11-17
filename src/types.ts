@@ -3596,7 +3596,7 @@ export interface HostelRoom {
 export interface HostelDormitory {
   id: string;
   name: string; // e.g. "Queen Amina Hall", "King Jaja of Opobo Hall", "Sir Ahmadu Bello House", "Moremi Hall"
-  gender: 'Boys' | 'Girls';
+  gender: 'Boys' | 'Girls' | 'Mixed';
   category: 'Junior Secondary' | 'Senior Secondary' | 'Mixed';
   houseMasterName: string;
   houseMasterPhone: string;

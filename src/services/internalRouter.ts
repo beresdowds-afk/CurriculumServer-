@@ -411,7 +411,7 @@ export const ROUTE_REGISTRY: InternalRouteDefinition[] = [
     shortTitle: 'Logistics & Boarding',
     category: 'operations',
     categoryTitle: 'SCHOOL OPERATIONS & REGISTRY',
-    description: 'Hostel dormitories, exeat passes, dining register & live bus GPS fleet geofence tracker',
+    description: 'School-configured gate, hostel, dining, transport, and library operations',
     breadcrumbs: ['Curriculum Flow', 'Operations & Registry', 'Logistics & Boarding'],
     domainScope: 'curriculum_flow',
     requiresAuth: true

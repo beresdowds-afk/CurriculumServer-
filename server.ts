@@ -63,6 +63,9 @@ import {
   type StudentTransition
 } from './server/db/schoolAdministrationRepository';
 import { evaluateProductionCapabilityGate } from './server/capabilities/productionCapabilityRegistry';
+import { LogisticsError, LogisticsRepository } from './server/logistics/logisticsRepository';
+import { validateLogisticsFeatureConfiguration } from './src/data/logisticsFeatureTemplate';
+import type { AuthorizedPrincipal } from './server/authorization/authorizedPrincipal';
 import {
   hashInvitationToken,
   hashPassword,
@@ -1933,6 +1936,150 @@ app.get('/api/v1/students', requireSchoolAuth, requireTrustedDatabaseIdentity, a
     });
   }
 });
+
+// Tenant- and school-scoped logistics API. These routes remain fail-closed in
+// the capability registry until the production readiness evidence is complete.
+const logisticsRepository = () => new LogisticsRepository(postgresRuntime.getPool());
+const logisticsActor = (req: Request) => (req as any).authorizedPrincipal as AuthorizedPrincipal;
+const respondLogisticsFailure = (req: Request, res: Response, error: unknown) => {
+  const known = error instanceof LogisticsError;
+  const code = known ? error.code : error instanceof DatabaseFailure ? 'DATABASE_UNAVAILABLE' : 'LOGISTICS_OPERATION_FAILED';
+  const status = known
+    ? error.code === 'FORBIDDEN' ? 403
+      : error.code === 'FEATURE_DISABLED' ? 403
+      : error.code === 'NOT_FOUND' ? 404
+        : error.code === 'CONFLICT' ? 409
+          : error.code === 'INVALID_INPUT' ? 400 : 503
+    : 503;
+  res.status(status).json({
+    success: false,
+    code,
+    error: known ? error.message : 'The logistics operation could not be completed.',
+    correlationId: (req as any).correlationId,
+    timestamp: new Date().toISOString()
+  });
+};
+
+app.get(
+  '/api/v1/logistics/configuration',
+  authorizationMiddleware.requirePermission('logistics.configuration.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().getConfiguration(logisticsActor(req));
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.patch(
+  '/api/v1/logistics/configuration',
+  authorizationMiddleware.requirePermission('logistics.configuration.manage'),
+  async (req: Request, res: Response) => {
+    const validated = validateLogisticsFeatureConfiguration(req.body?.configuration);
+    if (!validated.valid || !validated.configuration) {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Logistics configuration is invalid.',
+        details: validated.errors,
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const configuration = validated.configuration;
+      const data = await logisticsRepository().updateConfiguration(logisticsActor(req), {
+        capabilities: configuration.capabilities,
+        settings: { ...configuration }
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.get(
+  '/api/v1/logistics/occupancy',
+  authorizationMiddleware.requirePermission('logistics.hostel.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().listOccupancy(logisticsActor(req));
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/pickup-passes',
+  authorizationMiddleware.requirePermission('logistics.guardians.manage'),
+  async (req: Request, res: Response) => {
+    const { authorizationId, expiresAt, pin, reusable, maxUses } = req.body ?? {};
+    if (typeof authorizationId !== 'string' || typeof expiresAt !== 'string' ||
+        (pin !== undefined && typeof pin !== 'string') ||
+        (reusable !== undefined && typeof reusable !== 'boolean') ||
+        (maxUses !== undefined && typeof maxUses !== 'number')) {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Pickup-pass fields are invalid.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsRepository().issuePickupPass(logisticsActor(req), {
+        authorizationId,
+        idempotencyKey: String(req.headers['idempotency-key'] || ''),
+        expiresAt,
+        ...(pin ? { pin } : {}),
+        ...(reusable !== undefined ? { reusable } : {}),
+        ...(maxUses !== undefined ? { maxUses } : {})
+      });
+      res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/gate/scans',
+  authorizationMiddleware.requirePermission('logistics.gate.manage'),
+  async (req: Request, res: Response) => {
+    const { token, pin, gateLocationId, direction } = req.body ?? {};
+    if (typeof token !== 'string' || typeof gateLocationId !== 'string' ||
+        (direction !== 'entry' && direction !== 'exit') ||
+        (pin !== undefined && typeof pin !== 'string')) {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Gate scan fields are invalid.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsRepository().scanPickupPass(logisticsActor(req), {
+        token,
+        ...(pin ? { pin } : {}),
+        gateLocationId,
+        direction,
+        idempotencyKey: String(req.headers['idempotency-key'] || '')
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
 
 // 6. API v1 - Health & Tenant Container Probe
  

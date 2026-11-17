@@ -200,6 +200,31 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     state: 'implemented'
   },
   {
+    id: 'campus_logistics',
+    description: 'Tenant-authorized logistics configuration, guardian pickup passes, gate scans, and hostel occupancy.',
+    routes: [
+      { method: 'GET', path: exact('/logistics/configuration', '/logistics/occupancy') },
+      { method: 'PATCH', path: exact('/logistics/configuration') },
+      { method: 'POST', path: exact('/logistics/pickup-passes', '/logistics/gate/scans') }
+    ],
+    requiredRepositories: ['LogisticsRepository', 'AuthorizationRepository'],
+    requiredMigrations: [11],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'database_permission_and_school_configuration',
+      permissions: [
+        'logistics.configuration.read',
+        'logistics.configuration.manage',
+        'logistics.gate.manage',
+        'logistics.hostel.read'
+      ]
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: ['server/logistics/logisticsRepository.test.ts'],
+    readinessEvidence: [],
+    state: 'implemented'
+  },
+  {
     id: 'application_template_discovery',
     description: 'Discover provisionable school-application templates.',
     routes: [{ method: 'GET', path: exact('/application-templates') }],

@@ -364,7 +364,7 @@ export const CURRICULUM_FLOW_BUNDLES: CurriculumFlowBundle[] = [
     name: 'Logistics Support Management Suite',
     shortName: 'Logistics & Support',
     tagline: 'Gate Security, E-Library, Boarding Hostels & School Bus Management',
-    description: 'Comprehensive campus logistics platform featuring Gate Security Kiosk & QR pickup scanner, Digital E-Library repository with staff upload, Boarding House management suite with D3 occupancy visualizer & mobile exeat workflows, and School Bus transport management with geofence parent alerts.',
+    description: 'Optional campus logistics feature template. Each capability requires explicit school configuration and verified provisioning; notifications, GPS, and file storage require configured providers.',
     monthlyPriceNGN: 85000,
     yearlyPriceNGN: 850000,
     color: 'from-purple-600 to-pink-700',
@@ -378,16 +378,16 @@ export const CURRICULUM_FLOW_BUNDLES: CurriculumFlowBundle[] = [
         key: 'gate_security_kiosk',
         bundleKey: 'logistics_support',
         name: 'Gate Security Kiosk & Pickup Scanner',
-        description: 'Dedicated tablet-optimized gate scanner interface for security officers to verify guardian QR codes, authenticate PINs, and authorize student exit with instant parent alerts.',
+        description: 'Gate operations with server-side guardian and pickup authorization. Parent notifications require a configured delivery provider.',
         subItems: [
           'Tablet-Optimized Gate Security Kiosk UI',
           'Guardian QR Code & PIN Authenticator',
-          'Live Guardian Photo & Identity Verification',
+          'Verified Guardian Identity and Relationship Records',
           'Boarding House Exeat Verification at Perimeter Gate',
-          'Instant Parent SMS & WhatsApp Exit Dispatch'
+          'Optional Provider-Backed Parent Notifications'
         ],
-        defaultEnabled: true,
-        isCore: true,
+        defaultEnabled: false,
+        isCore: false,
         iconName: 'ShieldCheck'
       },
       {
@@ -395,16 +395,16 @@ export const CURRICULUM_FLOW_BUNDLES: CurriculumFlowBundle[] = [
         key: 'digital_elibrary',
         bundleKey: 'logistics_support',
         name: 'Digital E-Library & Curriculum Resource Repository',
-        description: 'NERDC-approved textbook repository, past WAEC/NECO/JAMB past papers, downloadable audio/video courseware, and authorized staff upload portal for curriculum-aligned materials.',
+        description: 'School-owned resource metadata and review workflow. File upload and download require a configured tenant-isolated storage adapter.',
         subItems: [
           'NERDC Approved Digital Textbooks & Readers',
           'WAEC / NECO / JAMB Past Question Vault with Solutions',
-          'Downloadable MP3 Audio & MP4 Video Courseware',
-          'Staff Upload Engine for PDF, Image & Audio Resources',
+          'Audio and Video Resource Metadata',
+          'Authorized Uploads After Storage Provisioning',
           'Subject & Grade-Level Aligned Search & Filter'
         ],
-        defaultEnabled: true,
-        isCore: true,
+        defaultEnabled: false,
+        isCore: false,
         iconName: 'BookOpen'
       },
       {
@@ -412,7 +412,7 @@ export const CURRICULUM_FLOW_BUNDLES: CurriculumFlowBundle[] = [
         key: 'boarding_house_suite',
         bundleKey: 'logistics_support',
         name: 'Boarding House & Hostel Management Suite',
-        description: 'Dormitory/room bed space allocations, D3.js occupancy visualizer, digital student exeat requests with mobile house master approval workflow, evening roll-calls, and dining hall registers.',
+        description: 'Optional boarding-school records for facilities, occupancy, movements, exeats, roll calls, and dining; not required for day schools.',
         subItems: [
           'D3.js Dormitory Occupancy & Bed Space Visualizer',
           'Digital Student Exeat Request & Mobile House Master Approval',
@@ -420,8 +420,8 @@ export const CURRICULUM_FLOW_BUNDLES: CurriculumFlowBundle[] = [
           'Daily Evening Roll-Call & Night Curfew Register',
           'Dining Hall Meal Roster & Special Diet Tracking'
         ],
-        defaultEnabled: true,
-        isCore: true,
+        defaultEnabled: false,
+        isCore: false,
         iconName: 'Building2'
       },
       {
@@ -429,16 +429,16 @@ export const CURRICULUM_FLOW_BUNDLES: CurriculumFlowBundle[] = [
         key: 'bus_transportation',
         bundleKey: 'logistics_support',
         name: 'School Bus Transportation & Route Management',
-        description: 'Bus routes, passenger check-in/drop-off logs, driver license tracking, maintenance schedules, and geofence proximity alerts notifying parents in real-time.',
+        description: 'School-owned or outsourced transport records. GPS and parent notifications require configured, verified providers and devices.',
         subItems: [
           'Bus Route & Pickup Stop Management',
-          'Real-time Passenger Check-In & Drop-Off Manifest',
+          'Trip Passenger Check-In & Drop-Off Records',
           'Driver Profile & License Expiry Tracking',
           'Vehicle Preventative Maintenance Schedules',
-          'Geofenced Parent Portal Proximity Notifications'
+          'Optional GPS and Geofencing Integration'
         ],
-        defaultEnabled: true,
-        isCore: true,
+        defaultEnabled: false,
+        isCore: false,
         iconName: 'Truck'
       }
     ]
