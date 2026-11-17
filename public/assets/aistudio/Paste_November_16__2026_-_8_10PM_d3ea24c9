@@ -1,0 +1,1501 @@
+GITHUB COPILOT AGENT IMPLEMENTATION ASSIGNMENT
+
+CURRICULUM SERVER — PHASE 2: REUSABLE ACADEMIC ADMINISTRATION MODULE FOR PROVISIONED SCHOOL INSTANCES
+
+Repository: "beresdowds-afk/CurriculumServer-"
+
+Target branch: "main" (create a dedicated feature branch and submit a Pull Request; never push directly to "main").
+
+Project: Curriculum Server — Multi-Tenant, Multi-Architecture School Management SaaS Platform.
+
+Application: Curriculum Flow (initial consumer of the academic administration module).
+
+Phase: Phase 2 — Academic Administration.
+
+Priority: P0 — Core School Management Capability.
+
+Implementation type: Reusable, configurable, database-backed module for every provisioned school instance.
+
+---
+
+1. MISSION
+
+Implement a fully operational, reusable Academic Administration module within the existing Curriculum Server architecture.
+
+The objective is to establish the academic administration environment that every successfully provisioned school instance can use independently.
+
+The module must allow an authorized school administrator to:
+
+1. Configure the school's academic sessions.
+2. Configure academic terms and calendars.
+3. Create and manage classes.
+4. Create and manage class arms or streams.
+5. Register and manage subjects.
+6. Register and manage teachers.
+7. Register and manage students.
+8. Assign teachers to subjects and classes.
+9. Enrol students into classes and academic sessions.
+10. Maintain student academic progression and class history.
+11. Manage academic relationships and assignments.
+12. Configure the academic structure required by subsequent examination modules.
+
+This must be a real, persistent, tenant-isolated implementation.
+
+Do not deliver another demonstration module, mock academic dashboard, seeded operational school, fabricated student records, simulated teacher registrations or local JSON-based substitute for production persistence.
+
+The module must be reusable across all future provisioned school instances.
+
+It must not require a separate codebase or separate deployment for every school.
+
+It must support different institutional structures, education systems, academic calendars and grading configurations.
+
+Important: Phase 2 establishes the academic administration foundation. It does not implement the examination engine or the complete assessment and results system.
+
+Do not implement Phase 3, Phase 4 or Phase 5 features as part of this assignment.
+
+---
+
+2. FIRST TASK: INSPECT BEFORE MODIFYING
+
+Before writing or changing any code, inspect the current repository and establish the actual implementation state.
+
+Do not rely on earlier repository descriptions, previous AI-generated reports or assumptions about what has already been implemented.
+
+Inspect the current "main" branch and identify the actual state of Phase 1.
+
+At minimum, inspect:
+
+2.1 Backend architecture
+
+- "server.ts"
+- "server/customerOnboardingManager.ts"
+- "server/serverSchoolManager.ts"
+- "server/instanceLifecycleManager.ts"
+- "server/storageAndDatabaseManager.ts"
+- "server/gcpProvisioningEngine.ts"
+- All relevant school and tenant management services.
+- Existing authentication middleware.
+- Existing authorization middleware.
+- Existing API routes.
+- Existing repository and persistence adapters.
+
+2.2 Frontend architecture
+
+Inspect:
+
+- School administration dashboards.
+- Student management interfaces.
+- Teacher management interfaces.
+- Class management interfaces.
+- Subject management interfaces.
+- Academic session and term interfaces.
+- Existing school onboarding and configuration components.
+- Existing application navigation.
+- Existing form validation and API integration.
+
+2.3 Shared contracts
+
+Inspect:
+
+- "packages/shared-types/src/apiContracts.ts"
+- Existing shared entity definitions.
+- Existing API response envelopes.
+- Existing frontend/backend type conventions.
+- Existing application and feature registries.
+
+2.4 Database
+
+Inspect:
+
+- All existing PostgreSQL schemas.
+- All migrations.
+- Existing school and tenant tables.
+- Existing membership and role tables.
+- Existing student and teacher tables.
+- Existing academic entities.
+- Existing foreign-key relationships.
+- Existing indexes and uniqueness constraints.
+- Existing tenant-isolation implementation.
+- Existing persistence adapters.
+
+2.5 Authentication and security
+
+Inspect:
+
+- School administrator authentication.
+- Teacher authentication.
+- Student authentication, where implemented.
+- Platform administrator authentication.
+- Tenant membership resolution.
+- School-specific authorization.
+- Session management.
+- Invitation and account activation.
+- Existing token issuance and validation.
+
+2.6 Existing application data
+
+Determine which components currently use:
+
+- PostgreSQL.
+- Supabase.
+- Local JSON persistence.
+- In-memory data structures.
+- Browser local storage.
+- Seeded development data.
+- Mock data.
+- Simulated persistence.
+- Placeholder API responses.
+
+2.7 Build and testing infrastructure
+
+Inspect:
+
+- "package.json"
+- Relevant dependencies.
+- Existing testing framework.
+- Existing integration tests.
+- Existing end-to-end tests.
+- GitHub Actions workflows.
+- Deployment and migration workflows.
+
+2.8 Produce an implementation inventory
+
+Before modifications, report:
+
+1. What Phase 1 actually implemented.
+2. Which school and tenant entities are available.
+3. Whether PostgreSQL persistence is operational.
+4. Whether tenant isolation is genuinely enforced.
+5. Whether school administrator authentication is operational.
+6. Which academic administration features already exist.
+7. Which components are demonstrations or incomplete implementations.
+8. Which existing database entities can be reused.
+9. Which migrations are necessary.
+10. Which dependencies or architectural issues must be addressed.
+
+Use actual repository contents and exact source locations.
+
+Do not invent filenames, functions, database tables, API routes or line numbers.
+
+Do not begin implementation until the inventory has been completed.
+
+---
+
+3. ARCHITECTURAL REQUIREMENTS
+
+3.1 Preserve the multi-architecture SaaS platform
+
+Curriculum Server is a configurable SaaS provisioning platform.
+
+Curriculum Flow is one application that Curriculum Server provisions.
+
+Academic Administration must therefore be implemented as a reusable application capability rather than a collection of hardcoded Curriculum Flow screens.
+
+Preserve the separation between:
+
+- Platform control plane.
+- School and tenant identity.
+- Provisioned school application instance.
+- Application architecture.
+- Shared application services.
+- Academic administration capabilities.
+- Future examination and assessment capabilities.
+
+The academic administration module must be capable of being enabled for different provisioned school application architectures where compatible.
+
+Do not assume that every future tenant will use an identical application architecture.
+
+3.2 Reusable school-instance template
+
+Implement a reusable academic administration template.
+
+The template defines the supported academic entities, relationships, configurations, validation rules and default structures.
+
+When a school instance is provisioned or initialized:
+
+1. The school receives its own academic administration environment.
+2. The academic module is associated with the correct school instance.
+3. The school receives an independent configuration.
+4. Academic records are associated with the immutable tenant identity.
+5. The school's authorized users can operate only within their school environment.
+6. Other schools cannot access or modify those records.
+
+The module's code and shared application services may be reused.
+
+The actual school records and configuration must remain independently persisted.
+
+Do not duplicate the entire application codebase for every school.
+
+Do not create separate databases for every school as a prerequisite.
+
+3.3 PostgreSQL is authoritative
+
+Use the existing PostgreSQL architecture.
+
+Requirements:
+
+- Persistent academic records.
+- Proper relational modelling.
+- Foreign-key constraints.
+- Unique constraints.
+- Appropriate indexes.
+- Tenant-scoped queries.
+- Transactional writes where appropriate.
+- Safe migrations.
+- Auditable changes.
+
+Do not replace PostgreSQL with Firebase, local JSON, browser storage or in-memory persistence.
+
+If the existing PostgreSQL implementation is incomplete, repair the necessary infrastructure rather than building a competing persistence system.
+
+Preserve existing Supabase responsibilities where applicable. Do not assume Supabase and PostgreSQL are interchangeable.
+
+3.4 Preserve the unified backend
+
+All academic administration operations must pass through the existing unified backend.
+
+The frontend must use the existing API client and API contract conventions.
+
+Do not introduce an independent backend.
+
+Do not permit browser code to write academic records directly to the database.
+
+3.5 Demonstration data versus real tenant data
+
+This distinction is mandatory.
+
+The repository may contain demonstration instances, seeded records and demonstration-only JSON persistence.
+
+Do not mistake those records for real tenant data.
+
+Requirements:
+
+1. Identify demonstration data explicitly.
+2. Preserve demonstration functionality where it remains useful.
+3. Do not migrate demonstration schools into real tenant records.
+4. Do not convert fabricated students or teachers into real registrations.
+5. Do not allow demonstration records to appear in production tenant queries.
+6. Ensure that future real tenant operations use PostgreSQL.
+7. Replace JSON persistence wherever it is intended to support future real tenant operations.
+8. Keep development fixtures separate from production migrations and runtime data.
+
+Do not delete demonstration functionality merely because it is not production persistence.
+
+---
+
+4. ACADEMIC ADMINISTRATION DATA MODEL
+
+Inspect existing schemas and reuse compatible entities.
+
+Do not create duplicate tables or competing school identity models.
+
+Every school-owned academic entity must have a reliable relationship to the authoritative school/tenant identity.
+
+Implement or complete the equivalent of the following entities.
+
+4.1 Academic sessions
+
+An academic session represents a school's academic year or equivalent academic period.
+
+Required attributes:
+
+- Internal ID.
+- School/tenant ID.
+- Session name.
+- Start date.
+- End date.
+- Session status.
+- Is-current indicator.
+- Creation timestamp.
+- Updated timestamp.
+- Created-by user.
+
+Support configurable session naming, for example:
+
+- 2026/2027.
+- 2027/2028.
+- 2026 Academic Year.
+- Other institution-defined formats.
+
+Requirements:
+
+- Prevent overlapping active sessions where the school's policy prohibits them.
+- Prevent multiple current sessions for the same school unless the configured architecture explicitly permits them.
+- Validate session dates.
+- Preserve historical sessions.
+- Do not silently delete academic history.
+
+4.2 Academic terms and periods
+
+Support configurable academic periods.
+
+Do not assume every school uses a three-term Nigerian calendar.
+
+The academic calendar must support:
+
+- Three-term systems.
+- Two-semester systems.
+- Four-quarter systems.
+- Configurable institutional periods.
+- Other supported calendar structures.
+
+Each period must contain:
+
+- Period ID.
+- School/tenant ID.
+- Academic session ID.
+- Period name.
+- Period sequence.
+- Start date.
+- End date.
+- Status.
+- Creation timestamp.
+- Updated timestamp.
+
+Requirements:
+
+- Periods must belong to a valid academic session.
+- Periods must follow the configured calendar.
+- Invalid date ranges must be rejected.
+- Periods must not overlap where the school's calendar rules prohibit overlap.
+- Historical periods must remain available.
+
+4.3 Classes and grade levels
+
+Implement configurable class or grade structures.
+
+Support different education systems.
+
+Examples include:
+
+- Nursery.
+- Kindergarten.
+- Primary.
+- Elementary.
+- Junior Secondary.
+- Senior Secondary.
+- Middle School.
+- High School.
+- Grade 1–12.
+- Institution-defined levels.
+
+Required attributes:
+
+- Class ID.
+- School/tenant ID.
+- Education level.
+- Class name.
+- Class code.
+- Class sequence.
+- Description.
+- Active status.
+- Creation timestamp.
+- Updated timestamp.
+
+Do not hardcode Nigerian class naming as the only supported structure.
+
+Allow authorized school administrators to define additional classes.
+
+Prevent duplicate class codes within the same school where uniqueness is required.
+
+4.4 Class arms, streams and sections
+
+Support subdivisions of a class.
+
+Examples:
+
+- JSS 1A.
+- JSS 1B.
+- Grade 5 Red.
+- Grade 5 Blue.
+- Form 2 Science.
+- Other school-defined structures.
+
+Each subdivision must be associated with its parent class.
+
+Required attributes:
+
+- Class arm ID.
+- School/tenant ID.
+- Parent class ID.
+- Arm or stream name.
+- Arm code.
+- Capacity, where configured.
+- Active status.
+- Creation timestamp.
+- Updated timestamp.
+
+A school must be able to operate classes without subdivisions if its educational structure does not require them.
+
+4.5 Subjects
+
+Implement subject registration and management.
+
+Required attributes:
+
+- Subject ID.
+- School/tenant ID.
+- Subject name.
+- Subject code.
+- Subject category.
+- Description.
+- Education-level applicability.
+- Active status.
+- Creation timestamp.
+- Updated timestamp.
+
+Requirements:
+
+- Subject codes must be appropriately unique within a school.
+- Support compulsory and elective subjects.
+- Support school-specific subject definitions.
+- Allow subject applicability to multiple classes or education levels.
+- Do not assume all schools use the same subject catalogue.
+
+4.6 Teachers
+
+Implement genuine teacher registration and management.
+
+Required attributes:
+
+- Teacher ID.
+- School/tenant ID.
+- Authenticated user identity reference, where applicable.
+- Employee or staff number.
+- Full name.
+- Official email.
+- Telephone.
+- Employment status.
+- Date of joining, where provided.
+- Professional qualifications, where configured.
+- Assigned classes and subjects through relational assignments.
+- Creation timestamp.
+- Updated timestamp.
+
+Requirements:
+
+1. A teacher must be associated with the correct school.
+2. Teacher identities must not be fabricated.
+3. Teacher registration must use the existing identity architecture.
+4. Support invitation and account activation.
+5. Do not automatically grant teacher access simply because an email address was entered.
+6. Prevent unauthorized school membership.
+7. Allow authorized administrators to deactivate teacher access without destroying academic history.
+8. Allow teachers to be assigned to multiple classes and subjects where appropriate.
+
+A teacher may have memberships in more than one school only where explicitly authorized.
+
+Do not assume that a teacher's global identity is the same as their school-specific employment record.
+
+4.7 Students
+
+Implement genuine student registration and management.
+
+Required attributes:
+
+- Student ID.
+- School/tenant ID.
+- Student admission number.
+- Full name.
+- Date of birth, where collected.
+- Gender, where institutionally required and lawfully collected.
+- Contact information, where applicable.
+- Guardian or parent information, where applicable.
+- Admission date.
+- Student status.
+- Current academic enrolment.
+- Creation timestamp.
+- Updated timestamp.
+
+Requirements:
+
+1. Admission numbers must be unique within the school.
+2. Students must be associated with the correct school.
+3. Student records must persist in PostgreSQL.
+4. Student registration must not generate fake identities.
+5. Support configurable admission-number formats.
+6. Support appropriate student status changes.
+7. Preserve historical student records.
+8. Support transfer, withdrawal and graduation status without destructive deletion.
+9. Provide appropriate access restrictions for sensitive student information.
+
+Where students are minors, implement appropriate authorization and data-minimization safeguards for guardian information.
+
+Do not create unnecessary sensitive-data fields.
+
+4.8 Student enrolments
+
+A student record and a student's class enrolment must be separate concepts.
+
+Implement a persistent enrolment entity.
+
+Each enrolment should contain:
+
+- Enrolment ID.
+- School/tenant ID.
+- Student ID.
+- Academic session ID.
+- Class ID.
+- Class arm ID, where applicable.
+- Enrolment date.
+- Enrolment status.
+- Effective start date.
+- Effective end date, where applicable.
+- Previous class reference, where applicable.
+- Created-by user.
+- Creation timestamp.
+
+Requirements:
+
+- A student must be enrolled in a valid class.
+- The class must belong to the same school.
+- The academic session must belong to the same school.
+- The class arm must belong to the selected class and school.
+- Prevent conflicting active enrolments.
+- Preserve historical enrolments.
+- Support promotion and progression into a subsequent class.
+- Do not overwrite previous academic history.
+
+4.9 Teacher assignments
+
+Implement relational teacher assignment records.
+
+A teacher must be assignable to:
+
+- One or more subjects.
+- One or more classes.
+- One or more class arms, where applicable.
+- One or more academic sessions.
+
+Each assignment must contain:
+
+- Assignment ID.
+- School/tenant ID.
+- Teacher ID.
+- Subject ID.
+- Class ID.
+- Class arm ID, where applicable.
+- Academic session ID.
+- Assignment status.
+- Assigned-by user.
+- Creation timestamp.
+
+Prevent invalid cross-school relationships.
+
+Allow assignment changes without destroying historical assignment records.
+
+---
+
+5. SCHOOL-SPECIFIC CONFIGURATION
+
+Every provisioned school must have its own academic configuration.
+
+Do not apply one global configuration to all schools.
+
+Support:
+
+- School type.
+- Country.
+- Education system.
+- Education levels.
+- Academic session naming.
+- Academic calendar structure.
+- Term or semester configuration.
+- Class naming conventions.
+- Admission-number format.
+- Subject catalogue preferences.
+- Student progression rules.
+- Teacher assignment rules.
+- Applicable time zone.
+- Applicable language.
+
+Use the existing school configuration architecture.
+
+Provide sensible defaults based on country and school type.
+
+However, defaults must remain configurable.
+
+Do not assume:
+
+- Every school operates in Nigeria.
+- Every school has three terms.
+- Every school uses the same grading system.
+- Every school has the same class structure.
+- Every school uses the same admission-number format.
+
+The configuration must be persisted independently for each tenant.
+
+---
+
+6. ROLE-BASED ACCESS CONTROL
+
+Implement or complete school-specific permissions.
+
+At minimum, support:
+
+6.1 Platform super-administrator
+
+- Platform-level school visibility.
+- Authorized platform-level support and diagnostics.
+- Explicitly authorized tenant administration.
+- No automatic elevation to school administrator merely by viewing a school.
+
+6.2 School administrator
+
+- Manage the school's academic configuration.
+- Create and manage sessions and periods.
+- Manage classes and class arms.
+- Manage subjects.
+- Register and manage students.
+- Register and manage teachers.
+- Assign teachers to classes and subjects.
+- Manage student enrolments.
+- Review academic records.
+
+6.3 Academic administrator
+
+Where supported by the existing role architecture:
+
+- Manage academic sessions.
+- Manage terms and periods.
+- Manage classes and subjects.
+- Manage enrolments and assignments.
+- Perform authorized academic administration.
+
+6.4 Teacher
+
+- View authorized teaching assignments.
+- View assigned classes.
+- View assigned subjects.
+- View authorized student information.
+- Access only the academic records required for assigned duties.
+
+Teachers must not receive unrestricted school administrator permissions.
+
+6.5 Student
+
+Where student authentication is implemented:
+
+- Access their own authorized profile.
+- View their own enrolment information.
+- Access only information permitted by the school's policy.
+
+Do not implement unrestricted student access to school records.
+
+6.6 Guardian or parent
+
+Do not introduce a full parent portal in this phase.
+
+However, preserve the ability to associate guardian identities with students safely in future phases.
+
+All authorization decisions must be enforced server-side.
+
+Never trust a frontend-supplied role, school ID or tenant ID.
+
+---
+
+7. TENANT ISOLATION
+
+This is a mandatory acceptance requirement.
+
+All academic records must be isolated by the authenticated user's authorized school membership.
+
+Implement or reuse centralized tenant resolution and authorization middleware.
+
+Requirements:
+
+1. Resolve tenant identity from authenticated membership.
+2. Never treat a frontend-supplied tenant ID as authoritative.
+3. Verify school membership for every protected academic operation.
+4. Validate school ownership of related entities.
+5. Prevent cross-school foreign-key relationships.
+6. Prevent teachers from accessing unauthorized classes.
+7. Prevent students from accessing other students' private information.
+8. Prevent one school administrator from modifying another school's academic configuration.
+9. Preserve explicit platform super-administrator authorization.
+10. Record security-relevant administrative actions.
+
+Use PostgreSQL Row-Level Security if compatible with the existing database connection architecture.
+
+If application-level isolation is retained initially:
+
+- Implement centralized enforcement.
+- Ensure repositories cannot accidentally omit tenant filters.
+- Document the residual security risk.
+- Provide automated cross-tenant tests.
+
+Do not claim tenant isolation is complete until those tests pass.
+
+---
+
+8. API REQUIREMENTS
+
+Inspect existing routes and contracts before introducing new endpoints.
+
+Reuse compatible APIs.
+
+All academic operations must pass through the unified backend.
+
+Implement or complete API capabilities equivalent to:
+
+Academic sessions
+
+- Create academic session.
+- List academic sessions.
+- Retrieve academic session.
+- Update academic session.
+- Activate or close an academic session.
+
+Academic periods
+
+- Create academic period.
+- List periods.
+- Retrieve period.
+- Update period.
+- Change period status.
+
+Classes and class arms
+
+- Create class.
+- List classes.
+- Retrieve class.
+- Update class.
+- Deactivate class.
+- Create class arm.
+- List class arms.
+- Update class arm.
+
+Subjects
+
+- Create subject.
+- List subjects.
+- Retrieve subject.
+- Update subject.
+- Assign subject to applicable classes.
+- Deactivate subject.
+
+Teachers
+
+- Register teacher.
+- List teachers.
+- Retrieve teacher.
+- Update teacher.
+- Invite teacher.
+- Retrieve teacher activation status.
+- Deactivate teacher.
+- Assign teacher to subject/class/session.
+
+Students
+
+- Register student.
+- List students.
+- Retrieve student.
+- Update student.
+- Retrieve student enrolments.
+- Change student status.
+- Transfer student where authorized.
+
+Enrolments
+
+- Create student enrolment.
+- List enrolments.
+- Retrieve enrolment.
+- Update enrolment where permitted.
+- Promote student.
+- Retrieve historical enrolments.
+
+School academic configuration
+
+- Retrieve academic configuration.
+- Update academic configuration.
+- Retrieve supported education levels.
+- Retrieve configured calendar structure.
+
+Every protected API must:
+
+- Require genuine authentication.
+- Enforce authorization.
+- Resolve tenant identity server-side.
+- Validate input.
+- Use consistent response envelopes.
+- Return appropriate HTTP status codes.
+- Include correlation IDs where supported.
+- Avoid leaking stack traces or internal secrets.
+
+Update shared API contracts and types.
+
+Document the API endpoints, authorization requirements, request schemas and response schemas.
+
+---
+
+9. FRONTEND REQUIREMENTS
+
+Implement the Academic Administration interface within the existing application architecture and design system.
+
+Do not create a separate frontend application.
+
+The interface must be responsive and usable on mobile devices.
+
+Screen 1 — Academic Administration Dashboard
+
+Display:
+
+- Current academic session.
+- Current academic period.
+- Total registered students.
+- Total registered teachers.
+- Total active classes.
+- Total registered subjects.
+- Enrolment summaries.
+- Relevant academic configuration status.
+
+All metrics must come from actual authorized backend records.
+
+Do not fabricate counts.
+
+Screen 2 — Academic Session Management
+
+Allow authorized users to:
+
+- Create sessions.
+- Edit sessions.
+- View historical sessions.
+- Set the current session.
+- Close sessions.
+
+Validate dates and prevent invalid session configurations.
+
+Screen 3 — Academic Calendar Management
+
+Allow authorized users to:
+
+- Create terms, semesters or quarters.
+- Configure period names.
+- Configure sequence.
+- Configure start and end dates.
+- View the calendar.
+- Edit permitted configurations.
+
+Display the school's configured academic calendar structure.
+
+Screen 4 — Class Management
+
+Allow administrators to:
+
+- Create classes.
+- Configure education levels.
+- Define class codes.
+- Set class sequence.
+- Edit class details.
+- Activate or deactivate classes.
+- View associated class arms.
+
+Screen 5 — Class Arm Management
+
+Allow administrators to:
+
+- Create arms or streams.
+- Associate arms with parent classes.
+- Configure capacity.
+- Edit and deactivate arms.
+- View enrolled students.
+
+Screen 6 — Subject Management
+
+Allow administrators to:
+
+- Register subjects.
+- Define subject codes.
+- Configure subject categories.
+- Configure education-level applicability.
+- Mark subjects as compulsory or elective.
+- Assign subjects to applicable classes.
+- Edit subject records.
+
+Screen 7 — Teacher Management
+
+Allow administrators to:
+
+- Register teachers.
+- Invite teachers.
+- View teacher activation status.
+- Edit teacher records.
+- Assign subjects.
+- Assign classes.
+- View teacher workloads.
+- Deactivate teacher access.
+
+Do not show an active teacher account when identity activation has not actually succeeded.
+
+Screen 8 — Student Management
+
+Allow administrators to:
+
+- Register students.
+- Configure admission numbers.
+- View student profiles.
+- Edit permitted student details.
+- View enrolment history.
+- View current class.
+- Change authorized student status.
+
+Provide search, filtering and pagination.
+
+Screen 9 — Student Enrolment
+
+Allow administrators to:
+
+- Select a student.
+- Select an academic session.
+- Select a class.
+- Select a class arm where applicable.
+- Confirm enrolment.
+- View enrolment history.
+- Perform authorized student promotion.
+
+Screen 10 — Teacher Assignment
+
+Allow administrators to:
+
+- Select a teacher.
+- Select a subject.
+- Select a class.
+- Select a class arm where applicable.
+- Select an academic session.
+- Create an assignment.
+- View current assignments.
+- Modify permitted assignments.
+
+Screen 11 — Academic Configuration
+
+Allow administrators to configure:
+
+- Education system.
+- Academic calendar.
+- Session naming.
+- Class structures.
+- Admission-number formats.
+- Applicable academic settings.
+
+Screen 12 — Operational feedback
+
+All screens must implement:
+
+- Actual loading states.
+- Validation errors.
+- Permission errors.
+- Empty states.
+- Successful backend responses.
+- Safe error messages.
+- Appropriate confirmation before destructive or consequential actions.
+
+Do not use artificial timers to simulate database operations.
+
+Do not display success until the backend confirms the operation.
+
+---
+
+10. TRANSACTIONAL INTEGRITY AND DATA VALIDATION
+
+Implement reliable data operations.
+
+Requirements:
+
+1. Use transactions for related database writes.
+2. Enforce uniqueness at database level.
+3. Prevent duplicate student admission numbers within a school.
+4. Prevent duplicate subject codes where applicable.
+5. Prevent duplicate teacher assignments.
+6. Prevent invalid class and class-arm relationships.
+7. Prevent enrolments across unrelated schools.
+8. Prevent invalid academic period dates.
+9. Prevent conflicting active enrolments.
+10. Preserve historical academic records.
+11. Avoid destructive updates to historical academic data.
+12. Return useful validation errors.
+
+Where operations involve external identity providers, use safe staged operations.
+
+Do not claim that an invitation or teacher account has been activated unless the identity provider confirms it.
+
+Do not silently swallow failures.
+
+Ensure retries do not create duplicate records.
+
+---
+
+11. DATABASE MIGRATIONS
+
+Create versioned SQL migrations following the repository's existing conventions.
+
+Inspect existing entities before introducing new tables.
+
+Requirements:
+
+- Appropriate primary keys.
+- Tenant ownership relationships.
+- Foreign-key constraints.
+- Unique constraints.
+- Check constraints.
+- Appropriate indexes.
+- Created and updated timestamps.
+- Historical record support.
+- Referential integrity.
+- Safe migration ordering.
+- Rollback strategy where supported.
+
+Migrations must be safe for existing demonstration deployments and future production tenant deployments.
+
+Do not automatically convert demonstration data into real tenant data.
+
+Do not introduce fake students, teachers, classes or subjects into production migrations.
+
+Do not silently create or overwrite production schemas during application startup.
+
+Do not introduce destructive migrations without demonstrating their necessity and safety.
+
+---
+
+12. AUDITABILITY
+
+Implement appropriate audit records for consequential academic administration operations.
+
+At minimum, capture:
+
+- Actor identity.
+- School/tenant identity.
+- Action performed.
+- Affected entity.
+- Affected entity identifier.
+- Timestamp.
+- Relevant correlation ID.
+- Appropriate change metadata.
+
+Audit:
+
+- Academic session creation and changes.
+- Calendar changes.
+- Class creation and changes.
+- Subject creation and changes.
+- Teacher registration and assignment changes.
+- Student registration and status changes.
+- Enrolment and promotion operations.
+
+Do not log passwords, authentication tokens or unnecessary sensitive student information.
+
+Preserve existing audit infrastructure if already implemented.
+
+---
+
+13. PERFORMANCE AND SCALABILITY
+
+The academic administration module must support multiple schools and potentially large student populations.
+
+Implement:
+
+- Server-side pagination.
+- Server-side filtering.
+- Search.
+- Appropriate database indexes.
+- Efficient relational queries.
+- Avoidance of unnecessary N+1 database queries.
+- Appropriate request validation.
+- Reasonable API response sizes.
+
+Do not load an entire school's student population into browser memory simply to support search or filtering.
+
+Do not assume that the initial demonstration school size represents the production workload.
+
+---
+
+14. INTEGRATION WITH SUBSEQUENT PHASES
+
+Phase 2 must establish the data foundation for the subsequent examination modules.
+
+Prepare stable, reusable interfaces and relationships for:
+
+Phase 3 — Examination Administration
+
+The future examination module must be able to reference:
+
+- Schools and tenants.
+- Academic sessions.
+- Academic periods.
+- Classes.
+- Class arms.
+- Subjects.
+- Students.
+- Student enrolments.
+- Teachers.
+- Teacher assignments.
+
+Phase 4 — Tests and CBT
+
+The future examination delivery system must be able to establish candidate eligibility using the academic records created in this phase.
+
+Phase 5 — Results and Reporting
+
+The future results system must be able to associate examination outcomes with the correct:
+
+- School.
+- Student.
+- Academic session.
+- Academic period.
+- Class.
+- Subject.
+- Enrolment.
+
+Do not implement these subsequent examination features now.
+
+Do not create incomplete examination screens merely to demonstrate integration.
+
+Instead, ensure that the academic administration entities and API contracts are stable and suitable for future consumption.
+
+---
+
+15. TESTING AND ACCEPTANCE CRITERIA
+
+Use the repository's existing testing framework.
+
+Do not claim completion based solely on successful compilation.
+
+Implement automated tests covering the following.
+
+A. Academic sessions
+
+- A school can create an academic session.
+- Sessions persist in PostgreSQL.
+- Invalid dates are rejected.
+- Duplicate or conflicting current sessions are handled correctly.
+- Historical sessions remain accessible.
+
+B. Academic periods
+
+- A school can configure its calendar.
+- Three-term calendars work.
+- Two-semester calendars work.
+- Four-quarter calendars work.
+- Institution-defined periods work.
+- Invalid period relationships are rejected.
+- Periods persist after backend restart.
+
+C. Classes and class arms
+
+- A school can create classes.
+- Different education systems are supported.
+- Classes can have multiple arms.
+- Classes without arms are supported.
+- Duplicate class codes are rejected appropriately.
+- Class-arm ownership is enforced.
+
+D. Subjects
+
+- A school can create subjects.
+- Subject codes are validated.
+- Subjects can be assigned to multiple applicable classes.
+- Compulsory and elective subjects are supported.
+- Subject records persist after backend restart.
+
+E. Teachers
+
+- Genuine teacher records can be created.
+- Teacher identities are securely associated.
+- Invitation and activation status are accurately represented.
+- Teacher assignments persist.
+- Unauthorized users cannot create or modify teacher assignments.
+- Deactivation preserves historical assignments.
+
+F. Students
+
+- Genuine student records can be created.
+- Admission numbers are unique within a school.
+- Student profiles persist.
+- Student status changes are correctly handled.
+- Historical records are preserved.
+- Unauthorized access to student information is prevented.
+
+G. Student enrolment
+
+- Students can be enrolled into valid classes.
+- Enrolments are linked to valid academic sessions.
+- Class-arm relationships are validated.
+- Conflicting enrolments are rejected.
+- Historical enrolments are preserved.
+- Student progression works correctly.
+
+H. Teacher assignments
+
+- Teachers can be assigned to subjects.
+- Teachers can be assigned to classes.
+- Session-specific assignments work.
+- Invalid cross-school assignments are rejected.
+- Duplicate assignments are prevented.
+
+I. Tenant isolation
+
+Provision at least two independent test schools.
+
+Verify:
+
+- School A cannot retrieve School B's students.
+- School A cannot retrieve School B's teachers.
+- School A cannot retrieve School B's classes.
+- School A cannot retrieve School B's subjects.
+- School A cannot retrieve School B's academic sessions.
+- School A cannot modify School B's records.
+- School A cannot enrol students into School B's classes.
+- School A cannot assign School B's teachers.
+- Manipulating frontend tenant IDs does not bypass authorization.
+- Unauthorized users cannot access academic administration endpoints.
+
+These tests must use genuine tenant resolution and authorization logic, not mocked authorization that bypasses the implementation being tested.
+
+J. Persistence
+
+- Academic records survive backend restarts.
+- Student records survive backend restarts.
+- Teacher records survive backend restarts.
+- Academic configurations survive backend restarts.
+- Enrolment history survives backend restarts.
+- No real tenant operation depends on local JSON persistence.
+
+K. Frontend
+
+- Academic administration dashboard displays real data.
+- Academic session creation works.
+- Calendar configuration works.
+- Class creation works.
+- Subject creation works.
+- Teacher registration works.
+- Student registration works.
+- Student enrolment works.
+- Teacher assignment works.
+- Validation and failure states work.
+- Mobile layouts remain usable.
+
+L. Regression
+
+Verify:
+
+- Phase 1 school provisioning remains operational.
+- School administrator access remains functional.
+- Platform control-plane functionality remains operational.
+- Existing application routing remains functional.
+- Curriculum Flow remains compatible.
+- Existing demonstration environments remain appropriately separated.
+- Existing API contracts are not unnecessarily broken.
+- Existing application architectures are not unintentionally restricted.
+
+---
+
+16. EXPLICITLY PROHIBITED SHORTCUTS
+
+Do not:
+
+1. Use fabricated students or teachers as production records.
+2. Use mock authentication for school users.
+3. Use local JSON files as authoritative academic persistence.
+4. Use browser local storage as authoritative academic persistence.
+5. Use hardcoded school IDs.
+6. Trust frontend-supplied tenant IDs.
+7. Trust frontend-supplied user roles.
+8. Bypass the unified backend.
+9. Create a separate backend for academic administration.
+10. Create a separate database for every school as a prerequisite.
+11. Hardcode a Nigerian three-term calendar.
+12. Hardcode Nigerian class structures as the only supported education system.
+13. Assume every school uses the same subject catalogue.
+14. Automatically grant teacher or student administrative privileges.
+15. Expose private student information through unrestricted APIs.
+16. Delete historical academic records when students or teachers leave.
+17. Convert demonstration records into genuine tenant records.
+18. Introduce fabricated success responses.
+19. Introduce artificial timers to simulate backend operations.
+20. Claim that identity invitations have succeeded without provider confirmation.
+21. Implement examination delivery or marking prematurely.
+22. Implement results publication prematurely.
+23. Disable existing functionality merely to simplify implementation.
+24. Replace the existing framework or application architecture.
+25. Introduce unnecessary duplicate database models.
+26. Introduce destructive migrations without justification.
+27. Push directly to "main".
+28. Claim tenant isolation is complete without passing cross-tenant tests.
+29. Claim production readiness without actual persistence and integration verification.
+
+---
+
+17. IMPLEMENTATION AND GITHUB WORKFLOW
+
+Follow this sequence.
+
+Step 1 — Repository verification
+
+- Fetch the latest repository state.
+- Inspect "main".
+- Confirm the current Phase 1 implementation.
+- Identify existing Phase 2 work.
+- Produce the implementation inventory.
+
+Step 2 — Implementation planning
+
+Produce:
+
+- Architecture impact assessment.
+- Database design.
+- Migration plan.
+- API implementation plan.
+- Authorization plan.
+- Frontend implementation plan.
+- Testing plan.
+- Existing-file modification inventory.
+
+Step 3 — Dedicated feature branch
+
+Create a dedicated feature branch from the verified latest "main".
+
+Suggested branch name:
+
+"feature/phase-2-academic-administration"
+
+Do not work directly on "main".
+
+Step 4 — Backend implementation
+
+Implement:
+
+- Academic repositories.
+- Database migrations.
+- Academic services.
+- Validation.
+- Tenant-scoped authorization.
+- API routes.
+- Shared contracts.
+
+Step 5 — Frontend implementation
+
+Implement the academic administration screens using the existing application design system and API client.
+
+Step 6 — Integration
+
+Connect all academic administration interfaces to real backend operations.
+
+Ensure all writes and reads use PostgreSQL through the unified backend.
+
+Step 7 — Testing
+
+Run:
+
+- Relevant unit tests.
+- Integration tests.
+- Cross-tenant authorization tests.
+- Frontend tests.
+- TypeScript checks.
+- Lint.
+- Production build.
+- Relevant regression tests.
+
+Step 8 — Review
+
+Review:
+
+- Security.
+- Database migrations.
+- Tenant isolation.
+- Authentication.
+- Authorization.
+- API compatibility.
+- Demonstration-data separation.
+- Performance.
+- Regression risks.
+
+Step 9 — Commit and PR
+
+Commit the implementation to the dedicated feature branch.
+
+Open a Pull Request against "main".
+
+Do not merge automatically.
+
+Do not push directly to "main".
+
+---
+
+18. REQUIRED PR DELIVERABLES
+
+The Pull Request must contain:
+
+1. Implementation summary.
+2. Repository inspection findings.
+3. Exact files added.
+4. Exact files modified.
+5. Database migrations.
+6. Academic entity and relationship documentation.
+7. API endpoint documentation.
+8. Tenant authorization implementation.
+9. Frontend implementation summary.
+10. Test coverage summary.
+11. Actual test execution results.
+12. Production build results.
+13. Demonstration-data separation findings.
+14. Outstanding security or infrastructure dependencies.
+15. Known limitations.
+16. Recommended next steps for Phase 3.
+
+Include a clear distinction between:
+
+- Fully implemented and tested.
+- Implemented but not integration-tested.
+- Partially implemented.
+- Blocked by missing infrastructure or configuration.
+- Not implemented.
+
+Do not report a test as passing if it was not actually executed.
+
+Do not report a PostgreSQL integration as operational if only a mocked database adapter was used.
+
+Do not claim that a feature is production-ready merely because its frontend has been completed.
+
+---
+
+19. FINAL ACCEPTANCE GATE
+
+Phase 2 will be considered complete only when all of the following are demonstrated:
+
+1. At least two independently provisioned school instances can use the same reusable academic administration module.
+2. Each school can configure its own academic calendar.
+3. Each school can create its own classes and class arms.
+4. Each school can manage its own subjects.
+5. Each school can register genuine teachers.
+6. Each school can register genuine students.
+7. Each school can enrol students into its academic structure.
+8. Each school can assign teachers to classes and subjects.
+9. All records persist in PostgreSQL.
+10. Cross-school access is prevented by server-side authorization.
+11. Academic records survive backend restarts.
+12. Existing Phase 1 provisioning remains operational.
+13. Demonstration records remain distinguishable from real tenant records.
+14. Automated acceptance and regression tests pass.
+15. The implementation is submitted as a reviewable Pull Request.
+
+The final objective is not merely to build student, teacher and class management screens. It is to establish a reusable, configurable, genuinely operational academic administration capability that every future school provisioned by Curriculum Server can use independently.
+
+---
+
+20. STOP CONDITIONS
+
+Stop implementation and report the blocker if:
+
+- Phase 1 school provisioning is not sufficiently operational to support Phase 2.
+- PostgreSQL persistence is unavailable.
+- Tenant identity cannot be resolved securely.
+- Authentication or authorization cannot be trusted.
+- Existing migrations would require unsafe destructive changes.
+- The existing architecture cannot support the proposed implementation without a significant architectural decision.
+
+Do not work around these conditions by introducing mock authentication, fabricated records, local JSON persistence or simulated success.
+
+Do not silently weaken security requirements.
+
+Do not proceed into Phase 3.
+
+Deliver a real implementation, backed by repository evidence, database persistence, automated tests and a reviewable Pull Request.
