@@ -130,7 +130,6 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
     emails.push(staffEmail);
     const staffUserId = randomUUID();
     await withControlPlaneTransaction(pool, admin, async c => {
-      await c.query("SELECT set_config('app.tenant_id', $1, true)", [a.record.tenantId]);
       await c.query('INSERT INTO production.users (id, email, full_name, password_hash, email_verified_at) VALUES ($1, $2, $4, $3, now())',
         [staffUserId, staffEmail, await hashPassword('test-school-admin-password-12'), 'Staff Member']);
       await c.query(`INSERT INTO production.memberships (tenant_id, user_id, user_subject, role, status)

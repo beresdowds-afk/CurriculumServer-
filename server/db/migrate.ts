@@ -20,6 +20,23 @@ async function main(): Promise<void> {
 
   if (command === 'up') {
     const status = await applyMigrations(pool, migrations, { dryRun });
+    const contextKeyTable = await pool.query<{ exists: boolean }>(
+      `SELECT to_regclass('control_plane.authorization_context_keys') IS NOT NULL AS exists`
+    );
+    const signingSecret = process.env.CONTROL_PLANE_SECRET || '';
+    if (!dryRun && contextKeyTable.rows[0]?.exists && signingSecret.length >= 32 &&
+        signingSecret !== 'default_insecure_secret' &&
+        signingSecret !== 'dev_insecure_fallback_secret_curriculum_server_2026_secure') {
+      await pool.query(
+        `INSERT INTO control_plane.authorization_context_keys (key_name, key_value)
+         VALUES ('authorization_context', $1)
+         ON CONFLICT (key_name) DO UPDATE
+         SET key_value = EXCLUDED.key_value, updated_at = now()`,
+        [Buffer.from(signingSecret, 'utf8')]
+      );
+    } else if (!dryRun && contextKeyTable.rows[0]?.exists) {
+      console.warn('Database authorization context key is not configured; protected readiness will remain unavailable.');
+    }
     console.log(JSON.stringify(status, null, 2));
     return;
   }

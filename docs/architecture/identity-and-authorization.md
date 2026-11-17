@@ -47,25 +47,33 @@ normalized assignments from it without discarding any subject.
   `requirePermission`, `requireResourcePermission`, `tenantAdministrator`,
   `platformAdministrator`, `internalService` (`x-internal-service-key`, `INTERNAL_SERVICE_KEY` ≥ 32 chars).
 * School application access is no longer restricted to `tenant_admin`; permissions decide.
-* Tenant context is set transaction-locally (`withTenantTransaction`); control-plane access uses the
-  single `withControlPlaneTransaction` helper in `server/db/tenantContext.ts`. This does not by itself
-  make tenant identity trustworthy: `app.tenant_id` and `app.control_plane_admin` are caller-settable.
-  Separate runtime/control-plane database identities and database-verifiable tenant context remain
-  required before relying on RLS against arbitrary SQL.
+* Tenant context is transaction-local and signed by the server (`withTenantTransaction`). RLS calls
+  `production.verified_authorization_context_kind()` and compares the signed tenant assertion with
+  `app.tenant_id`; the raw setting is not authorization evidence. Control-plane access uses the
+  signed `control_plane` assertion produced only after platform-token verification by
+  `withControlPlaneTransaction`. The invitation token hash is separately signed and verified by
+  `production.current_invitation_token_hash()`.
+* Migration 010 stores the HMAC key in `control_plane.authorization_context_keys`, inaccessible to
+  the runtime role. `npm run db:migrate` synchronizes that key from `CONTROL_PLANE_SECRET`; readiness
+  remains false if the key is absent or the runtime role can read it. Assertions expire after 120
+  seconds and transaction-local settings prevent context leakage between pooled requests.
+* Database signatures prove the assertion came from the trusted server; the API still verifies
+  current account, session, membership and permissions in PostgreSQL for each request. The key must
+  be managed and rotated through the migration-owner connection, never exposed to application SQL.
 * Role assignment cannot escalate: an actor can only assign roles whose permissions it holds.
 * Invitation acceptance stays a narrow token-hash-scoped transaction (`withInvitationTokenTransaction`).
 
 ## 3. Production capability gate
 
-`server/capabilities/productionCapabilityRegistry.ts` declares, per route group: capability id,
-required repositories and migrations, authentication, authorization, tenant-context requirement,
-acceptance tests and readiness. `server.ts` keeps the global `/api/v1` fail-closed lockdown and calls
-`evaluateProductionCapabilityGate`: a route is served only if its capability is `enabled`, declares
-acceptance tests, routes, and consistent auth/tenant rules. Unknown and unimplemented operations return 503.
-Registered but `not_started`: school_identity, student_administration, class_administration,
-staff_administration, administrative_permissions, student_lifecycle. Stage 2 handler routes and
-`GET /api/v1/application-templates` are not currently matched by enabled registrations and remain
-blocked by the gate; implemented handlers are not operational endpoints.
+`server/capabilities/productionCapabilityRegistry.ts` declares, per route group: canonical capability
+id, routes, required repositories and migrations, authentication, authorization, tenant-context
+requirement, acceptance tests, readiness evidence and lifecycle state (`not_started`, `implemented`,
+`configured`, `ready`, `degraded`, or `disabled`). `server.ts` keeps the global `/api/v1` fail-closed
+lockdown. A route is served only when its registration is `ready` and has operational evidence;
+unknown and unready operations return 503. Existing school, student, class and lifecycle handlers now
+map to their canonical groups, but remain blocked until the complete administration, authorization,
+configuration and runtime-readiness evidence exists. Staff, role administration and template
+discovery remain unavailable.
 
 ## 4. Application configuration contract
 

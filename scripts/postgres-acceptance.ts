@@ -15,6 +15,11 @@ if (env.POSTGRES_ACCEPTANCE !== '1') fail('set POSTGRES_ACCEPTANCE=1 to opt in.'
 if (env.DATABASE_TEST_DISPOSABLE !== '1') fail('set DATABASE_TEST_DISPOSABLE=1 to confirm the database is disposable.');
 if (!env.TEST_DATABASE_URL) fail('TEST_DATABASE_URL (non-owner runtime role) is required.');
 if (!env.MIGRATION_DATABASE_URL) fail('MIGRATION_DATABASE_URL (migration owner) is required.');
+if (!env.CONTROL_PLANE_SECRET || env.CONTROL_PLANE_SECRET.length < 32 ||
+    env.CONTROL_PLANE_SECRET === 'default_insecure_secret' ||
+    env.CONTROL_PLANE_SECRET === 'dev_insecure_fallback_secret_curriculum_server_2026_secure') {
+  fail('a synthetic or managed CONTROL_PLANE_SECRET of at least 32 characters is required.');
+}
 if (env.NODE_ENV === 'production') fail('refusing to run with NODE_ENV=production.');
 
 const hosts = [env.TEST_DATABASE_URL, env.MIGRATION_DATABASE_URL].map(value => new URL(value).hostname);
