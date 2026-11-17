@@ -79,10 +79,25 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     state: 'ready'
   },
   {
+    id: 'central_iam',
+    description: 'Centralized identity, Google OIDC, MFA, and session management.',
+    routes: [
+      { method: 'POST', path: exact('/server/auth/login', '/server/auth/verify', '/schools/auth/login', '/flow/auth/login') }
+    ],
+    requiredRepositories: ['AuthorizationRepository', 'SchoolProvisioningRepository'],
+    requiredMigrations: [5, 6, 7, 8, 9, 10],
+    authentication: 'none',
+    authorization: { rule: 'identity_and_session_verification_required', permissions: [] },
+    tenantContext: 'none',
+    acceptanceTests: [],
+    readinessEvidence: [],
+    state: 'not_started'
+  },
+  {
     id: 'school_provisioning',
     description: 'Platform-administrator school provisioning and invitation activation.',
     routes: [
-      { method: 'POST', path: exact('/server/auth/login', '/schools/provision', '/schools/activation', '/schools/auth/login') },
+      { method: 'POST', path: exact('/schools/provision', '/schools/activation') },
       { method: 'POST', path: new RegExp(`^/schools/provision/${uuid}/retry$`, 'i') },
       { method: 'GET', path: new RegExp(`^/schools/provision/${uuid}$`, 'i') }
     ],
