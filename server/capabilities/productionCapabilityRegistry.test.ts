@@ -13,6 +13,7 @@ const notReady = [
   'staff_administration',
   'administrative_permissions',
   'student_lifecycle',
+  'campus_logistics',
   'application_template_discovery'
 ];
 
@@ -39,6 +40,16 @@ test('implemented administration handlers map to their canonical unready capabil
     ['POST', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/class', 'class_administration'],
     ['POST', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/lifecycle', 'student_lifecycle'],
     ['GET', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/history', 'student_lifecycle'],
+    ['POST', '/logistics/pickup-passes', 'campus_logistics'],
+    ['GET', '/logistics/exeats', 'campus_logistics'],
+    ['POST', '/logistics/exeats', 'campus_logistics'],
+    ['POST', '/logistics/exeats/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/decisions', 'campus_logistics'],
+    ['POST', '/logistics/dining/meals/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/attendance', 'campus_logistics'],
+    ['POST', '/logistics/transport/trips/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/passenger-events', 'campus_logistics'],
+    ['PATCH', '/logistics/transport/trips/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/assignment', 'campus_logistics'],
+    ['POST', '/logistics/transport/trips/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/start', 'campus_logistics'],
+    ['GET', '/logistics/library/resources', 'campus_logistics'],
+    ['POST', '/logistics/library/resources', 'campus_logistics'],
     ['GET', '/schools/me/staff', 'staff_administration'],
     ['POST', '/schools/me/staff', 'staff_administration'],
     ['GET', '/schools/me/staff/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'staff_administration'],

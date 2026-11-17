@@ -102,7 +102,8 @@ export function validateSchoolProvisioningRequest(value: unknown): SchoolProvisi
       templateId: request.templateId.trim(),
       templateVersion: request.templateVersion.trim(),
       enabledCapabilities: request.enabledFeatures,
-      deploymentArchitecture: request.architecture
+      deploymentArchitecture: request.architecture,
+      featureConfigurations: request.applicationConfiguration?.featureConfigurations
     });
     if (request.applicationConfiguration) {
       const supplied = request.applicationConfiguration;
@@ -124,7 +125,8 @@ export function validateSchoolProvisioningRequest(value: unknown): SchoolProvisi
         templateVersion: request.templateVersion.trim(),
         enabledCapabilities: request.enabledFeatures,
         configurationVersion: supplied.configurationVersion,
-        deploymentArchitecture: request.architecture
+        deploymentArchitecture: request.architecture,
+        featureConfigurations: supplied.featureConfigurations
       });
     }
   } catch (error) {

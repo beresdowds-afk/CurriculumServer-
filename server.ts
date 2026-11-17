@@ -67,6 +67,9 @@ import {
   type StudentTransition
 } from './server/db/schoolAdministrationRepository';
 import { evaluateProductionCapabilityGate } from './server/capabilities/productionCapabilityRegistry';
+import { LogisticsError, LogisticsRepository } from './server/logistics/logisticsRepository';
+import { validateLogisticsFeatureConfiguration } from './src/data/logisticsFeatureTemplate';
+import type { AuthorizedPrincipal } from './server/authorization/authorizedPrincipal';
 import {
   hashInvitationToken,
   hashPassword,
@@ -1937,6 +1940,453 @@ app.get('/api/v1/students', requireSchoolAuth, requireTrustedDatabaseIdentity, a
     });
   }
 });
+
+// Tenant- and school-scoped logistics API. These routes remain fail-closed in
+// the capability registry until the production readiness evidence is complete.
+const logisticsRepository = () => new LogisticsRepository(postgresRuntime.getPool());
+const logisticsActor = (req: Request) => (req as any).authorizedPrincipal as AuthorizedPrincipal;
+const respondLogisticsFailure = (req: Request, res: Response, error: unknown) => {
+  const known = error instanceof LogisticsError;
+  const code = known ? error.code : error instanceof DatabaseFailure ? 'DATABASE_UNAVAILABLE' : 'LOGISTICS_OPERATION_FAILED';
+  const status = known
+    ? error.code === 'FORBIDDEN' ? 403
+      : error.code === 'FEATURE_DISABLED' ? 403
+      : error.code === 'NOT_FOUND' ? 404
+        : error.code === 'CONFLICT' ? 409
+          : error.code === 'INVALID_INPUT' ? 400 : 503
+    : 503;
+  res.status(status).json({
+    success: false,
+    code,
+    error: known ? error.message : 'The logistics operation could not be completed.',
+    correlationId: (req as any).correlationId,
+    timestamp: new Date().toISOString()
+  });
+};
+
+app.get(
+  '/api/v1/logistics/configuration',
+  authorizationMiddleware.requirePermission('logistics.configuration.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().getConfiguration(logisticsActor(req));
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.patch(
+  '/api/v1/logistics/configuration',
+  authorizationMiddleware.requirePermission('logistics.configuration.manage'),
+  async (req: Request, res: Response) => {
+    const validated = validateLogisticsFeatureConfiguration(req.body?.configuration);
+    if (!validated.valid || !validated.configuration) {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Logistics configuration is invalid.',
+        details: validated.errors,
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const configuration = validated.configuration;
+      const data = await logisticsRepository().updateConfiguration(logisticsActor(req), {
+        capabilities: configuration.capabilities,
+        settings: { ...configuration }
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.get(
+  '/api/v1/logistics/occupancy',
+  authorizationMiddleware.requirePermission('logistics.hostel.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().listOccupancy(logisticsActor(req));
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.get(
+  '/api/v1/logistics/exeats',
+  authorizationMiddleware.requirePermission('logistics.exeat.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().listExeats(logisticsActor(req), {
+        page: req.query.page === undefined ? undefined : Number(req.query.page),
+        pageSize: req.query.pageSize === undefined ? undefined : Number(req.query.pageSize),
+        status: typeof req.query.status === 'string' ? req.query.status : undefined,
+        studentId: typeof req.query.studentId === 'string' ? req.query.studentId : undefined
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.get(
+  '/api/v1/logistics/exeats/:exeatId',
+  authorizationMiddleware.requirePermission('logistics.exeat.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().getExeat(logisticsActor(req), req.params.exeatId);
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/exeats',
+  authorizationMiddleware.requirePermission('logistics.exeat.request'),
+  async (req: Request, res: Response) => {
+    const { studentId, destination, reason, departureDueAt, returnDueAt } = req.body ?? {};
+    if (typeof studentId !== 'string' || typeof destination !== 'string' ||
+        typeof reason !== 'string' || typeof departureDueAt !== 'string' ||
+        typeof returnDueAt !== 'string') {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Exeat request fields are invalid.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsRepository().createExeat(logisticsActor(req), {
+        studentId, destination, reason, departureDueAt, returnDueAt,
+        idempotencyKey: String(req.headers['idempotency-key'] || '')
+      });
+      res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/exeats/:exeatId/decisions',
+  authorizationMiddleware.requirePermission('logistics.exeat.approve'),
+  async (req: Request, res: Response) => {
+    const { decision, rationale } = req.body ?? {};
+    if ((decision !== 'approved' && decision !== 'rejected') ||
+        (rationale !== undefined && typeof rationale !== 'string')) {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Exeat decision fields are invalid.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsRepository().decideExeat(logisticsActor(req), {
+        exeatId: req.params.exeatId,
+        decision,
+        ...(rationale ? { rationale } : {}),
+        idempotencyKey: String(req.headers['idempotency-key'] || '')
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/exeats/:exeatId/departure-authorization',
+  authorizationMiddleware.requirePermission('logistics.exeat.approve'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().authorizeExeatDeparture(logisticsActor(req), req.params.exeatId);
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/exeats/:exeatId/gate-movements',
+  authorizationMiddleware.requirePermission('logistics.gate.manage'),
+  async (req: Request, res: Response) => {
+    const { gateLocationId, direction } = req.body ?? {};
+    if (typeof gateLocationId !== 'string' ||
+        (direction !== 'departure' && direction !== 'return')) {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Exeat gate-movement fields are invalid.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsRepository().recordExeatGateMovement(logisticsActor(req), {
+        exeatId: req.params.exeatId,
+        gateLocationId,
+        direction,
+        idempotencyKey: String(req.headers['idempotency-key'] || '')
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.get(
+  '/api/v1/logistics/dining/meals',
+  authorizationMiddleware.requirePermission('logistics.dining.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().listDiningMeals(logisticsActor(req), {
+        serviceDate: typeof req.query.serviceDate === 'string' ? req.query.serviceDate : undefined,
+        page: req.query.page === undefined ? undefined : Number(req.query.page),
+        pageSize: req.query.pageSize === undefined ? undefined : Number(req.query.pageSize)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/dining/meals/:mealId/attendance',
+  authorizationMiddleware.requirePermission('logistics.dining.attendance.record'),
+  async (req: Request, res: Response) => {
+    const { studentId, overrideReason } = req.body ?? {};
+    if (typeof studentId !== 'string' ||
+        (overrideReason !== undefined && typeof overrideReason !== 'string')) {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Dining attendance fields are invalid.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsRepository().recordDiningAttendance(logisticsActor(req), {
+        mealId: req.params.mealId,
+        studentId,
+        idempotencyKey: String(req.headers['idempotency-key'] || ''),
+        ...(overrideReason ? { overrideReason } : {})
+      });
+      res.status(data.replayed ? 200 : 201).json({
+        success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/transport/trips/:tripId/passenger-events',
+  authorizationMiddleware.requirePermission('logistics.transport.passengers.manage'),
+  async (req: Request, res: Response) => {
+    const { studentId, eventType } = req.body ?? {};
+    if (typeof studentId !== 'string' ||
+        (eventType !== 'boarded' && eventType !== 'dropped_off')) {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Trip passenger event fields are invalid.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsRepository().recordTripPassengerEvent(logisticsActor(req), {
+        tripId: req.params.tripId,
+        studentId,
+        eventType,
+        idempotencyKey: String(req.headers['idempotency-key'] || '')
+      });
+      res.status(data.replayed ? 200 : 201).json({
+        success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.patch(
+  '/api/v1/logistics/transport/trips/:tripId/assignment',
+  authorizationMiddleware.requirePermission('logistics.transport.manage'),
+  async (req: Request, res: Response) => {
+    const { driverId, vehicleId } = req.body ?? {};
+    if (typeof driverId !== 'string' || typeof vehicleId !== 'string') {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Trip assignment requires a driver and vehicle identifier.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsRepository().assignTrip(logisticsActor(req), {
+        tripId: req.params.tripId, driverId, vehicleId
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/transport/trips/:tripId/start',
+  authorizationMiddleware.requirePermission('logistics.transport.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().startTrip(logisticsActor(req), req.params.tripId);
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.get(
+  '/api/v1/logistics/library/resources',
+  authorizationMiddleware.requirePermission('logistics.library.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().listLibraryResources(logisticsActor(req), {
+        page: req.query.page === undefined ? undefined : Number(req.query.page),
+        pageSize: req.query.pageSize === undefined ? undefined : Number(req.query.pageSize),
+        search: typeof req.query.search === 'string' ? req.query.search : undefined
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/library/resources',
+  authorizationMiddleware.requirePermission('logistics.library.manage'),
+  async (req: Request, res: Response) => {
+    const { title, subjectId, classId, description } = req.body ?? {};
+    if (typeof title !== 'string' ||
+        (subjectId !== undefined && typeof subjectId !== 'string') ||
+        (classId !== undefined && typeof classId !== 'string') ||
+        (description !== undefined && typeof description !== 'string')) {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Library resource metadata fields are invalid.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsRepository().createLibraryResourceMetadata(logisticsActor(req), {
+        title,
+        ...(subjectId ? { subjectId } : {}),
+        ...(classId ? { classId } : {}),
+        ...(description ? { description } : {}),
+        idempotencyKey: String(req.headers['idempotency-key'] || '')
+      });
+      res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/pickup-passes',
+  authorizationMiddleware.requirePermission('logistics.guardians.manage'),
+  async (req: Request, res: Response) => {
+    const { authorizationId, expiresAt, pin, reusable, maxUses } = req.body ?? {};
+    if (typeof authorizationId !== 'string' || typeof expiresAt !== 'string' ||
+        (pin !== undefined && typeof pin !== 'string') ||
+        (reusable !== undefined && typeof reusable !== 'boolean') ||
+        (maxUses !== undefined && typeof maxUses !== 'number')) {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Pickup-pass fields are invalid.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsRepository().issuePickupPass(logisticsActor(req), {
+        authorizationId,
+        idempotencyKey: String(req.headers['idempotency-key'] || ''),
+        expiresAt,
+        ...(pin ? { pin } : {}),
+        ...(reusable !== undefined ? { reusable } : {}),
+        ...(maxUses !== undefined ? { maxUses } : {})
+      });
+      res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/gate/scans',
+  authorizationMiddleware.requirePermission('logistics.gate.manage'),
+  async (req: Request, res: Response) => {
+    const { token, pin, gateLocationId, direction } = req.body ?? {};
+    if (typeof token !== 'string' || typeof gateLocationId !== 'string' ||
+        (direction !== 'entry' && direction !== 'exit') ||
+        (pin !== undefined && typeof pin !== 'string')) {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Gate scan fields are invalid.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsRepository().scanPickupPass(logisticsActor(req), {
+        token,
+        ...(pin ? { pin } : {}),
+        gateLocationId,
+        direction,
+        idempotencyKey: String(req.headers['idempotency-key'] || '')
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
 
 // 6. API v1 - Health & Tenant Container Probe
  

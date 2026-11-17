@@ -11,6 +11,10 @@ import {
 } from './applicationRegistryData';
 import { SCHOOL_ADMINISTRATION_IDENTITY_TEMPLATE } from '../../packages/shared-types/src/schoolAdministrationTemplate';
 import type { ApplicationBuilderConfigurationV1 } from '../../packages/shared-types/src/apiContracts';
+import {
+  LOGISTICS_FEATURE_TEMPLATE,
+  validateLogisticsFeatureConfiguration
+} from './logisticsFeatureTemplate';
 
 export const APPLICATION_CONFIGURATION_CONTRACT_VERSION = 1;
 
@@ -55,6 +59,26 @@ export const APPLICATION_TEMPLATE_REGISTRY: readonly ApplicationTemplateRegistra
   }
 ];
 
+export interface ApplicationFeatureTemplateRegistration {
+  applicationId: string;
+  featureId: string;
+  templateId: string;
+  versions: string[];
+  status: 'published' | 'draft';
+  provisionable: boolean;
+}
+
+export const APPLICATION_FEATURE_TEMPLATE_REGISTRY: readonly ApplicationFeatureTemplateRegistration[] = [
+  {
+    applicationId: 'app_curriculum_flow',
+    featureId: LOGISTICS_FEATURE_TEMPLATE.featureId,
+    templateId: LOGISTICS_FEATURE_TEMPLATE.templateId,
+    versions: [LOGISTICS_FEATURE_TEMPLATE.templateVersion],
+    status: 'draft',
+    provisionable: false
+  }
+];
+
 export const SUPPORTED_APPLICATION_TEMPLATES: readonly SupportedApplicationTemplate[] =
   APPLICATION_TEMPLATE_REGISTRY.filter(template => template.provisionable);
 
@@ -67,6 +91,7 @@ export interface ApplicationConfigurationInput {
   enabledCapabilities: string[];
   configurationVersion?: number;
   deploymentArchitecture: DeploymentArchitecture;
+  featureConfigurations?: ApplicationBuilderConfigurationV1['featureConfigurations'];
 }
 
 export function validateApplicationInstanceConfiguration(
@@ -136,6 +161,48 @@ export function validateApplicationInstanceConfiguration(
       !evidence.validatedAt || !Array.isArray(evidence.checks) || evidence.checks.length === 0) {
     errors.push('Validation evidence is required.');
   }
+  const featureConfigurations = config.featureConfigurations;
+  if (featureConfigurations !== undefined &&
+      (!featureConfigurations || typeof featureConfigurations !== 'object' || Array.isArray(featureConfigurations))) {
+    errors.push('Feature configurations must be an object keyed by feature identifier.');
+  } else for (const [featureId, rawFeatureConfiguration] of Object.entries(featureConfigurations ?? {})) {
+    if (!rawFeatureConfiguration || typeof rawFeatureConfiguration !== 'object' ||
+        Array.isArray(rawFeatureConfiguration)) {
+      errors.push(`Feature configuration '${featureId}' must be an object.`);
+      continue;
+    }
+    const featureConfiguration = rawFeatureConfiguration;
+    const featureTemplate = APPLICATION_FEATURE_TEMPLATE_REGISTRY.find(template =>
+      template.applicationId === config.applicationId &&
+      template.featureId === featureId &&
+      template.templateId === featureConfiguration.templateId
+    );
+    if (!featureTemplate) {
+      errors.push(`Unsupported feature configuration '${featureId}'.`);
+      continue;
+    }
+    if (!featureTemplate.versions.includes(featureConfiguration.templateVersion)) {
+      errors.push('Unsupported Campus Logistics & Support template version.');
+    }
+    const logistics = validateLogisticsFeatureConfiguration(featureConfiguration.settings);
+    errors.push(...logistics.errors);
+    if (logistics.configuration) {
+      const featureForCapability: Record<string, string> = {
+        gate_security: 'feat_logistics_gate_security',
+        guardian_pickup: 'feat_logistics_gate_security',
+        hostel_management: 'feat_logistics_boarding_house',
+        exeat_management: 'feat_logistics_boarding_house',
+        dining_management: 'feat_logistics_boarding_house',
+        school_transport: 'feat_logistics_transportation',
+        digital_library: 'feat_logistics_elibrary'
+      };
+      for (const [capability, enabled] of Object.entries(logistics.configuration.capabilities)) {
+        if (enabled && !config.enabledCapabilities?.includes(featureForCapability[capability])) {
+          errors.push(`Logistics capability '${capability}' must also be enabled in the application feature selection.`);
+        }
+      }
+    }
+  }
   return { valid: errors.length === 0, errors: [...new Set(errors)] };
 }
 
@@ -172,7 +239,8 @@ export function buildApplicationInstanceConfiguration(
         'capability_dependencies_satisfied',
         'architecture_provisionable'
       ]
-    }
+    },
+    ...(input.featureConfigurations ? { featureConfigurations: input.featureConfigurations } : {})
   };
   const result = validateApplicationInstanceConfiguration(configuration);
   if (!result.valid) throw new Error(`INVALID_APPLICATION_CONFIGURATION: ${result.errors.join(' ')}`);

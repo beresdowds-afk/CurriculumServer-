@@ -373,6 +373,19 @@ class UnifiedApiClient {
     return res.data;
   }
 
+  public async requestLogistics<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    if (!this.isAuthenticated('school_flow')) {
+      throw new Error('A valid authenticated school session is required.');
+    }
+    if (!endpoint.startsWith('/') || endpoint.includes('?tenantId=') || endpoint.includes('?schoolId=')) {
+      throw new Error('Logistics requests must use a relative API path without client-selected school context.');
+    }
+    return this.request<T>(`/api/v1/logistics${endpoint}`, options, 'school_flow');
+  }
+
   public async getMySchoolConfiguration(): Promise<SchoolConfigurationResponse> {
     const res = await this.request<{ success: boolean; data: SchoolConfigurationResponse }>(
       '/api/v1/schools/me/config', { method: 'GET' }, 'school_flow'

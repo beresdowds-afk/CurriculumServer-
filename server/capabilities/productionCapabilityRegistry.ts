@@ -208,6 +208,46 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     state: 'implemented'
   },
   {
+    id: 'campus_logistics',
+    description: 'Tenant-authorized campus gate security, exeat workflows, dining, transport events, and hostel occupancy.',
+    routes: [
+      { method: 'GET', path: exact('/logistics/configuration', '/logistics/occupancy') },
+      { method: 'GET', path: exact('/logistics/exeats', '/logistics/dining/meals', '/logistics/library/resources') },
+      { method: 'GET', path: new RegExp(`^/logistics/exeats/${uuid}$`, 'i') },
+      { method: 'PATCH', path: exact('/logistics/configuration') },
+      { method: 'POST', path: exact(
+        '/logistics/pickup-passes',
+        '/logistics/gate/scans',
+        '/logistics/exeats',
+        '/logistics/library/resources'
+      ) },
+      { method: 'POST', path: new RegExp(`^/logistics/exeats/${uuid}/(?:decisions|departure-authorization|gate-movements)$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/dining/meals/${uuid}/attendance$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/transport/trips/${uuid}/passenger-events$`, 'i') },
+      { method: 'PATCH', path: new RegExp(`^/logistics/transport/trips/${uuid}/assignment$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/transport/trips/${uuid}/start$`, 'i') }
+    ],
+    requiredRepositories: ['LogisticsRepository', 'AuthorizationRepository'],
+    requiredMigrations: [11, 12, 13],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'database_permission_and_school_configuration',
+      permissions: [
+        'logistics.configuration.read',
+        'logistics.configuration.manage',
+        'logistics.gate.manage',
+        'logistics.hostel.read'
+      ]
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: [
+      'server/logistics/logisticsRepository.test.ts',
+      'server/logistics/logisticsRepository.integration.test.ts'
+    ],
+    readinessEvidence: [],
+    state: 'implemented'
+  },
+  {
     id: 'application_template_discovery',
     description: 'Discover provisionable school-application templates.',
     routes: [{ method: 'GET', path: exact('/application-templates') }],

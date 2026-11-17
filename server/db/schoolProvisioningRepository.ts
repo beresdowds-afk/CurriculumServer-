@@ -417,6 +417,26 @@ export class SchoolProvisioningRepository {
             applicationConfiguration.schemaVersion, JSON.stringify(configuration), initiatedBy
           ]
         );
+        const logisticsConfiguration =
+          applicationConfiguration.featureConfigurations?.feat_logistics_support;
+        if (logisticsConfiguration) {
+          const capabilities = logisticsConfiguration.settings.capabilities;
+          if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) {
+            throw new Error('LOGISTICS_FEATURE_CONFIGURATION_INVALID');
+          }
+          await client.query(
+            `INSERT INTO production.logistics_feature_configurations
+               (tenant_id, school_id, capabilities, settings)
+             VALUES ($1, $2, $3::jsonb, $4::jsonb)
+             ON CONFLICT (tenant_id, school_id) DO UPDATE SET
+               configuration_version = production.logistics_feature_configurations.configuration_version + 1,
+               capabilities = EXCLUDED.capabilities,
+               settings = EXCLUDED.settings,
+               updated_at = now()`,
+            [tenant.id, schoolId, JSON.stringify(capabilities),
+              JSON.stringify(logisticsConfiguration.settings)]
+          );
+        }
         await client.query(
           `INSERT INTO production.school_commercial_agreements
              (tenant_id, school_id, application_instance_id, commercial_model,

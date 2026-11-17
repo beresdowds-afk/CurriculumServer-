@@ -249,11 +249,11 @@ export const BoardingHouseD3Dashboard: React.FC<BoardingHouseD3DashboardProps> =
 
         <div className="p-4 rounded-2xl bg-slate-900/90 border border-purple-500/20 shadow-sm">
           <div className="flex items-center justify-between text-xs text-purple-400 font-medium">
-            <span>Hostel Health Status</span>
+            <span>Configured Dormitories</span>
             <CheckCircle2 className="w-4 h-4 text-purple-400" />
           </div>
-          <div className="text-2xl font-black text-purple-300 mt-1">Optimal</div>
-          <div className="text-[11px] text-slate-500 mt-0.5">Zero Unaccounted Boarders</div>
+          <div className="text-2xl font-black text-purple-300 mt-1">{dormitories.length}</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">From active school records</div>
         </div>
       </div>
 
@@ -293,7 +293,7 @@ export const BoardingHouseD3Dashboard: React.FC<BoardingHouseD3DashboardProps> =
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
                 Bed Allocation by Dormitory Hall
               </h3>
-              <p className="text-[11px] text-slate-400">Real-time breakdown of occupied vs available beds per house</p>
+              <p className="text-[11px] text-slate-400">Registered beds and active allocations by building</p>
             </div>
             <div className="flex items-center gap-3 text-xs">
               <span className="flex items-center gap-1.5 text-slate-300">
@@ -310,8 +310,8 @@ export const BoardingHouseD3Dashboard: React.FC<BoardingHouseD3DashboardProps> =
           </div>
 
           <div className="text-[11px] text-slate-500 flex items-center justify-between pt-2 border-t border-slate-800">
-            <span>Refreshes dynamically with exeat check-outs & room re-assignments</span>
-            <span className="text-emerald-400 font-medium">Synced with Gate Kiosk & Sick Bay</span>
+            <span>Figures are derived from registered beds and active allocations</span>
+            <span className="text-emerald-400 font-medium">Refresh after operational changes</span>
           </div>
         </div>
       </div>
