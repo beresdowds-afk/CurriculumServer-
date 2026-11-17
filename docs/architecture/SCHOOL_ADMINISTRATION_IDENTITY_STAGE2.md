@@ -29,7 +29,7 @@
 - `npm run test:postgres:acceptance`: **3 passed, 0 failed, 0 skipped** against disposable PostgreSQL 16. Runtime and migration-owner roles were separate; the runtime was non-owner, non-superuser, and not `BYPASSRLS`. Tenant and control-plane GUC-forgery attempts were denied.
 - Fresh migration application: migrations 001–010 applied in order with checksum tracking. Upgrade compatibility was also exercised by applying 001–009 to a separate disposable database and then applying migration 010 successfully.
 - `npm run build:all`: passed for the server and both frontends. Existing large-chunk warnings remain.
-- Hosted GitHub Actions execution was not run; local results do not imply hosted CI approval or success.
+- The latest hosted GitHub Actions run was for the pre-remediation branch head `2899791` and failed in `server/tenantTokenService.test.ts`: its token-tampering assertion could accidentally replace a token's final `0` with the same character. The assertion is now deterministic; no hosted run for the remediation commits has been observed, so hosted CI remains unverified.
 - No production database, customer records, cloud infrastructure, or live email provider was used.
 
 ## Not implemented or not verified

@@ -34,7 +34,8 @@ test('server tenant tokens require a configured secret and verify signature and 
     assert.equal(verified.context?.tenantId, tenant.id);
     assert.equal(verified.context?.role, 'tenant_admin');
     assert.equal(verified.context?.userId, 'user-1');
-    assert.equal(ServerTenantTokenService.verifyTenantToken(`${token.slice(0, -1)}0`).valid, false);
+    const tamperedToken = `${token.slice(0, -1)}${token.endsWith('0') ? '1' : '0'}`;
+    assert.equal(ServerTenantTokenService.verifyTenantToken(tamperedToken).valid, false);
 
     const expired = ServerTenantTokenService.issueTenantToken(tenant, 'tenant_admin', -1);
     assert.match(ServerTenantTokenService.verifyTenantToken(expired).error || '', /expired/i);
