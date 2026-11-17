@@ -2,6 +2,27 @@
 name: Deploy Curriculum Server
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      # Curriculum Server-specific source and configuration
+      - 'apps/curriculum-server/**'
+      - 'vite.server.config.ts'
+
+      # Shared application dependencies
+      - 'src/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'tailwind.config.*'
+      - 'postcss.config.*'
+
+      # Shared build and deployment configuration
+      - 'apps/curriculum-server/Dockerfile'
+      - '.github/workflows/deploy-curriculum-server.yml'
+
   workflow_dispatch:
 
 permissions:
