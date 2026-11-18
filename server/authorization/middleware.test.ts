@@ -42,9 +42,13 @@ function build(options: {
   });
 }
 
-async function run(handler: any, headers: Record<string, string> = { authorization: 'Bearer t' }) {
+async function run(
+  handler: any,
+  headers: Record<string, string> = { authorization: 'Bearer t' },
+  request: Record<string, unknown> = {}
+) {
   const out: { status?: number; body?: any; nexted: boolean } = { nexted: false };
-  const req: any = { headers };
+  const req: any = { headers, ...request };
   const res: any = {
     status(code: number) { out.status = code; return this; },
     json(body: unknown) { out.body = body; return this; }
@@ -147,12 +151,15 @@ test('platform administrators are not tenant users and tenant users are not plat
     userId: undefined,
     sessionId: undefined
   });
+  let allowlisted = true;
   const platform = build({
     token: { valid: true, context: platformContext },
-    platformAdministratorAllowed: email => email === 'platform@example.invalid'
+    platformAdministratorAllowed: email => allowlisted && email === 'platform@example.invalid'
   });
   assert.equal((await run(platform.activeMembership)).status, 403);
   assert.equal((await run(platform.platformAdministrator)).nexted, true);
+  allowlisted = false;
+  assert.equal((await run(platform.platformAdministrator)).status, 403, 'removing the allowlist entry revokes subsequent requests');
   assert.equal((await run(build().platformAdministrator)).status, 403);
   assert.equal((await run(build({
     token: { valid: true, context: platformContext },
@@ -226,6 +233,9 @@ test('Google service identities require a valid identity, expected audience, and
     authorization: () => { throw new Error('not used'); },
     internalServiceAudience: () => 'https://curriculum.example/internal',
     authorizedInternalCallers: () => ['worker@project.iam.gserviceaccount.com'],
+    authorizedInternalOperations: () => ({
+      'worker@project.iam.gserviceaccount.com': ['shared.curriculum.discover']
+    }),
     verifyInternalServiceIdentity: async token => {
       if (token === 'invalid') return undefined;
       if (token === 'wrong-audience') {
@@ -250,10 +260,14 @@ test('Google service identities require a valid identity, expected audience, and
     }
   });
   const header = (token: string) => ({ 'x-serverless-authorization': `Bearer ${token}` });
-  assert.equal((await run(middleware.internalService, header('invalid'))).status, 401);
-  assert.equal((await run(middleware.internalService, header('wrong-audience'))).status, 401);
-  assert.equal((await run(middleware.internalService, header('unlisted-caller'))).status, 401);
-  assert.equal((await run(middleware.internalService, header('valid'))).nexted, true);
+  const discoveryRequest = { method: 'GET', path: '/api/v1/shared/curriculum/discovery' };
+  assert.equal((await run(middleware.internalService, header('invalid'), discoveryRequest)).status, 401);
+  assert.equal((await run(middleware.internalService, header('wrong-audience'), discoveryRequest)).status, 401);
+  assert.equal((await run(middleware.internalService, header('unlisted-caller'), discoveryRequest)).status, 401);
+  assert.equal((await run(middleware.internalService, header('valid'), discoveryRequest)).nexted, true);
+  assert.equal((await run(middleware.internalService, header('valid'), {
+    method: 'POST', path: '/api/v1/shared/curriculum/authorization'
+  })).status, 403, 'an authenticated caller cannot invoke an ungranted operation');
 
   const unconfigured = createAuthorizationMiddleware({
     verifyToken: () => ({ valid: false }),
@@ -261,5 +275,5 @@ test('Google service identities require a valid identity, expected audience, and
     authorization: () => { throw new Error('not used'); },
     verifyInternalServiceIdentity: async () => undefined
   });
-  assert.equal((await run(unconfigured.internalService, header('valid'))).status, 503);
+  assert.equal((await run(unconfigured.internalService, header('valid'), discoveryRequest)).status, 503);
 });

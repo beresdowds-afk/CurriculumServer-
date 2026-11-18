@@ -419,6 +419,19 @@ const authorizationMiddleware = createAuthorizationMiddleware({
   internalServiceAudience: () => process.env.INTERNAL_SERVICE_AUDIENCE,
   authorizedInternalCallers: () => (process.env.INTERNAL_SERVICE_CALLERS || '')
     .split(',').map(email => email.trim().toLowerCase()).filter(Boolean),
+  authorizedInternalOperations: () => {
+    const policy = JSON.parse(process.env.INTERNAL_SERVICE_OPERATIONS || '{}');
+    if (!policy || typeof policy !== 'object' || Array.isArray(policy) ||
+        Object.values(policy).some(operations =>
+          !Array.isArray(operations) || operations.some(operation => typeof operation !== 'string')
+        )) {
+      throw new Error('Internal service operation policy is invalid.');
+    }
+    return Object.fromEntries(Object.entries(policy).map(([email, operations]) => [
+      email.trim().toLowerCase(),
+      operations as string[]
+    ]));
+  },
   internalServiceKey: () => process.env.INTERNAL_SERVICE_KEY
 });
 const schoolAdministrationGuards = createSchoolAdministrationGuards(authorizationMiddleware);
@@ -2983,16 +2996,7 @@ app.post('/api/v1/server/auth/login', (req: Request, res: Response) => {
     });
     return;
   }
-  const adminTenant: any = {
-    id: 'platform-control-plane',
-    appId: 'curriculum-server-control-plane',
-    schoolName: 'Curriculum Server Control Plane',
-    subscriptionTier: 'platform',
-    status: 'active'
-  };
-  const token = ServerTenantTokenService.issueTenantToken(
-    adminTenant, 'super_admin', 3600, adminEmail
-  );
+  const token = ServerTenantTokenService.issuePlatformAdminToken(adminEmail);
   TamperEvidentAuditService.logPlatformAction({
     actor: adminEmail,
     actorRole: 'super_admin',

@@ -25,6 +25,7 @@ export interface AuthorizationMiddlewareDependencies {
   internalServiceKey?: () => string | undefined;
   internalServiceAudience?: () => string | undefined;
   authorizedInternalCallers?: () => readonly string[];
+  authorizedInternalOperations?: () => Readonly<Record<string, readonly string[]>>;
   verifyInternalServiceIdentity?: (
     token: string,
     audience: string
@@ -49,6 +50,25 @@ function reject(req: Request, res: Response, status: number, code: string, error
 function bearer(req: Request): string {
   const header = req.headers.authorization || '';
   return header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+}
+
+function internalServiceOperationForRequest(req: Request): string | undefined {
+  const match = req.path.match(/^\/api\/v1\/shared\/(curriculum|textbooks|vehicle-tracking)(?:\/|$)/);
+  if (!match) return undefined;
+  const service = match[1].replace(/-/g, '_');
+  if (req.method === 'GET' && req.path === `/api/v1/shared/${match[1]}/discovery`) {
+    return `shared.${service}.discover`;
+  }
+  if (req.method === 'POST' && req.path === `/api/v1/shared/${match[1]}/authorization`) {
+    return `shared.${service}.authorize`;
+  }
+  if (req.method === 'GET' && req.path === `/api/v1/shared/${match[1]}/health`) {
+    return `shared.${service}.health`;
+  }
+  if (req.method === 'GET' && req.path.startsWith(`/api/v1/shared/${match[1]}/`)) {
+    return `shared.${service}.consume`;
+  }
+  return undefined;
 }
 
 /**
@@ -214,7 +234,19 @@ export function createAuthorizationMiddleware(deps: AuthorizationMiddlewareDepen
     if (identityToken) {
       const audience = deps.internalServiceAudience?.() || '';
       const allowedCallers = deps.authorizedInternalCallers?.() || [];
-      if (!audience || allowedCallers.length === 0) {
+      let operationPolicy: Readonly<Record<string, readonly string[]>>;
+      try {
+        operationPolicy = deps.authorizedInternalOperations?.() || {};
+      } catch {
+        reject(req, res, 503, 'AUTH_CONFIGURATION_UNAVAILABLE', 'Internal service operation policy is invalid.');
+        return;
+      }
+      if (!audience || allowedCallers.length === 0 || !operationPolicy ||
+          typeof operationPolicy !== 'object' || Array.isArray(operationPolicy) ||
+          Object.keys(operationPolicy).length === 0 ||
+          Object.values(operationPolicy).some(operations =>
+            !Array.isArray(operations) || operations.some(operation => typeof operation !== 'string')
+          )) {
         reject(req, res, 503, 'AUTH_CONFIGURATION_UNAVAILABLE', 'Internal service identity is not configured.');
         return;
       }
@@ -227,6 +259,12 @@ export function createAuthorizationMiddleware(deps: AuthorizationMiddlewareDepen
             identity.audience !== audience ||
             !allowedCallers.some(caller => caller.toLowerCase() === identity.email.toLowerCase())) {
           reject(req, res, 401, 'UNAUTHENTICATED', 'Internal service identity is invalid or unauthorized.');
+          return;
+        }
+        const operation = internalServiceOperationForRequest(req);
+        const allowedOperations = operationPolicy[identity.email.toLowerCase()] || [];
+        if (!operation || !allowedOperations.includes(operation)) {
+          reject(req, res, 403, 'FORBIDDEN', 'Internal service identity is not authorized for this operation.');
           return;
         }
         (req as any).internalServiceIdentity = Object.freeze({ ...identity });

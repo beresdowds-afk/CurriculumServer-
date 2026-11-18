@@ -60,17 +60,21 @@ export function runSecurityHardeningTestSuite(): SecurityTestResult[] {
     });
   }
 
-  // Test 2: Valid signed token verification (Positive flow)
+  // Test 2: Platform roles cannot be issued through tenant token issuance.
   try {
-    const validToken = ServerTenantTokenService.issueTenantToken(mockTenantA, 'super_admin', 3600);
-    const verification = ServerTenantTokenService.verifyTenantToken(validToken);
+    let rejected = false;
+    try {
+      ServerTenantTokenService.issueTenantToken(mockTenantA, 'super_admin', 3600);
+    } catch {
+      rejected = true;
+    }
     results.push({
       testId: 'SEC-TEST-02',
-      testName: 'Valid Cryptographically Signed Super-Admin Token',
+      testName: 'Tenant token issuer rejects platform administrator role',
       category: 'cryptography',
-      passed: verification.valid && verification.context?.role === 'super_admin' && verification.context.tenantId === mockTenantA.id,
-      details: `Valid token issued and verified successfully for tenant ${mockTenantA.id} with role ${verification.context?.role}.`,
-      securityProof: 'HMAC-SHA256 signature matched expected digest and expiration claims are valid.'
+      passed: rejected,
+      details: `Tenant super_admin issuance rejected: ${rejected}.`,
+      securityProof: 'Platform administrator claims require the dedicated configured issuance path.'
     });
   } catch (err: any) {
     results.push({

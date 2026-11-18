@@ -30,6 +30,7 @@ test('signed HTTP identity, live permissions and RLS enforce tenant and resource
   const emails = users.map(id => `${id}@test.invalid`);
   const roles = ['tenant_admin', 'staff', 'read_only', 'tenant_admin'];
   let server: ReturnType<typeof express.application.listen> | undefined;
+  const previousPlatformAdmins = process.env.PLATFORM_ADMIN_CREDENTIALS_JSON;
 
   try {
     await withControlPlaneTransaction(pool, platform, async client => {
@@ -170,10 +171,10 @@ test('signed HTTP identity, live permissions and RLS enforce tenant and resource
     assert.equal((await request('/regression/admin', tokens[1])).status, 403, 'staff token claiming administrator');
     assert.equal((await request('/regression/admin', tokens[2])).status, 403, 'read-only token claiming administrator');
     assert.equal((await request('/regression/platform', tokens[0])).status, 403, 'tenant user is not platform administrator');
-    const platformToken = ServerTenantTokenService.issueTenantToken({
-      id: 'platform-control-plane', appId: 'control', schoolName: 'Platform',
-      subscriptionTier: 'platform', status: 'active'
-    }, 'super_admin', 3600, 'platform@test.invalid');
+    process.env.PLATFORM_ADMIN_CREDENTIALS_JSON = JSON.stringify({
+      'platform@test.invalid': 'postgres-acceptance-platform-key-at-least-32-chars'
+    });
+    const platformToken = ServerTenantTokenService.issuePlatformAdminToken('platform@test.invalid');
     assert.equal((await request('/regression/platform', platformToken)).status, 204, 'configured platform administrator');
     assert.equal((await request('/regression/admin', platformToken)).status, 403, 'platform identity is not a tenant session');
     assert.equal((await request('/regression/admin', token(tenants[1], users[0], sessions[0].sessionId))).status, 403, 'signed tenant substitution');
@@ -252,6 +253,8 @@ test('signed HTTP identity, live permissions and RLS enforce tenant and resource
     await authz.revokeMembership(adminResult.principal, users[2], 'security regression');
     assert.equal((await request(`/regression/students/${students[0]}`, tokens[2])).status, 403, 'revoked membership rejected on next request');
   } finally {
+    if (previousPlatformAdmins === undefined) delete process.env.PLATFORM_ADMIN_CREDENTIALS_JSON;
+    else process.env.PLATFORM_ADMIN_CREDENTIALS_JSON = previousPlatformAdmins;
     if (server) {
       server.close();
       await once(server, 'close');

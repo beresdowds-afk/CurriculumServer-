@@ -27,13 +27,20 @@ function makeToken(input: {
   userId?: string;
 }): string {
   const prevSecret = process.env.CONTROL_PLANE_SECRET;
+  const prevPlatformAdmins = process.env.PLATFORM_ADMIN_CREDENTIALS_JSON;
   process.env.CONTROL_PLANE_SECRET = 'test-ai-gateway-control-plane-secret-32chars!';
+  if (input.role === 'super_admin') {
+    process.env.PLATFORM_ADMIN_CREDENTIALS_JSON = JSON.stringify({ [input.email]: 'test-platform-key-that-is-at-least-32-characters' });
+  }
   try {
+    if (input.role === 'super_admin') {
+      return ServerTenantTokenService.issuePlatformAdminToken(input.email);
+    }
     return ServerTenantTokenService.issueTenantToken(
       {
         id: input.tenantId,
         appId: 'curriculum-flow',
-        schoolName: input.role === 'super_admin' ? 'Platform Control Plane' : `School ${input.tenantId.slice(0, 4)}`,
+        schoolName: `School ${input.tenantId.slice(0, 4)}`,
         subscriptionTier: 'enterprise',
         status: 'active'
       } as any,
@@ -41,13 +48,18 @@ function makeToken(input: {
       3600,
       input.email,
       input.userId || randomUUID(),
-      input.role === 'super_admin' ? undefined : randomUUID()
+      randomUUID()
     );
   } finally {
     if (prevSecret === undefined) {
       delete process.env.CONTROL_PLANE_SECRET;
     } else {
       process.env.CONTROL_PLANE_SECRET = prevSecret;
+    }
+    if (prevPlatformAdmins === undefined) {
+      delete process.env.PLATFORM_ADMIN_CREDENTIALS_JSON;
+    } else {
+      process.env.PLATFORM_ADMIN_CREDENTIALS_JSON = prevPlatformAdmins;
     }
   }
 }

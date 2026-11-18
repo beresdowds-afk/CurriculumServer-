@@ -59,22 +59,36 @@ test('Google service identity tokens require Google signature, configured audien
       signingConfigured: () => true,
       authorization: () => { throw new Error('not used'); },
       internalServiceAudience: () => 'https://curriculum.example/internal',
-      authorizedInternalCallers: () => ['worker@project.iam.gserviceaccount.com']
+      authorizedInternalCallers: () => ['worker@project.iam.gserviceaccount.com'],
+      authorizedInternalOperations: () => ({
+        'worker@project.iam.gserviceaccount.com': ['shared.curriculum.discover']
+      })
     });
     const app = express();
-    app.get('/internal', middleware.internalService, (_req, res) => res.sendStatus(204));
+    app.get('/api/v1/shared/curriculum/discovery', middleware.internalService, (_req, res) => res.sendStatus(204));
+    app.post('/api/v1/shared/curriculum/authorization', middleware.internalService, (_req, res) => res.sendStatus(204));
     const server = app.listen(0, '127.0.0.1');
     await once(server, 'listening');
     try {
       const address = server.address();
       if (!address || typeof address === 'string') throw new Error('HTTP listener unavailable');
-      const request = async (identity: string) => (await fetch(`http://127.0.0.1:${address.port}/internal`, {
+      const request = async (
+        identity: string,
+        path = '/api/v1/shared/curriculum/discovery',
+        method = 'GET'
+      ) => (await fetch(`http://127.0.0.1:${address.port}${path}`, {
+        method,
         headers: { 'x-serverless-authorization': `Bearer ${identity}` }
       })).status;
       assert.equal(await request(makeToken()), 204, 'valid signed and authorized caller');
       assert.equal(await request(makeToken({ aud: 'https://other.example/internal' })), 401, 'wrong audience');
       assert.equal(await request(makeToken({ email: 'other@project.iam.gserviceaccount.com' })), 401, 'unauthorized caller');
       assert.equal(await request(makeToken({ email_verified: false })), 401, 'unverified identity');
+      assert.equal(
+        await request(makeToken(), '/api/v1/shared/curriculum/authorization', 'POST'),
+        403,
+        'a valid caller cannot invoke an operation omitted from its policy'
+      );
       assert.equal(await request(`${header}.${claims}.${signature[0] === 'A' ? 'B' : 'A'}${signature.slice(1)}`), 401, 'invalid signature');
     } finally {
       server.close();
