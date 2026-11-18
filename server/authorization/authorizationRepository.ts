@@ -154,6 +154,7 @@ export class AuthorizationRepository implements AuthorizationSource {
 
   /** Revokes the membership, its role assignments, and all of the user's sessions. */
   async revokeMembership(actor: AuthorizedPrincipal, userId: string, reason: string): Promise<void> {
+    if (!reason.trim()) throw new Error('INVALID_MEMBERSHIP_REVOCATION');
     assertAuthorized(actor, PERMISSIONS.membershipRolesAssign);
     await withTenantTransaction(this.pool, actor.tenant, async client => {
       await this.assertCurrentPrincipal(client, actor, PERMISSIONS.membershipRolesAssign);
@@ -165,12 +166,21 @@ export class AuthorizationRepository implements AuthorizationSource {
         [actor.tenantId, userId]
       );
       if (membership.rowCount !== 1) throw new Error('MEMBERSHIP_NOT_FOUND');
-      await client.query(
+      const revokedAssignments = await client.query<{ role_code: string }>(
         `UPDATE production.membership_role_assignments
          SET revoked_at = now(), revoked_by = $3
-         WHERE tenant_id = $1 AND user_subject = $2 AND revoked_at IS NULL`,
+        WHERE tenant_id = $1 AND user_subject = $2 AND revoked_at IS NULL
+        RETURNING role_code`,
         [actor.tenantId, membership.rows[0].user_subject, actor.userId]
       );
+      for (const assignment of revokedAssignments.rows) {
+        await client.query(
+          `INSERT INTO production.audit_events (tenant_id, actor_subject, action, details)
+           VALUES ($1, $2, 'membership_role_revoked', $3::jsonb)`,
+          [actor.tenantId, actor.userId,
+            JSON.stringify({ userId, roleCode: assignment.role_code, reason, membershipRevoked: true })]
+        );
+      }
       await client.query(
         `UPDATE production.user_sessions SET revoked_at = now(), revoked_reason = $3
          WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL`,
@@ -195,7 +205,9 @@ export class AuthorizationRepository implements AuthorizationSource {
   ): Promise<void> {
     assertAuthorized(actor, PERMISSIONS.membershipRolesAssign);
     await withTenantTransaction(this.pool, actor.tenant, async client => {
-      await this.assertCurrentPrincipal(client, actor, PERMISSIONS.membershipRolesAssign);
+      const actorPermissions = await this.assertCurrentPrincipal(
+        client, actor, PERMISSIONS.membershipRolesAssign
+      );
       if (!Object.values(TENANT_ROLES).some(role => role === roleCode)) {
         throw new Error('TENANT_ROLE_INVALID');
       }
@@ -209,7 +221,7 @@ export class AuthorizationRepository implements AuthorizationSource {
         [roleCode]
       );
       if (!role.rows[0]) throw new Error('ROLE_NOT_FOUND');
-      if (!role.rows[0].permissions.every(permission => actor.hasPermission(permission))) {
+      if (!role.rows[0].permissions.every(permission => actorPermissions.has(permission))) {
         throw new Error('FORBIDDEN');
       }
       const membership = await client.query<{ user_subject: string }>(
@@ -219,13 +231,14 @@ export class AuthorizationRepository implements AuthorizationSource {
         [actor.tenantId, userId]
       );
       if (membership.rowCount !== 1) throw new Error('MEMBERSHIP_NOT_FOUND');
-      await client.query(
+      const assignment = await client.query<{ id: string }>(
         `INSERT INTO production.membership_role_assignments
            (tenant_id, user_subject, role_code, assigned_by)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (tenant_id, user_subject, role_code) WHERE revoked_at IS NULL DO NOTHING`,
         [actor.tenantId, membership.rows[0].user_subject, roleCode, actor.userId]
       );
+      if (assignment.rowCount !== 1) throw new Error('ROLE_ALREADY_ASSIGNED');
       await client.query(
         `INSERT INTO production.audit_events (tenant_id, actor_subject, action, details)
          VALUES ($1, $2, 'membership_role_assigned', $3::jsonb)`,
@@ -234,11 +247,48 @@ export class AuthorizationRepository implements AuthorizationSource {
     });
   }
 
+  async revokeRole(
+    actor: AuthorizedPrincipal,
+    userId: string,
+    roleCode: string,
+    reason: string
+  ): Promise<void> {
+    if (!reason.trim()) throw new Error('INVALID_ROLE_REVOCATION');
+    assertAuthorized(actor, PERMISSIONS.membershipRolesAssign);
+    if (!Object.values(TENANT_ROLES).some(role => role === roleCode)) {
+      throw new Error('TENANT_ROLE_INVALID');
+    }
+    await withTenantTransaction(this.pool, actor.tenant, async client => {
+      await this.assertCurrentPrincipal(client, actor, PERMISSIONS.membershipRolesAssign);
+      const membership = await client.query<{ user_subject: string }>(
+        `SELECT user_subject FROM production.memberships
+         WHERE tenant_id = $1 AND user_id = $2 AND status = 'active'
+           AND revoked_at IS NULL FOR UPDATE`,
+        [actor.tenantId, userId]
+      );
+      if (membership.rowCount !== 1) throw new Error('MEMBERSHIP_NOT_FOUND');
+      const assignment = await client.query<{ id: string }>(
+        `UPDATE production.membership_role_assignments
+         SET revoked_at = now(), revoked_by = $4
+         WHERE tenant_id = $1 AND user_subject = $2 AND role_code = $3
+           AND revoked_at IS NULL
+         RETURNING id`,
+        [actor.tenantId, membership.rows[0].user_subject, roleCode, actor.userId]
+      );
+      if (assignment.rowCount !== 1) throw new Error('ROLE_ASSIGNMENT_NOT_FOUND');
+      await client.query(
+        `INSERT INTO production.audit_events (tenant_id, actor_subject, action, details)
+         VALUES ($1, $2, 'membership_role_revoked', $3::jsonb)`,
+        [actor.tenantId, actor.userId, JSON.stringify({ userId, roleCode, reason })]
+      );
+    });
+  }
+
   private async assertCurrentPrincipal(
     client: DatabaseClient,
     actor: AuthorizedPrincipal,
     permission: string
-  ): Promise<void> {
+  ): Promise<Set<string>> {
     const identity = await client.query(
       `SELECT 1
        FROM production.user_sessions user_session
@@ -274,5 +324,6 @@ export class AuthorizationRepository implements AuthorizationSource {
     if (!currentPermissions.rows.some(row => row.permission_code === permission)) {
       throw new Error('FORBIDDEN');
     }
+    return new Set(currentPermissions.rows.map(row => row.permission_code));
   }
 }

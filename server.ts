@@ -3397,7 +3397,8 @@ app.post('/api/v1/schools/activation', async (req: Request, res: Response) => {
     const message = error instanceof Error ? error.message : '';
     const invalid = message === 'INVITATION_INVALID_OR_EXPIRED' ||
       message === 'ADMIN_MEMBERSHIP_ALREADY_EXISTS' ||
-      message === 'ACCOUNT_CREDENTIALS_CHANGED';
+      message === 'ACCOUNT_CREDENTIALS_CHANGED' ||
+      message === 'ACCOUNT_INACTIVE';
     res.status(invalid ? 400 : 503).json({
       success: false,
       error: invalid ? 'Invitation is invalid, expired, or already used.' :

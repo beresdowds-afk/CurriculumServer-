@@ -6,7 +6,12 @@ import { PERMISSIONS } from '../authorization/permissions';
 import { PostgresRuntime } from './postgres';
 import { SchoolProvisioningRepository } from './schoolProvisioningRepository';
 import { withControlPlaneTransaction, withTenantTransaction } from './tenantContext';
-import { hashInvitationToken, hashPassword, hashProvisioningRequest } from '../schoolProvisioning';
+import {
+  createInvitationToken,
+  hashInvitationToken,
+  hashPassword,
+  hashProvisioningRequest
+} from '../schoolProvisioning';
 import { acceptanceTestOptions, buildSchoolRequest, databaseUrl, principal } from './testSupport';
 
 test('PostgreSQL authorization, lifecycle separation and invitation durability', acceptanceTestOptions, async () => {
@@ -59,6 +64,34 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
     const tenantA = principal(a.record.tenantId);
 
     // Invitation acceptance activates the account, never the application.
+    const acceptedInvitation = await withControlPlaneTransaction(pool, admin, client =>
+      client.query<{ intended_role_code: string; token_hash: Buffer }>(
+        `SELECT intended_role_code, token_hash FROM production.school_admin_invitations
+         WHERE id = $1`,
+        [a.record.invitationId]
+      )
+    );
+    assert.equal(acceptedInvitation.rows[0].intended_role_code, 'tenant_admin');
+    assert.equal(acceptedInvitation.rows[0].token_hash.length, 32);
+    assert.notDeepEqual(acceptedInvitation.rows[0].token_hash,
+      hashInvitationToken(activeA.delivery.token));
+    const invitedRole = await withControlPlaneTransaction(pool, admin, client =>
+      client.query<{ role_code: string }>(
+        `SELECT role_code FROM production.membership_role_assignments
+         WHERE tenant_id = $1 AND user_subject = $2 AND revoked_at IS NULL`,
+        [a.record.tenantId, activeA.account.userId]
+      )
+    );
+    assert.deepEqual(invitedRole.rows.map(row => row.role_code), ['tenant_admin']);
+    const invitationAudit = await withControlPlaneTransaction(pool, admin, client =>
+      client.query<{ role_code: string }>(
+        `SELECT details->>'roleCode' AS role_code FROM production.audit_events
+         WHERE tenant_id = $1 AND action = 'membership_role_assigned'
+           AND details->>'invitationId' = $2`,
+        [a.record.tenantId, a.record.invitationId]
+      )
+    );
+    assert.deepEqual(invitationAudit.rows.map(row => row.role_code), ['tenant_admin']);
     assert.equal(await stage(a.record.instanceId), 'membership_active');
     assert.equal(await schools.getMembership(tenantA, activeA.account.userId), true);
     await assert.rejects(schools.activateApplication(a.record.instanceId, admin));
@@ -143,9 +176,10 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
     const staffEmail = `staff-${randomUUID()}@test.invalid`;
     emails.push(staffEmail);
     const staffUserId = randomUUID();
+    const staffPasswordHash = await hashPassword('test-school-admin-password-12');
     await withControlPlaneTransaction(pool, admin, async c => {
       await c.query('INSERT INTO production.users (id, email, full_name, password_hash, email_verified_at) VALUES ($1, $2, $4, $3, now())',
-        [staffUserId, staffEmail, await hashPassword('test-school-admin-password-12'), 'Staff Member']);
+        [staffUserId, staffEmail, staffPasswordHash, 'Staff Member']);
       await c.query(`INSERT INTO production.memberships (tenant_id, user_id, user_subject, role, status)
                      VALUES ($1, $2, $3, 'staff', 'active')`, [a.record.tenantId, staffUserId, staffEmail]);
       await c.query(`INSERT INTO production.membership_role_assignments (tenant_id, user_subject, role_code, assigned_by)
@@ -202,11 +236,113 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
     assert.deepEqual(await authz.authorize(tenantA, staffUserId, staffSession.sessionId),
       { ok: false, reason: 'SESSION_REVOKED' });
 
+    const roleLifecycleSession = await authz.createSession(tenantA, staffUserId, 3600);
+    await authz.assignRole(adminPrincipal, staffUserId, 'read_only');
+    await assert.rejects(
+      authz.assignRole(adminPrincipal, staffUserId, 'read_only'),
+      /ROLE_ALREADY_ASSIGNED/
+    );
+    const initialReadOnlyAssignment = await withControlPlaneTransaction(pool, admin, client =>
+      client.query<{ id: string }>(
+        `SELECT id FROM production.membership_role_assignments
+         WHERE tenant_id = $1 AND user_subject = $2 AND role_code = 'read_only'
+           AND revoked_at IS NULL`,
+        [a.record.tenantId, staffEmail]
+      )
+    );
+    assert.equal(initialReadOnlyAssignment.rowCount, 1);
+    await authz.revokeRole(adminPrincipal, staffUserId, 'read_only', 'role no longer needed');
+    const afterRoleRevocation = await withControlPlaneTransaction(pool, admin, client =>
+      client.query<{ id: string; revoked_at: Date | null }>(
+        `SELECT id, revoked_at FROM production.membership_role_assignments
+         WHERE tenant_id = $1 AND user_subject = $2 AND role_code = 'read_only'`,
+        [a.record.tenantId, staffEmail]
+      )
+    );
+    assert.equal(afterRoleRevocation.rowCount, 1);
+    assert.ok(afterRoleRevocation.rows[0].revoked_at);
+    const principalAfterRoleRevocation = await authz.authorize(
+      tenantA, staffUserId, roleLifecycleSession.sessionId
+    );
+    assert.equal(principalAfterRoleRevocation.ok, true);
+    if (principalAfterRoleRevocation.ok) {
+      assert.equal(principalAfterRoleRevocation.principal.roles.includes('read_only'), false);
+    }
+    await authz.assignRole(adminPrincipal, staffUserId, 'read_only');
+    const reassignedRole = await withControlPlaneTransaction(pool, admin, client =>
+      client.query<{ id: string; revoked_at: Date | null }>(
+        `SELECT id, revoked_at FROM production.membership_role_assignments
+         WHERE tenant_id = $1 AND user_subject = $2 AND role_code = 'read_only'
+         ORDER BY revoked_at NULLS LAST`,
+        [a.record.tenantId, staffEmail]
+      )
+    );
+    assert.equal(reassignedRole.rowCount, 2);
+    assert.notEqual(reassignedRole.rows[0].id, reassignedRole.rows[1].id);
+    assert.ok(reassignedRole.rows[0].revoked_at);
+    assert.equal(reassignedRole.rows[1].revoked_at, null);
+    const principalAfterRoleReassignment = await authz.authorize(
+      tenantA, staffUserId, roleLifecycleSession.sessionId
+    );
+    assert.equal(principalAfterRoleReassignment.ok, true);
+    if (principalAfterRoleReassignment.ok) {
+      assert.equal(principalAfterRoleReassignment.principal.roles.includes('read_only'), true);
+    }
+
     // Membership revocation takes effect immediately and kills sessions.
     const liveSession = await authz.createSession(tenantA, staffUserId, 3600);
     await authz.revokeMembership(adminPrincipal, staffUserId, 'test');
     const revoked = await authz.authorize(tenantA, staffUserId, liveSession.sessionId);
     assert.equal(revoked.ok, false);
+    const revocationAudits = await withControlPlaneTransaction(pool, admin, client =>
+      client.query<{ action: string; details: { roleCode?: string; membershipRevoked?: boolean } }>(
+        `SELECT action, details FROM production.audit_events
+         WHERE tenant_id = $1 AND actor_subject = $2
+           AND action IN ('membership_role_assigned', 'membership_role_revoked', 'membership_revoked')
+           AND details->>'userId' = $3`,
+        [a.record.tenantId, activeA.account.userId, staffUserId]
+      )
+    );
+    assert.ok(revocationAudits.rows.some(row =>
+      row.action === 'membership_role_revoked' && row.details.membershipRevoked === true));
+    assert.ok(revocationAudits.rows.some(row => row.action === 'membership_role_assigned'));
+    assert.ok(revocationAudits.rows.some(row => row.action === 'membership_revoked'));
+
+    // A new invitation cannot reactivate a previously revoked membership.
+    const revokedMembershipInvitation = createInvitationToken();
+    const school = await withControlPlaneTransaction(pool, admin, client =>
+      client.query<{ school_id: string }>(
+        `SELECT school_id FROM production.school_provisioning_requests
+         WHERE tenant_id = $1 ORDER BY created_at LIMIT 1`,
+        [a.record.tenantId]
+      )
+    );
+    const invitation = await withControlPlaneTransaction(pool, admin, client =>
+      client.query<{ id: string }>(
+        `INSERT INTO production.school_admin_invitations
+           (tenant_id, school_id, administrator_name, administrator_email,
+            intended_role_code, token_hash, expires_at, created_by)
+         VALUES ($1, $2, 'Staff Member', $3, 'tenant_admin', $4, now() + interval '1 day', 'test-setup')
+         RETURNING id`,
+        [a.record.tenantId, school.rows[0].school_id, staffEmail, revokedMembershipInvitation.tokenHash]
+      )
+    );
+    await assert.rejects(
+      schools.activateAdministrator(
+        invitation.rows[0].id,
+        revokedMembershipInvitation.tokenHash,
+        staffPasswordHash,
+        staffPasswordHash
+      ),
+      /ADMIN_MEMBERSHIP_ALREADY_EXISTS/
+    );
+    const stillRevoked = await withControlPlaneTransaction(pool, admin, client =>
+      client.query<{ status: string }>(
+        'SELECT status FROM production.memberships WHERE tenant_id = $1 AND user_id = $2',
+        [a.record.tenantId, staffUserId]
+      )
+    );
+    assert.equal(stillRevoked.rows[0].status, 'revoked');
 
     // Delivery durability: retries rotate token with audit, dead-letter at max attempts.
     const c = await provision('Authz C');
