@@ -24,18 +24,18 @@
     "versionId": "NERDC-CURR-2026.1-SSS-RELEASE",
     "versionTag": "NERDC-2026-V1.0",
     "title": "NERDC 2026 Secondary Curriculum Update (Senior Secondary Mathematics)",
-    "sourceDocumentId": "doc_evid_1794930107215_3bo4y",
+    "sourceDocumentId": "doc_evid_1795013943842_66v6i",
     "sourceDocumentChecksum": "f8410b0acdee2c40cf473af26930b8d5e073abec359ff6acc4aec5db6bca6707",
     "effectiveAcademicYear": "2026/2027",
-    "effectiveDate": "2026-11-17T15:41:47.236Z",
-    "publishedAt": "2026-11-17T15:41:47.236Z",
+    "effectiveDate": "2026-11-18T14:59:03.882Z",
+    "publishedAt": "2026-11-18T14:59:03.882Z",
     "previousVersionId": "NERDC-CURR-2026.1-SSS-RELEASE",
-    "integrityChecksum": "b0bb6672122c160e8e58784e8ce7c1db44067f1db9d76ea50a4161bc5e1ea46e",
+    "integrityChecksum": "93e7e4f674f8c75b8279542098c32dbd0f6fc52341f680fc7fc64b160fc2d428",
     "approvedBy": {
       "userId": "usr-director-01",
       "name": "Prof. Ismail Junaidu",
       "role": "editorial_director",
-      "timestamp": "2026-11-17T15:41:47.236Z"
+      "timestamp": "2026-11-18T14:59:03.882Z"
     },
     "totalSubjects": 41,
     "totalTopics": 55,

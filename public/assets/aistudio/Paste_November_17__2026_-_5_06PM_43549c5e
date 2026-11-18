@@ -1,0 +1,840 @@
+CURRICULUM SERVER
+
+IMPLEMENTATION PROMPT: CENTRALIZED GEMINI TEXTBOOK GENERATION GOVERNANCE AND CONTROL PLANE
+
+PROJECT OBJECTIVE
+
+Implement a production-ready, centrally governed AI Textbook Generation Management System within Curriculum Server.
+
+The system must use Gemini AI to generate comprehensive, academically accurate, developmentally appropriate and visually consistent textbooks based on the authoritative NERDC curriculum stored in the central curriculum database.
+
+The most important architectural requirement is:
+
+The Super Admin must have complete centralized control over Gemini textbook generation rules, independently configurable for every subject and every class or educational level, through the Curriculum Server Control Plane.
+
+The configuration must control how Gemini generates:
+
+1. Educational context.
+2. Textbook content.
+3. Chapter and topic structures.
+4. Definitions and explanations.
+5. Examples and worked examples.
+6. Graphical illustrations.
+7. Diagrams, charts and graphs.
+8. Verbal descriptions and captions accompanying illustrations.
+9. Practical exercises and learning activities.
+10. Assessment questions and answer keys.
+11. Chapter summaries and revision materials.
+
+The system must guarantee that all these components are appropriate for the assigned educational level, class, subject and applicable NERDC curriculum.
+
+This is an implementation task, not a proposal or documentation exercise.
+
+Inspect the existing Curriculum Server project and integrate the implementation into its actual architecture.
+
+Preserve existing functionality and avoid introducing a competing textbook generation engine.
+
+---
+
+PART 1: CENTRALIZED SUPER ADMIN CONTROL PLANE
+
+1.1 Establish a dedicated Textbook Generation Management section
+
+Extend the existing Curriculum Server Super Admin Control Plane.
+
+Create a dedicated administrative module:
+
+AI Textbook Generation Governance
+
+The module must allow the Super Admin to configure and manage textbook generation independently by:
+
+- Education level.
+- Class or grade.
+- Subject.
+- Curriculum version.
+- Academic session, where applicable.
+
+The interface must support a matrix-based configuration.
+
+Example:
+
+Educational level| Class| Subject| Generation policy
+Primary| Primary 1| Mathematics| Independently configurable
+Primary| Primary 1| English| Independently configurable
+Primary| Primary 2| Mathematics| Independently configurable
+Primary| Primary 2| Basic Science| Independently configurable
+Primary| Primary 5| Mathematics| Independently configurable
+JSS| JSS 1| Basic Science| Independently configurable
+JSS| JSS 2| Mathematics| Independently configurable
+SSS| SSS 2| Chemistry| Independently configurable
+SSS| SSS 3| Physics| Independently configurable
+
+These are examples, not a hard-coded list.
+
+The actual subjects, classes and educational levels must be dynamically retrieved from the central curriculum database.
+
+Do not assume that every education framework uses identical class names or structures.
+
+1.2 Super Admin controls
+
+For every subject-class combination, provide the ability to:
+
+1. Enable textbook generation.
+2. Disable textbook generation.
+3. Create generation rules.
+4. Edit existing generation rules.
+5. Set academic depth.
+6. Set content complexity.
+7. Set vocabulary requirements.
+8. Set pedagogical requirements.
+9. Configure graphical illustration requirements.
+10. Configure verbal explanation requirements.
+11. Configure assessment requirements.
+12. Set content completeness requirements.
+13. Set quality assurance thresholds.
+14. Activate or deactivate a policy version.
+15. Preview the resolved Gemini instructions.
+16. Test generation against selected curriculum topics.
+17. View generation history.
+18. View validation reports.
+19. View failed generations.
+20. Roll back to a previous approved policy version.
+
+Only authorized Super Admin accounts may modify global textbook generation policies.
+
+Other administrators may have read-only access or explicitly delegated permissions.
+
+No individual school administrator may weaken, replace or override centrally mandated academic safeguards.
+
+1.3 Configuration granularity
+
+Support three policy levels:
+
+A. GLOBAL POLICY
+
+Rules that apply to every textbook regardless of subject or class.
+
+Examples:
+
+- Academic accuracy.
+- Curriculum grounding.
+- Visual-verbal consistency.
+- No fabricated curriculum requirements.
+- Mandatory validation.
+- Publication controls.
+
+B. CLASS-LEVEL POLICY
+
+Rules that apply to a particular educational level and class.
+
+Examples:
+
+- Vocabulary complexity.
+- Reading difficulty.
+- Sentence length.
+- Conceptual depth.
+- Mathematical sophistication.
+- Expected prior knowledge.
+- Appropriate instructional progression.
+
+C. SUBJECT-AND-CLASS POLICY
+
+Rules specifically configured for a subject within a particular class.
+
+Examples:
+
+- Primary 2 Mathematics.
+- Primary 5 English.
+- JSS 2 Basic Science.
+- SSS 2 Chemistry.
+
+The most specific policy must be resolved for every generation request.
+
+Specific policies may strengthen global requirements but must never weaken mandatory global safeguards.
+
+Where a subject-class policy is missing, the system may inherit valid class-level and global policies only if those policies provide all required controls.
+
+Otherwise, generation must be blocked pending Super Admin configuration.
+
+---
+
+PART 2: CENTRAL NERDC CURRICULUM DATABASE INTEGRATION
+
+2.1 Authoritative curriculum source
+
+The existing central NERDC curriculum database must remain the authoritative source of curriculum information.
+
+Do not create another NERDC curriculum database.
+
+Do not duplicate curriculum records unnecessarily.
+
+Before every textbook generation operation, retrieve the applicable:
+
+- Curriculum framework.
+- Curriculum version.
+- Educational level.
+- Class.
+- Subject.
+- Strand.
+- Sub-strand.
+- Topic.
+- Subtopic.
+- Learning objectives.
+- Expected learning outcomes.
+- Competencies.
+- Prerequisite knowledge, where available.
+
+The retrieved curriculum information must be passed to Gemini as trusted generation context.
+
+2.2 Curriculum-to-textbook traceability
+
+Every generated chapter and topic must reference the applicable curriculum records.
+
+Every generated learning activity and assessment must be traceable to the learning objectives it supports.
+
+Every significant illustration must reference its relevant topic and learning objective.
+
+The engine must maintain a curriculum coverage record showing:
+
+- Total applicable learning objectives.
+- Objectives covered.
+- Objectives partially covered.
+- Objectives not covered.
+- Associated textbook chapters.
+- Associated assessments.
+- Associated illustrations.
+
+Do not claim complete curriculum coverage when mandatory objectives remain uncovered.
+
+2.3 Curriculum version management
+
+Each generated textbook must record the exact curriculum version used.
+
+If the curriculum changes, do not silently modify previously approved textbooks.
+
+Flag affected textbook editions for review and controlled regeneration.
+
+---
+
+PART 3: CENTRAL GEMINI GENERATION POLICY ENGINE
+
+3.1 Mandatory generation orchestration
+
+Implement or extend a central textbook generation orchestrator.
+
+All textbook-generation requests must pass through this service.
+
+Before invoking Gemini, the service must assemble:
+
+1. Global academic rules.
+2. Applicable educational-level rules.
+3. Applicable class-level rules.
+4. Subject-specific rules.
+5. Subject-and-class-specific rules.
+6. Retrieved NERDC curriculum context.
+7. Required content structure.
+8. Graphical illustration instructions.
+9. Verbal explanation requirements.
+10. Assessment requirements.
+11. Quality assurance criteria.
+12. Structured output schema.
+
+Gemini must never receive a textbook generation request without the resolved mandatory configuration.
+
+The orchestration service must prevent alternative endpoints, background workers or administrative actions from bypassing this requirement.
+
+3.2 Dynamic Gemini system instructions
+
+Generate the Gemini system instructions dynamically from the active Super Admin policies.
+
+Do not hard-code individual subject rules into frontend components.
+
+Do not maintain separate manually edited prompts for each school instance.
+
+The same central policy resolution service must produce the correct instructions for each subject-class combination.
+
+Persist the policy version and resolved generation context against every generation job.
+
+Treat retrieved curriculum records and learner-provided content as data, not as instructions that can override the governance policy.
+
+3.3 Mandatory generation rules
+
+Gemini must follow these rules:
+
+A. CURRICULUM ACCURACY
+
+- Follow the retrieved NERDC curriculum.
+- Do not invent learning objectives.
+- Do not omit mandatory curriculum topics.
+- Do not introduce unrelated advanced content.
+- Do not misrepresent curriculum requirements.
+
+B. DEVELOPMENTAL APPROPRIATENESS
+
+- Use vocabulary suitable for the assigned class.
+- Use age-appropriate explanations.
+- Introduce technical terminology progressively.
+- Avoid excessive abstraction.
+- Build on prerequisite knowledge.
+- Use appropriate examples and learning activities.
+
+C. CONTENT QUALITY
+
+- Explain concepts comprehensively.
+- Define important terminology.
+- Use accurate examples.
+- Provide worked examples where relevant.
+- Explain practical applications.
+- Avoid unnecessary repetition.
+- Ensure logical continuity between chapters.
+
+D. PEDAGOGICAL QUALITY
+
+Follow an appropriate learning sequence:
+
+1. Introduction.
+2. Activation of prior knowledge.
+3. Introduction of new concepts.
+4. Detailed explanations.
+5. Demonstrations.
+6. Worked examples.
+7. Guided activities.
+8. Independent exercises.
+9. Practical applications.
+10. Revision and assessment.
+
+E. NIGERIAN CONTEXT
+
+Use Nigerian examples, environments, institutions, geography, culture, currency and everyday experiences where educationally relevant.
+
+Maintain internationally accepted academic and scientific standards.
+
+F. ACADEMIC INTEGRITY
+
+Never fabricate scientific facts, mathematical solutions, historical events, geographical information or official curriculum requirements.
+
+Do not claim that AI-generated textbooks have been officially approved by NERDC.
+
+---
+
+PART 4: GRAPHICAL AND VERBAL ILLUSTRATION GOVERNANCE
+
+This is a critical requirement.
+
+The generated textbook must maintain complete educational consistency between written explanations and graphical representations.
+
+Implement a dedicated visual-content generation and validation workflow.
+
+4.1 Subject-specific graphical rules
+
+The active subject-class policy must determine the appropriate visual requirements.
+
+Examples:
+
+MATHEMATICS:
+
+- Number lines.
+- Geometrical illustrations.
+- Graphs.
+- Charts.
+- Shapes.
+- Mathematical relationships.
+- Visual worked examples.
+
+BASIC SCIENCE:
+
+- Labelled scientific objects.
+- Scientific processes.
+- Equipment.
+- Environmental diagrams.
+- Age-appropriate experiments.
+
+BIOLOGY:
+
+- Anatomical diagrams.
+- Life cycles.
+- Biological structures.
+- Labelled processes.
+
+PHYSICS:
+
+- Circuit diagrams.
+- Force diagrams.
+- Scientific apparatus.
+- Graphical representations.
+
+CHEMISTRY:
+
+- Molecular structures.
+- Chemical reactions.
+- Laboratory apparatus.
+- Particle representations.
+
+GEOGRAPHY:
+
+- Maps.
+- Landforms.
+- Climate diagrams.
+- Geographic relationships.
+
+HISTORY:
+
+- Timelines.
+- Historical maps.
+- Artefacts.
+- Historically appropriate contextual illustrations.
+
+ENGLISH:
+
+- Contextual illustrations.
+- Reading comprehension visuals.
+- Language-learning diagrams.
+
+These are examples. The active policy and curriculum must determine the actual visual requirements.
+
+4.2 Mandatory illustration metadata
+
+Every significant illustration must have:
+
+- Unique illustration ID.
+- Textbook ID.
+- Chapter ID.
+- Topic ID.
+- Related learning objective IDs.
+- Illustration title.
+- Illustration type.
+- Visual-generation specification.
+- Required components.
+- Required labels.
+- Caption.
+- Verbal explanation.
+- Relevant values, units and symbols.
+- Accessibility description.
+- Validation status.
+
+4.3 Verbal and graphical consistency
+
+For every illustration, Gemini must ensure:
+
+1. The illustration represents the correct educational concept.
+2. The labels agree with the written explanation.
+3. The caption describes the actual illustration.
+4. All numbered components are explained correctly.
+5. Graph axes and values agree with the accompanying discussion.
+6. Units and mathematical symbols are consistent.
+7. No component is described in the text but absent from the diagram without explanation.
+8. No graphical relationship contradicts the written explanation.
+
+The system must validate the actual generated image where visual generation is used.
+
+Use a suitable multimodal image-inspection capability for actual visual verification.
+
+Do not treat a valid image URL or successful image-generation response as evidence of academic correctness.
+
+If an illustration cannot be verified, mark it pending validation.
+
+Critical visual contradictions must prevent textbook approval.
+
+4.4 Image-generation provider compatibility
+
+Inspect the existing Gemini integration and supported Google AI services.
+
+Use Gemini for academic reasoning, curriculum-grounded visual specifications, captions and verbal descriptions.
+
+Use an available supported image-generation capability for actual rendered illustrations.
+
+Do not assume that every Gemini text-generation model can directly produce image files.
+
+Reuse existing image-generation infrastructure where available.
+
+Do not introduce an unnecessary second image-generation system.
+
+---
+
+PART 5: INDEPENDENT TEXTBOOK QUALITY ASSURANCE
+
+Implement a separate quality assurance process.
+
+The quality assurance engine must inspect the generated textbook independently of the generation operation.
+
+Use deterministic programmatic checks wherever possible and AI-assisted academic and multimodal evaluation where necessary.
+
+5.1 Quality scorecard
+
+Implement the following initial configurable scoring system:
+
+Quality dimension| Weight
+NERDC curriculum alignment| 25%
+Academic accuracy| 20%
+Class-level appropriateness| 15%
+Content completeness| 15%
+Graphical and verbal consistency| 10%
+Pedagogical quality| 10%
+Assessment alignment| 5%
+Total| 100%
+
+5.2 Quality decisions
+
+- Below 80%: REJECT.
+- 80–89%: CORRECTION REQUIRED.
+- 90–94%: ELIGIBLE FOR ACADEMIC REVIEW.
+- 95–100%: ELIGIBLE FOR ACADEMIC REVIEW AND APPROVAL.
+
+A high numerical score must never automatically constitute academic approval.
+
+5.3 Critical failure conditions
+
+Regardless of the numerical score, reject a textbook containing:
+
+- Missing mandatory curriculum objectives.
+- Fabricated curriculum references.
+- Materially incorrect academic explanations.
+- Incorrect mathematical answers.
+- Materially misleading educational diagrams.
+- Critical graphical-verbal contradictions.
+- Invalid answer keys.
+- Missing mandatory textbook sections.
+
+Persist detailed validation reports and evidence.
+
+Support section-level correction and regeneration.
+
+Do not regenerate an entire textbook unnecessarily when a specific chapter or illustration can be corrected independently.
+
+---
+
+PART 6: CENTRAL TEXTBOOK GENERATION CONTROL PANEL
+
+Create a functional administrative interface inside the existing Super Admin Control Plane.
+
+The interface must be connected to actual backend services and database records.
+
+6.1 Dashboard
+
+Display:
+
+- Total configured subjects.
+- Total configured classes.
+- Active generation policies.
+- Disabled generation policies.
+- Textbooks generated.
+- Textbooks awaiting validation.
+- Textbooks requiring correction.
+- Textbooks awaiting academic approval.
+- Published textbooks.
+- Failed generation jobs.
+
+6.2 Subject and class configuration
+
+Provide a searchable, filterable interface.
+
+The Super Admin must be able to select:
+
+Education Level → Class → Subject → Curriculum Version.
+
+Display the currently active policy and its version.
+
+Allow the Super Admin to configure:
+
+- Content depth.
+- Vocabulary level.
+- Learning complexity.
+- Chapter structure.
+- Required sections.
+- Number and types of examples.
+- Practical activities.
+- Illustration requirements.
+- Verbal explanation requirements.
+- Assessment complexity.
+- Curriculum coverage.
+- Quality thresholds.
+
+Do not hard-code arbitrary textbook page counts or illustration counts as universal requirements.
+
+Allow appropriate values to be configured according to subject and class.
+
+6.3 Policy testing and preview
+
+Before activating a policy, the Super Admin must be able to:
+
+1. Select a class and subject.
+2. Select an actual NERDC curriculum topic.
+3. Preview the resolved Gemini instructions.
+4. Run a controlled test generation.
+5. Inspect generated content and illustrations.
+6. View validation results.
+7. Compare the output against the existing active policy.
+8. Activate or reject the new policy.
+
+Test generations must be clearly distinguished from approved published textbooks.
+
+6.4 Policy versioning
+
+Every policy change must create an immutable version record.
+
+Record:
+
+- Previous policy version.
+- New policy version.
+- Administrator.
+- Change date.
+- Changed fields.
+- Change reason.
+- Activation status.
+
+Support rollback to a previous version.
+
+Rollback must create a new policy activation event rather than destroying historical records.
+
+---
+
+PART 7: DATABASE PROVISIONING AND MIGRATION AUTOMATION USING SHELL SCRIPTS
+
+This requirement is mandatory.
+
+All new database structures, policy tables, constraints, indexes, functions and migrations must be managed through executable shell scripts and the existing project's database migration conventions.
+
+Do not require manual SQL execution as the normal installation or deployment procedure.
+
+7.1 Database architecture
+
+First inspect the existing Curriculum Server database architecture.
+
+Determine whether the central curriculum database and textbook database already exist as separate logical or physical databases.
+
+Preserve the existing architecture and reuse established connections.
+
+Do not create a duplicate central curriculum database.
+
+Implement the necessary additional database structures for:
+
+- Textbook generation policies.
+- Global policies.
+- Class-level policies.
+- Subject-class policies.
+- Policy versions.
+- Policy activation history.
+- Generation jobs.
+- Resolved generation contexts.
+- Textbook metadata.
+- Textbook chapters.
+- Curriculum coverage mappings.
+- Illustrations and visual specifications.
+- Validation reports.
+- Quality scores.
+- Academic review records.
+- Publication records.
+- Generation audit logs.
+
+Use appropriate foreign keys, unique constraints, indexes and transactional operations.
+
+Adapt table names to existing project conventions.
+
+7.2 Required shell scripts
+
+Create a dedicated database provisioning and migration automation directory consistent with the existing repository.
+
+Implement scripts with the following responsibilities:
+
+A. "textbook-db-provision.sh"
+
+Responsibilities:
+
+- Verify required environment variables.
+- Verify database connectivity.
+- Detect the existing database architecture.
+- Provision required database resources where supported and authorized.
+- Ensure the textbook database or schema exists.
+- Create required application permissions.
+- Prepare migration execution.
+
+B. "textbook-db-migrate.sh"
+
+Responsibilities:
+
+- Discover unapplied textbook-related migrations.
+- Execute migrations in the correct order.
+- Maintain a migration history.
+- Prevent duplicate migration execution.
+- Validate migration completion.
+- Fail safely on errors.
+
+C. "textbook-policy-seed.sh"
+
+Responsibilities:
+
+- Install mandatory global governance policies.
+- Seed initial configurable class and subject policy templates.
+- Use actual class and subject references from the curriculum database.
+- Avoid fabricated NERDC curriculum records.
+- Make seeding idempotent.
+- Never overwrite administrator-modified policies during routine deployments.
+
+D. "textbook-db-verify.sh"
+
+Responsibilities:
+
+- Verify required tables and structures.
+- Verify indexes and constraints.
+- Verify migration status.
+- Verify application database access.
+- Verify policy configuration availability.
+- Report missing or inconsistent structures.
+
+E. "textbook-system-install.sh"
+
+Responsibilities:
+
+- Coordinate provisioning.
+- Run migrations.
+- Seed mandatory policies.
+- Run database verification.
+- Return a nonzero exit code if a critical step fails.
+
+7.3 Shell-script requirements
+
+All scripts must:
+
+- Use safe shell practices.
+- Include "set -euo pipefail".
+- Validate required environment variables.
+- Avoid embedding database credentials.
+- Support environment-specific configuration.
+- Be safe to execute repeatedly.
+- Provide clear execution logs.
+- Fail visibly and safely.
+- Never delete existing production data.
+- Avoid destructive database resets.
+- Support the existing deployment architecture.
+
+Where database provisioning requires cloud permissions or external infrastructure, use the existing authorized service accounts and deployment mechanisms.
+
+Do not create new cloud resources without checking the existing architecture and authorization.
+
+7.4 Deployment integration
+
+Integrate the scripts with the existing deployment and CI/CD processes.
+
+Ensure that required migrations are applied before application code depends on newly introduced database structures.
+
+Application startup must verify required schema compatibility.
+
+Do not silently continue when critical migrations are missing.
+
+Provide documented commands for initial installation and subsequent updates.
+
+---
+
+PART 8: SECURITY AND OPERATIONAL CONTROLS
+
+Enforce Super Admin authority at the backend.
+
+The frontend must not be the only security boundary.
+
+Implement:
+
+- Server-side role verification.
+- Authorization on every policy modification endpoint.
+- Database access restrictions.
+- Audit logging.
+- Policy version immutability.
+- Secure Gemini credential management.
+- Tenant isolation.
+- Rate limiting.
+- Generation usage monitoring.
+- Safe retry handling.
+- Durable generation jobs.
+- Failure recovery.
+
+Provisioned school instances must only consume centrally approved textbook editions according to their access permissions.
+
+A school tenant must never modify the global generation policies.
+
+A school tenant must never publish an unvalidated central textbook.
+
+---
+
+PART 9: ACCEPTANCE TESTS
+
+The implementation is not complete until these requirements are verified:
+
+1. Super Admin can configure Primary 2 Mathematics independently of Primary 2 English.
+2. Super Admin can configure Primary 5 Mathematics independently of Primary 2 Mathematics.
+3. JSS and SSS subjects use their appropriate class-specific rules.
+4. Subject and class configurations are retrieved dynamically from the curriculum database.
+5. Gemini receives the correct active policy for every generation request.
+6. Gemini cannot bypass mandatory global policies.
+7. Missing required policies prevent generation.
+8. Missing mandatory curriculum context prevents generation.
+9. Every generated chapter retains its curriculum references.
+10. Every significant illustration retains its educational references.
+11. Graphical and verbal contradictions are detected.
+12. Academic quality failures prevent approval.
+13. Failed textbooks cannot be published.
+14. High-scoring textbooks still require authorized academic approval.
+15. Policy changes are versioned and auditable.
+16. Policy rollback works without deleting historical records.
+17. Database provisioning scripts can execute repeatedly without duplicating resources.
+18. Database migrations execute in the correct order.
+19. Existing production data is preserved.
+20. Provisioned school tenants cannot modify central policies.
+21. Existing textbook functionality remains operational.
+22. All generation entry points use the central orchestrator.
+
+Implement actual database-backed integration and acceptance tests.
+
+No mocks, simulated integrations or fabricated success responses in production.
+
+If a real external service cannot be tested because credentials or infrastructure are unavailable, report that limitation explicitly.
+
+---
+
+PART 10: FINAL IMPLEMENTATION REPORT
+
+At completion, provide a numbered report containing:
+
+1. Existing architecture discovered.
+2. Existing textbook generation engine discovered.
+3. Central Super Admin control plane changes.
+4. Subject-and-class policy configuration implementation.
+5. Gemini orchestration and policy enforcement.
+6. NERDC curriculum retrieval and traceability.
+7. Graphical and verbal consistency implementation.
+8. Independent academic quality assurance.
+9. Textbook publication controls.
+10. Database structures created or modified.
+11. Shell scripts created.
+12. Migration execution results.
+13. Security and authorization changes.
+14. Tests executed and actual results.
+15. Outstanding dependencies or incomplete work.
+16. Exact files created or modified.
+
+Identify the exact execution paths that enforce the policies.
+
+Do not claim completion merely because the UI, prompt templates or shell scripts have been created.
+
+FINAL NON-NEGOTIABLE DIRECTIVES
+
+- The central NERDC database remains the authoritative curriculum source.
+- Gemini remains the textbook academic content generation engine.
+- Super Admin controls generation rules centrally.
+- Every subject and class can have independently configured rules.
+- Global academic safeguards cannot be weakened by subject-level settings.
+- Every generation request must use the applicable active policy.
+- Graphical and verbal content must be academically consistent.
+- All textbooks must undergo independent validation.
+- No unvalidated textbook may be published.
+- Database provisioning and migrations must be automated through ".sh" scripts.
+- Existing architecture and production data must be preserved.
+- No mocks or synthetic production functionality.
+- No hard-coded school-specific textbook generation policies.
+- No frontend-only enforcement.
+
+SUCCESS CRITERION:
+
+Curriculum Server must become a centrally governed, NERDC-grounded textbook generation platform in which the Super Admin can independently control Gemini's academic behaviour for every subject and class through the Control Plane.
+
+Every generated textbook must be appropriate to its assigned class, comprehensive in its curriculum coverage, academically accurate, pedagogically coherent, and consistent between graphical illustrations and verbal explanations.
+
+The system must enforce these requirements at the backend and database levels, not merely recommend them to Gemini.
