@@ -7,7 +7,7 @@ import type {
   UpdateSchoolStudentRequest
 } from '../../packages/shared-types/src/apiContracts';
 import type { AuthorizedPrincipal } from '../authorization/authorizedPrincipal';
-import { assertAuthorized } from '../authorization/authorizedPrincipal';
+import { assertAuthorized, assertResourceAuthorized } from '../authorization/authorizedPrincipal';
 import { PERMISSIONS } from '../authorization/permissions';
 import type { DatabaseClient, DatabasePool } from './postgres';
 import { withTenantTransaction } from './tenantContext';
@@ -247,7 +247,7 @@ export class SchoolAdministrationRepository {
     studentId: string,
     input: UpdateStudentInput
   ): Promise<StudentRecord> {
-    assertAuthorized(actor, PERMISSIONS.studentsUpdate);
+    assertResourceAuthorized(actor, PERMISSIONS.studentsUpdate, 'student', studentId);
     const fields: Array<[keyof UpdateStudentInput, string, string]> = [];
     if (input.admissionNumber !== undefined) {
       fields.push(['admissionNumber', 'admission_number', normalizeText(input.admissionNumber, 100)]);
@@ -290,7 +290,7 @@ export class SchoolAdministrationRepository {
     classId: string,
     input: UpdateClassInput
   ): Promise<ClassRecord> {
-    assertAuthorized(actor, PERMISSIONS.classesUpdate);
+    assertResourceAuthorized(actor, PERMISSIONS.classesUpdate, 'class', classId);
     const fields: Array<[keyof UpdateClassInput, string, string]> = [];
     if (input.name !== undefined) fields.push(['name', 'name', normalizeText(input.name, 100)]);
     if (input.academicYear !== undefined) {
@@ -371,7 +371,7 @@ export class SchoolAdministrationRepository {
   }
 
   async getStaff(actor: AuthorizedPrincipal, schoolId: string, staffId: string): Promise<StaffRecord> {
-    assertAuthorized(actor, PERMISSIONS.staffRead);
+    assertResourceAuthorized(actor, PERMISSIONS.staffRead, 'staff', staffId);
     return withTenantTransaction(this.pool, actor.tenant, async client => {
       const result = await client.query<StaffRecord>(
         `SELECT id, tenant_id, school_id, user_id, department_id, staff_number,
@@ -420,7 +420,7 @@ export class SchoolAdministrationRepository {
     staffId: string,
     input: UpdateStaffInput
   ): Promise<StaffRecord> {
-    assertAuthorized(actor, PERMISSIONS.staffUpdate);
+    assertResourceAuthorized(actor, PERMISSIONS.staffUpdate, 'staff', staffId);
     const fields: Array<[keyof UpdateStaffInput, string, unknown]> = [];
     if (input.staffNumber !== undefined) fields.push(['staffNumber', 'staff_number', normalizeText(input.staffNumber, 64)]);
     if (input.firstName !== undefined) fields.push(['firstName', 'first_name', normalizeText(input.firstName, 100)]);
@@ -586,7 +586,8 @@ export class SchoolAdministrationRepository {
       : transition.type === 'external_transfer' ? PERMISSIONS.studentsTransfer
         : transition.type === 'graduate' ? PERMISSIONS.studentsGraduate
           : PERMISSIONS.studentsUpdate;
-    assertAuthorized(actor, permission);
+    assertResourceAuthorized(actor, PERMISSIONS.studentLifecycleManage, 'student', studentId);
+    assertResourceAuthorized(actor, permission, 'student', studentId);
 
     return withTenantTransaction(this.pool, actor.tenant, async client => {
       const current = await client.query<StudentRecord>(
@@ -650,7 +651,8 @@ export class SchoolAdministrationRepository {
     const permission = operation === 'promote' ? PERMISSIONS.studentsPromote
       : operation === 'internal_transfer' ? PERMISSIONS.studentsTransfer
         : PERMISSIONS.classesUpdate;
-    assertAuthorized(actor, permission);
+    assertResourceAuthorized(actor, permission, 'student', studentId);
+    assertResourceAuthorized(actor, PERMISSIONS.classesUpdate, 'class', classId);
 
     return withTenantTransaction(this.pool, actor.tenant, async client => {
       const current = await client.query<StudentRecord>(

@@ -65,3 +65,15 @@ export function assertAuthorized(
     throw new Error('FORBIDDEN');
   }
 }
+
+export function assertResourceAuthorized(
+  principal: AuthorizedPrincipal | undefined,
+  permission: string,
+  resourceType: string,
+  resourceId: string
+): asserts principal is AuthorizedPrincipal {
+  if (!principal || principal[authorized] !== true ||
+      !principal.hasPermissionFor(permission, resourceType, resourceId)) {
+    throw new Error('FORBIDDEN');
+  }
+}

@@ -129,6 +129,24 @@ export function createAuthorizationMiddleware(deps: AuthorizationMiddlewareDepen
     });
   };
 
+  // The repository must still filter or verify the actual resource against these scopes.
+  const requirePermissionWithinScopes = (
+    permission: string,
+    resourceTypes: readonly string[]
+  ): RequestHandler => (req, res, next) => {
+    activeMembership(req, res, () => {
+      const principal = (req as any).authorizedPrincipal as AuthorizedPrincipal;
+      if (!principal.hasPermission(permission) && !principal.grants.some(grant =>
+        grant.permissions.includes(permission) &&
+        grant.scopes.some(scope => resourceTypes.includes(scope.resourceType))
+      )) {
+        reject(req, res, 403, 'FORBIDDEN', 'You do not have permission to perform this operation.');
+        return;
+      }
+      next();
+    });
+  };
+
   // Resource-scoped checks run after the DB-derived principal is established.
   const requireResourcePermission = (
     permission: string,
@@ -238,6 +256,7 @@ export function createAuthorizationMiddleware(deps: AuthorizationMiddlewareDepen
     authenticated,
     activeMembership,
     requirePermission,
+    requirePermissionWithinScopes,
     requireResourcePermission,
     tenantAdministrator,
     platformAdministrator,
