@@ -1,41 +1,114 @@
-# Cloud Build Configuration for Curriculum Server
+
+# Curriculum Server and Curriculum Flow
+# Google Cloud Build configuration
 # Project: curious-subject-477114-e4
 # Region: europe-west1
+
+substitutions:
+  _PROJECT_ID: curious-subject-477114-e4
+  _REGION: europe-west1
+  _REPOSITORY: curriculum-registry
+  _SERVER_SERVICE: curriculum-server
+  _FLOW_SERVICE: curriculum-flow
 
 options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
-  - name: 'gcr.io/cloud-builders/docker'
-    id: 'build-curriculum-server-image'
+  # --------------------------------------------------
+  # 1. BUILD CURRICULUM SERVER
+  # --------------------------------------------------
+  - name: gcr.io/cloud-builders/docker
+    id: build-curriculum-server
     args:
-      - 'build'
-      - '-f'
-      - 'apps/curriculum-server/Dockerfile'
-      - '-t'
-      - 'europe-west1-docker.pkg.dev/curious-subject-477114-e4/curriculum-registry/curriculum-server:$COMMIT_SHA'
-      - '-t'
-      - 'europe-west1-docker.pkg.dev/curious-subject-477114-e4/curriculum-registry/curriculum-server:latest'
-      - '.'
+      - build
+      - -f
+      - apps/curriculum-server/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_SERVER_SERVICE}:$COMMIT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_SERVER_SERVICE}:latest
+      - .
 
-  - name: 'gcr.io/cloud-builders/docker'
-    id: 'push-curriculum-server-image'
+  # --------------------------------------------------
+  # 2. BUILD CURRICULUM FLOW
+  # --------------------------------------------------
+  - name: gcr.io/cloud-builders/docker
+    id: build-curriculum-flow
     args:
-      - 'push'
-      - 'europe-west1-docker.pkg.dev/curious-subject-477114-e4/curriculum-registry/curriculum-server:$COMMIT_SHA'
+      - build
+      - -f
+      - apps/curriculum-flow/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_FLOW_SERVICE}:$COMMIT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_FLOW_SERVICE}:latest
+      - .
 
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'deploy-curriculum-server'
-    entrypoint: 'gcloud'
+  # --------------------------------------------------
+  # 3. PUSH CURRICULUM SERVER IMAGES
+  # --------------------------------------------------
+  - name: gcr.io/cloud-builders/docker
+    id: push-curriculum-server
     args:
-      - 'run'
-      - 'deploy'
-      - 'curriculum-server'
-      - '--image'
-      - 'europe-west1-docker.pkg.dev/curious-subject-477114-e4/curriculum-registry/curriculum-server:$COMMIT_SHA'
-      - '--region'
-      - 'europe-west1'
-      - '--project'
-      - 'curious-subject-477114-e4'
-      - '--platform'
-      - 'managed'
+      - push
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_SERVER_SERVICE}:$COMMIT_SHA
+
+  - name: gcr.io/cloud-builders/docker
+    id: push-curriculum-server-latest
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_SERVER_SERVICE}:latest
+
+  # --------------------------------------------------
+  # 4. PUSH CURRICULUM FLOW IMAGES
+  # --------------------------------------------------
+  - name: gcr.io/cloud-builders/docker
+    id: push-curriculum-flow
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_FLOW_SERVICE}:$COMMIT_SHA
+
+  - name: gcr.io/cloud-builders/docker
+    id: push-curriculum-flow-latest
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_FLOW_SERVICE}:latest
+
+  # --------------------------------------------------
+  # 5. DEPLOY CURRICULUM SERVER
+  # --------------------------------------------------
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy-curriculum-server
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVER_SERVICE}
+      - --image
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_SERVER_SERVICE}:$COMMIT_SHA
+      - --region
+      - ${_REGION}
+      - --project
+      - ${_PROJECT_ID}
+      - --platform
+      - managed
+
+  # --------------------------------------------------
+  # 6. DEPLOY CURRICULUM FLOW
+  # --------------------------------------------------
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy-curriculum-flow
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_FLOW_SERVICE}
+      - --image
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_FLOW_SERVICE}:$COMMIT_SHA
+      - --region
+      - ${_REGION}
+      - --project
+      - ${_PROJECT_ID}
+      - --platform
+      - managed
