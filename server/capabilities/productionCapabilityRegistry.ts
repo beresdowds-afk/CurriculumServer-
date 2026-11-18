@@ -111,6 +111,25 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     state: 'implemented'
   },
   {
+    id: 'question_bank_scoped_writes',
+    description: 'Question Bank and assessment writes requiring principal-bound repositories and item-level scope enforcement.',
+    routes: [
+      { method: 'POST', path: /^\/(?:question-bank(?:\/.*)?|assessment-blueprints|assessments(?:\/.*)?)$/ },
+      { method: 'DELETE', path: /^\/question-bank\/items\/[0-9a-f-]+$/i }
+    ],
+    requiredRepositories: ['InstanceQuestionBankRepository', 'AuthorizationRepository'],
+    requiredMigrations: [8, 10, 15],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'database_permission_and_resource_scope',
+      permissions: ['question_bank.manage', 'question_bank.review', 'assessments.manage']
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: [],
+    readinessEvidence: [],
+    state: 'implemented'
+  },
+  {
     id: 'school_identity',
     description: 'Tenant-scoped school profile, configuration, and membership APIs.',
     routes: [
@@ -461,6 +480,22 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     tenantContext: 'transaction_local_tenant',
     acceptanceTests: ['server/questionBank/instanceQuestionBank.test.ts'],
     readinessEvidence: ['tenant_isolated_instance_question_bank', 'instance_assessment_persistence'],
+    state: 'ready'
+  }
+];
+
+export const LEGACY_API_CAPABILITIES: readonly CapabilityRegistration[] = [
+  {
+    id: 'legacy_liveness',
+    description: 'Legacy public liveness endpoint.',
+    routes: [{ method: 'GET', path: exact('/health') }],
+    requiredRepositories: [],
+    requiredMigrations: [],
+    authentication: 'none',
+    authorization: { rule: 'public', permissions: [] },
+    tenantContext: 'none',
+    acceptanceTests: ['server/authorization/schoolAdministrationGuards.test.ts'],
+    readinessEvidence: ['static_health_handler'],
     state: 'ready'
   }
 ];

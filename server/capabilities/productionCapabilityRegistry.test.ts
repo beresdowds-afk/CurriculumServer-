@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 import {
   PRODUCTION_CAPABILITIES, capabilityActivationProblems, evaluateProductionCapabilityGate
@@ -16,7 +16,8 @@ const notReady = [
   'administrative_permissions',
   'student_lifecycle',
   'campus_logistics',
-  'application_template_discovery'
+  'application_template_discovery',
+  'question_bank_scoped_writes'
 ];
 
 test('legacy authentication endpoints remain blocked by central IAM readiness', () => {
@@ -197,4 +198,14 @@ test('unready routes return the established unavailable response', () => {
   assert.equal(output.status, 503);
   assert.equal(output.body?.code, 'PRODUCTION_PERSISTENCE_UNAVAILABLE');
   assert.equal(output.body?.capabilityId, 'student_administration');
+});
+
+test('the capability gate is mounted before API route registrations', () => {
+  const source = readFileSync('server.ts', 'utf8');
+  const gate = source.indexOf("app.use('/api', createApiCapabilityGateMiddleware())");
+  assert.notEqual(gate, -1);
+  assert.doesNotMatch(
+    source.slice(0, gate),
+    /app\.(?:get|post|put|patch|delete|all|use)\(\s*['"]\/api(?:\/|['"])/i
+  );
 });

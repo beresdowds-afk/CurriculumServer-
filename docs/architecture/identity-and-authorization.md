@@ -82,12 +82,23 @@ normalized assignments from it without discarding any subject.
 `server/capabilities/productionCapabilityRegistry.ts` declares, per route group: canonical capability
 id, routes, required repositories and migrations, authentication, authorization, tenant-context
 requirement, acceptance tests, readiness evidence and lifecycle state (`not_started`, `implemented`,
-`configured`, `ready`, `degraded`, or `disabled`). `server.ts` keeps the global `/api/v1` fail-closed
-lockdown. A route is served only when its registration is `ready` and has operational evidence;
+`configured`, `ready`, `degraded`, or `disabled`). `server.ts` applies the fail-closed gate to all
+`/api` namespaces before registering routes. Versioned routes map to the existing registry; other
+namespaces use a separate legacy registry and cannot inherit versioned registrations. A route is
+served only when its registration is `ready` and has operational evidence;
 unknown and unready operations return 503. Existing school, student, class and lifecycle handlers now
 map to their canonical groups, but remain blocked until the complete administration, authorization,
 configuration and runtime-readiness evidence exists. Staff, role administration and template
 discovery remain unavailable.
+
+The legacy `/api/ai/*`, `/api/ai/v1/*`, diagnostics, worker, demo and legacy curriculum
+routes are unavailable until separately registered with their own authorization and readiness
+evidence. Question Bank and assessment reads retain application-instance authorization, but
+their writes and individual-item mutations are unavailable until their repositories require
+an authorized principal and enforce item-level scopes. School profile/configuration routes
+currently require tenant-wide permissions; school-scoped grants need a verified school resolver
+and scoped repository checks before they can be supported. Missing profile-update, invitation,
+role/permission and staff-appointment routes require their own feature implementations.
 
 ## 4. Application configuration contract
 

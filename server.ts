@@ -70,7 +70,8 @@ import {
   type StudentLifecycleStatus,
   type StudentTransition
 } from './server/db/schoolAdministrationRepository';
-import { createProductionCapabilityGateMiddleware } from './server/capabilities/productionCapabilityMiddleware';
+import { createApiCapabilityGateMiddleware } from './server/capabilities/productionCapabilityMiddleware';
+import { createSchoolAdministrationGuards } from './server/authorization/schoolAdministrationGuards';
 import { LogisticsError, LogisticsRepository } from './server/logistics/logisticsRepository';
 import { validateLogisticsFeatureConfiguration } from './src/data/logisticsFeatureTemplate';
 import type { AuthorizedPrincipal } from './server/authorization/authorizedPrincipal';
@@ -207,6 +208,9 @@ app.use((req: Request, res: Response, next: express.NextFunction) => {
 
   next();
 });
+
+// Every API namespace must pass the capability registry before route registration.
+app.use('/api', createApiCapabilityGateMiddleware());
 
 // Server-side authorization guard for Control Plane operations (Hardened against header spoofing & weak tokens)
 function requireSuperAdmin(req: Request, res: Response, next: express.NextFunction) {
@@ -417,6 +421,7 @@ const authorizationMiddleware = createAuthorizationMiddleware({
     .split(',').map(email => email.trim().toLowerCase()).filter(Boolean),
   internalServiceKey: () => process.env.INTERNAL_SERVICE_KEY
 });
+const schoolAdministrationGuards = createSchoolAdministrationGuards(authorizationMiddleware);
 
 function resolveApplicationInstanceId(req: Request): string {
   const headerInstanceId = req.headers['x-application-instance-id'];
@@ -665,10 +670,6 @@ function requireSchoolAuth(req: Request, res: Response, next: express.NextFuncti
   (req as any).tenantContext = verification.context;
   return productionPersistenceUnavailable(req, res);
 }
-
-// Fail-closed production gate: only enabled, evidence-backed capability route
-// groups are served; everything else under /api/v1 returns 503.
-app.use('/api/v1', createProductionCapabilityGateMiddleware());
 
 // -------------------------------------------------------------
 // CENTRAL AI GATEWAY & INTELLIGENT REQUEST ROUTER (Unified Backend)
@@ -4474,7 +4475,7 @@ async function getCurrentSchoolId(req: Request, res: Response): Promise<string |
   return school.id;
 }
 
-app.get('/api/v1/schools/me/students', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/students', schoolAdministrationGuards.studentRead, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4527,7 +4528,7 @@ app.get('/api/v1/schools/me/students', authorizationMiddleware.activeMembership,
   }
 });
 
-app.post('/api/v1/schools/me/students', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.post('/api/v1/schools/me/students', schoolAdministrationGuards.studentCreate, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4552,7 +4553,7 @@ app.post('/api/v1/schools/me/students', authorizationMiddleware.activeMembership
   }
 });
 
-app.get('/api/v1/schools/me/students/:studentId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/students/:studentId', schoolAdministrationGuards.studentRecordRead, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4565,7 +4566,7 @@ app.get('/api/v1/schools/me/students/:studentId', authorizationMiddleware.active
   }
 });
 
-app.patch('/api/v1/schools/me/students/:studentId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.patch('/api/v1/schools/me/students/:studentId', schoolAdministrationGuards.studentUpdate, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4595,7 +4596,7 @@ app.patch('/api/v1/schools/me/students/:studentId', authorizationMiddleware.acti
   }
 });
 
-app.post('/api/v1/schools/me/students/:studentId/lifecycle', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.post('/api/v1/schools/me/students/:studentId/lifecycle', schoolAdministrationGuards.lifecycle, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4628,7 +4629,7 @@ app.post('/api/v1/schools/me/students/:studentId/lifecycle', authorizationMiddle
   }
 });
 
-app.post('/api/v1/schools/me/students/:studentId/class', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.post('/api/v1/schools/me/students/:studentId/class', schoolAdministrationGuards.assignClass, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4660,7 +4661,7 @@ app.post('/api/v1/schools/me/students/:studentId/class', authorizationMiddleware
   }
 });
 
-app.get('/api/v1/schools/me/students/:studentId/history', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/students/:studentId/history', schoolAdministrationGuards.studentRecordRead, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4673,7 +4674,7 @@ app.get('/api/v1/schools/me/students/:studentId/history', authorizationMiddlewar
   }
 });
 
-app.post('/api/v1/schools/me/classes', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.post('/api/v1/schools/me/classes', schoolAdministrationGuards.classCreate, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4693,7 +4694,7 @@ app.post('/api/v1/schools/me/classes', authorizationMiddleware.activeMembership,
   }
 });
 
-app.get('/api/v1/schools/me/classes', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/classes', schoolAdministrationGuards.classRead, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4728,7 +4729,7 @@ app.get('/api/v1/schools/me/classes', authorizationMiddleware.activeMembership, 
   }
 });
 
-app.patch('/api/v1/schools/me/classes/:classId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.patch('/api/v1/schools/me/classes/:classId', schoolAdministrationGuards.classUpdate, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4758,7 +4759,7 @@ app.patch('/api/v1/schools/me/classes/:classId', authorizationMiddleware.activeM
   }
 });
 
-app.get('/api/v1/schools/me/staff', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/staff', schoolAdministrationGuards.staffRead, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4798,7 +4799,7 @@ app.get('/api/v1/schools/me/staff', authorizationMiddleware.activeMembership, as
   }
 });
 
-app.post('/api/v1/schools/me/staff', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.post('/api/v1/schools/me/staff', schoolAdministrationGuards.staffCreate, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4837,7 +4838,7 @@ app.post('/api/v1/schools/me/staff', authorizationMiddleware.activeMembership, a
   }
 });
 
-app.get('/api/v1/schools/me/staff/:staffId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/staff/:staffId', schoolAdministrationGuards.staffRecordRead, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4850,7 +4851,7 @@ app.get('/api/v1/schools/me/staff/:staffId', authorizationMiddleware.activeMembe
   }
 });
 
-app.patch('/api/v1/schools/me/staff/:staffId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.patch('/api/v1/schools/me/staff/:staffId', schoolAdministrationGuards.staffUpdate, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;

@@ -1,5 +1,9 @@
 import type { Request, RequestHandler, Response } from 'express';
-import { evaluateProductionCapabilityGate } from './productionCapabilityRegistry';
+import {
+  evaluateProductionCapabilityGate,
+  LEGACY_API_CAPABILITIES,
+  type CapabilityRegistration
+} from './productionCapabilityRegistry';
 
 function productionPersistenceUnavailable(req: Request, res: Response, capabilityId?: string): void {
   res.status(503).json({
@@ -12,13 +16,24 @@ function productionPersistenceUnavailable(req: Request, res: Response, capabilit
   });
 }
 
-export function createProductionCapabilityGateMiddleware(): RequestHandler {
+export function createProductionCapabilityGateMiddleware(
+  resolvePath: (path: string) => string = path => path,
+  registry?: readonly CapabilityRegistration[]
+): RequestHandler {
   return (req, res, next) => {
-    const decision = evaluateProductionCapabilityGate(req.method, req.path);
+    const decision = evaluateProductionCapabilityGate(req.method, resolvePath(req.path), registry);
     if (decision.allowed) {
       next();
       return;
     }
     productionPersistenceUnavailable(req, res, decision.capabilityId);
+  };
+}
+
+export function createApiCapabilityGateMiddleware(): RequestHandler {
+  const versioned = createProductionCapabilityGateMiddleware(path => path.slice(3) || '/');
+  const legacy = createProductionCapabilityGateMiddleware(path => path, LEGACY_API_CAPABILITIES);
+  return (req, res, next) => {
+    return (/^\/v1(?:\/|$)/i.test(req.path) ? versioned : legacy)(req, res, next);
   };
 }
