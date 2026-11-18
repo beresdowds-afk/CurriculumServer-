@@ -1,5 +1,4 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { TenantSchoolApp } from '../src/types';
 import type { TenantSecurityContext } from '../src/services/tenantSecurityContext';
 
 export function isPlatformAdminTokenContext(context: TenantSecurityContext): boolean {
@@ -27,7 +26,7 @@ function sign(encodedPayload: string): string {
 
 export class ServerTenantTokenService {
   static issueTenantToken(
-    tenant: TenantSchoolApp,
+    tenant: { id: string; appId: string; schoolName: string; subscriptionTier: string; status: string },
     role = 'tenant_admin',
     ttlSeconds = 86400,
     email?: string,

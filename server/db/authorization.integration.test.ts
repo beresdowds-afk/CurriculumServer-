@@ -105,7 +105,7 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
     const session = await authz.createSession(tenantA, activeA.account.userId, 3600);
     const result = await authz.authorize(tenantA, activeA.account.userId, session.sessionId);
     assert.equal(result.ok, true);
-    const adminPrincipal = (result as Extract<typeof result, { ok: true }>).principal;
+    let adminPrincipal = (result as Extract<typeof result, { ok: true }>).principal;
     assert.ok(adminPrincipal.hasPermission(PERMISSIONS.schoolConfigurationManage));
 
     await withControlPlaneTransaction(pool, admin, async client => {
@@ -115,6 +115,7 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
         [activeA.account.userId]
       );
     });
+    await assert.rejects(authz.assignRole(adminPrincipal, activeA.account.userId, 'staff'), /FORBIDDEN/);
     assert.equal(await schools.authenticateAdministrator(a.record.tenantId, a.email), undefined);
     assert.deepEqual(await authz.authorize(tenantA, activeA.account.userId, session.sessionId),
       { ok: false, reason: 'SESSION_REVOKED' });
@@ -125,6 +126,11 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
         [activeA.account.userId]
       );
     });
+    const newAdminSession = await authz.createSession(tenantA, activeA.account.userId, 3600);
+    const renewedAdmin = await authz.authorize(tenantA, activeA.account.userId, newAdminSession.sessionId);
+    assert.equal(renewedAdmin.ok, true);
+    if (!renewedAdmin.ok) throw new Error('Renewed administrator session was not authorized');
+    adminPrincipal = renewedAdmin.principal;
 
     // Lifecycle trigger blocks skipped transitions even for direct SQL.
     await assert.rejects(withControlPlaneTransaction(pool, admin, c =>
@@ -148,6 +154,16 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
       )
     );
     const secondSchoolSession = await authz.createSession(tenantB, activeA.account.userId, 3600);
+    assert.deepEqual(await authz.authorize(tenantB, activeA.account.userId, secondSchoolSession.sessionId),
+      { ok: false, reason: 'IDENTITY_INCONSISTENT' });
+    await withControlPlaneTransaction(pool, admin, client =>
+      client.query(
+        `INSERT INTO production.membership_role_assignments
+           (tenant_id, user_subject, role_code, assigned_by)
+         VALUES ($1, $2, 'staff', 'test-setup')`,
+        [b.record.tenantId, `cross-school-${activeA.account.userId}`]
+      )
+    );
     assert.equal((await authz.authorize(tenantB, activeA.account.userId, secondSchoolSession.sessionId)).ok, true);
 
     const expiredSession = await authz.createSession(tenantA, activeA.account.userId, 3600);
