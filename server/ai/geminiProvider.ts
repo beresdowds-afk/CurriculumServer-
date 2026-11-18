@@ -24,6 +24,7 @@ export interface GeminiTransport {
         responseMimeType?: string;
         responseSchema?: unknown;
       };
+      signal?: AbortSignal;
     }
   ): Promise<GeminiRawResponse>;
 }
@@ -58,7 +59,8 @@ const defaultGeminiTransport: GeminiTransport = {
         systemInstruction: params.config.systemInstruction,
         temperature: params.config.temperature,
         ...(params.config.responseMimeType ? { responseMimeType: params.config.responseMimeType } : {}),
-        ...(params.config.responseSchema ? { responseSchema: params.config.responseSchema } : {})
+        ...(params.config.responseSchema ? { responseSchema: params.config.responseSchema } : {}),
+        ...(params.signal ? { abortSignal: params.signal } : {})
       }
     });
 
@@ -71,19 +73,28 @@ const defaultGeminiTransport: GeminiTransport = {
 
 function isNonRetryableProviderError(err: unknown): boolean {
   if (err instanceof AiGatewayError) {
-    return err.code === 'VALIDATION_ERROR' || err.code === 'PROVIDER_UNAVAILABLE' && err.details?.authMode === 'unconfigured';
+    return err.code === 'VALIDATION_ERROR' ||
+      err.code === 'INVALID_AI_RESPONSE' ||
+      err.code === 'PROVIDER_TIMEOUT' ||
+      err.code === 'PROVIDER_UNAVAILABLE' && err.details?.authMode === 'unconfigured';
   }
   const message = err instanceof Error ? err.message : String(err);
   return /API_KEY_INVALID|PERMISSION_DENIED|UNAUTHENTICATED|400 Bad Request|401 Unauthorized|403 Forbidden|GEMINI_API_KEY is not configured/i.test(message);
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+async function withTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const controller = new AbortController();
   try {
     return await Promise.race([
-      promise,
+      operation(controller.signal),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
+          controller.abort();
           reject(
             new AiGatewayError(
               'PROVIDER_TIMEOUT',
@@ -155,9 +166,10 @@ export class GoogleGeminiProviderAdapter implements AiProviderAdapter {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
         const raw = await withTimeout(
-          this.transport.generateContent(runtimeCfg, {
+          signal => this.transport.generateContent(runtimeCfg, {
             model: input.modelId,
             contents: input.contents,
+            signal,
             config: {
               systemInstruction: input.systemInstruction,
               temperature: input.temperature,
@@ -196,7 +208,7 @@ export class GoogleGeminiProviderAdapter implements AiProviderAdapter {
           if (err instanceof AiGatewayError) throw err;
           throw new AiGatewayError(
             'PROVIDER_UNAVAILABLE',
-            err instanceof Error ? err.message : 'Google Gemini provider request failed.',
+            'Google Gemini provider request failed.',
             502,
             { attemptCount: attempt }
           );

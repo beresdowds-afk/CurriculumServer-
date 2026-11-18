@@ -22,10 +22,11 @@ export interface AiEntitlementModeResolver {
 }
 
 export function resolveAiEntitlementMode(): 'strict' | 'decoupled' {
+  if (process.env.NODE_ENV === 'production') return 'strict';
   if (process.env.AI_ENTITLEMENT_MODE === 'strict') return 'strict';
   if (process.env.AI_ENTITLEMENT_MODE === 'decoupled') return 'decoupled';
   if (process.env.SHARED_SERVICE_ENTITLEMENT_MODE === 'strict') return 'strict';
-  return process.env.NODE_ENV === 'production' ? 'strict' : 'decoupled';
+  return 'decoupled';
 }
 
 export interface AuthenticateAiCallerDependencies {
@@ -228,6 +229,14 @@ export async function enforceAiAuthorizationAndEntitlement(input: {
   const { caller, policy, requestedTenantId, headerTenantId } = input;
   const isPlatformAdmin = caller.role === PLATFORM_ADMIN_ROLE;
 
+  if (isPlatformAdmin && !policy.allowPlatformAdminOverride) {
+    throw new AiGatewayError(
+      'FORBIDDEN',
+      `Platform administrators may not override authorization for '${policy.capability}'.`,
+      403
+    );
+  }
+
   // Cross-tenant impersonation checks (payload or header tenantId must match token tenantId)
   const suppliedTenantCandidates = [requestedTenantId, headerTenantId].filter(
     (v): v is string => typeof v === 'string' && v.trim().length > 0
@@ -380,10 +389,20 @@ export async function enforceAiAuthorizationAndEntitlement(input: {
           403
         );
       }
-      if (
-        entitlement.allowedCapabilities.length > 0 &&
-        !entitlement.allowedCapabilities.includes(policy.capability)
-      ) {
+      if (!entitlement.allowedCapabilities.includes(policy.capability)) {
+        await input.store.recordAudit({
+          correlationId: input.correlationId,
+          tenantId: effectiveTenantId,
+          applicationInstanceId: entitlement.applicationInstanceId,
+          applicationId: input.applicationId,
+          capability: policy.capability,
+          actorUserId: caller.userId,
+          actorRole: caller.role,
+          decision: 'denied',
+          reasonCode: 'ENTITLEMENT_DENIED',
+          details: { entitlementId: entitlement.id },
+          principal: caller.verifiedPrincipal
+        });
         throw new AiGatewayError(
           'ENTITLEMENT_DENIED',
           `Tenant AI entitlement does not permit capability '${policy.capability}'.`,
@@ -413,6 +432,35 @@ export async function enforceAiAuthorizationAndEntitlement(input: {
           `Daily AI request quota (${dailyLimit}) reached for tenant '${effectiveTenantId}'.`,
           429,
           { usedToday, dailyLimit }
+        );
+      }
+
+      const usedThisMonth = await input.store.countTenantRequestsThisMonth(
+        caller.verifiedPrincipal,
+        effectiveTenantId
+      );
+      if (usedThisMonth >= entitlement.monthlyRequestLimit) {
+        await input.store.recordAudit({
+          correlationId: input.correlationId,
+          tenantId: effectiveTenantId,
+          applicationInstanceId: entitlement.applicationInstanceId,
+          applicationId: input.applicationId,
+          capability: policy.capability,
+          actorUserId: caller.userId,
+          actorRole: caller.role,
+          decision: 'quota_exceeded',
+          reasonCode: 'QUOTA_EXCEEDED',
+          details: {
+            usedThisMonth,
+            monthlyRequestLimit: entitlement.monthlyRequestLimit
+          },
+          principal: caller.verifiedPrincipal
+        });
+        throw new AiGatewayError(
+          'QUOTA_EXCEEDED',
+          `Monthly AI request quota (${entitlement.monthlyRequestLimit}) reached for tenant '${effectiveTenantId}'.`,
+          429,
+          { usedThisMonth, monthlyRequestLimit: entitlement.monthlyRequestLimit }
         );
       }
     }

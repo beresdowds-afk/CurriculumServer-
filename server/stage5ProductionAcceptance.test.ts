@@ -256,6 +256,12 @@ test('Stage 5 Section 5: Gemini textbook adapter fails closed without GEMINI_API
     const adapter = new GeminiTextbookOperationalAdapter();
     await assert.rejects(
       () => adapter.generateOutline({
+        actor: {
+          tenantId: 'platform-control-plane',
+          role: 'super_admin',
+          email: 'admin@curriculum.ng',
+          userId: 'platform-editorial-admin'
+        } as any,
         subject: {
           id: 'sub-phy',
           frameworkId: 'fw-nerdc',

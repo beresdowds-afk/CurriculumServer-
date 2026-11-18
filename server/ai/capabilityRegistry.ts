@@ -21,11 +21,11 @@ export const AI_CAPABILITY_POLICIES: readonly AiCapabilityPolicy[] = [
     defaultModelTier: 'standard',
     defaultModelId: 'gemini-4-hydrogen',
     temperature: 0.4,
-    requiresTenantContext: false,
+    requiresTenantContext: true,
     requiresTeacherReview: false,
     readOnlyAdvisory: false,
     allowPlatformAdminOverride: true,
-    requiresEntitlementCheck: false,
+    requiresEntitlementCheck: true,
     requiredPermissions: [PERMISSIONS.aiCurriculumGenerate],
     rateLimitPerMinute: 60,
     maxConcurrency: 10,
@@ -61,11 +61,11 @@ export const AI_CAPABILITY_POLICIES: readonly AiCapabilityPolicy[] = [
     defaultModelTier: 'fast',
     defaultModelId: 'gemini-3.1-flash-lite',
     temperature: 0.5,
-    requiresTenantContext: false,
+    requiresTenantContext: true,
     requiresTeacherReview: false,
     readOnlyAdvisory: false,
     allowPlatformAdminOverride: true,
-    requiresEntitlementCheck: false,
+    requiresEntitlementCheck: true,
     requiredPermissions: [PERMISSIONS.aiTutorUse],
     rateLimitPerMinute: 90,
     maxConcurrency: 15,
@@ -128,7 +128,7 @@ export const AI_CAPABILITY_POLICIES: readonly AiCapabilityPolicy[] = [
     readOnlyAdvisory: false,
     allowPlatformAdminOverride: false,
     requiresEntitlementCheck: true,
-    requiredPermissions: [PERMISSIONS.aiAssessmentsGenerate],
+    requiredPermissions: [PERMISSIONS.aiAssessmentsGenerate, PERMISSIONS.questionBankManage],
     rateLimitPerMinute: 60,
     maxConcurrency: 10,
     enabled: true
@@ -267,11 +267,11 @@ export const AI_CAPABILITY_POLICIES: readonly AiCapabilityPolicy[] = [
     defaultModelTier: 'standard',
     defaultModelId: 'gemini-4-hydrogen',
     temperature: 0.2,
-    requiresTenantContext: false,
+    requiresTenantContext: true,
     requiresTeacherReview: false,
     readOnlyAdvisory: true,
     allowPlatformAdminOverride: true,
-    requiresEntitlementCheck: false,
+    requiresEntitlementCheck: true,
     requiredPermissions: [],
     rateLimitPerMinute: 30,
     maxConcurrency: 5,
@@ -395,4 +395,12 @@ export function resolveCapabilityPolicy(
 export function listCapabilitiesForApplication(applicationId?: AiApplicationId): AiCapabilityPolicy[] {
   if (!applicationId) return [...AI_CAPABILITY_POLICIES];
   return AI_CAPABILITY_POLICIES.filter(p => p.allowedApplications.includes(applicationId));
+}
+
+export function resolveSupportedInstanceApplicationIds(policy: AiCapabilityPolicy): readonly string[] {
+  if (policy.applicationId === 'PROVISIONING_AGENT' || policy.capability === 'TEXTBOOK_GENERATION') return [];
+  if (policy.capability === 'CBT_GENERATION' || policy.capability === 'SCHOOL_CBT_GENERATION') {
+    return ['app_cbt_sovereign'];
+  }
+  return ['app_curriculum_flow'];
 }

@@ -119,14 +119,12 @@ export class AiGatewayClient {
     payload: Record<string, unknown>;
     applicationId?: AiApplicationId;
     tenantId?: string;
-    modelOverride?: string;
   }): Promise<AiGatewayResponseEnvelope<TData>> {
     return this.postGateway<TData>('/api/ai/v1/curriculum/generate', {
       applicationId: input.applicationId || 'CURRICULUM_SERVER',
       capability: input.capability,
       taskType: input.taskType,
       tenantId: input.tenantId,
-      modelOverride: input.modelOverride,
       payload: input.payload
     });
   }
@@ -147,7 +145,6 @@ export class AiGatewayClient {
     applicationId?: AiApplicationId;
     tenantId?: string;
     applicationInstanceId?: string;
-    modelOverride?: string;
   }): Promise<AiGatewayResponseEnvelope<TData>> {
     const activeTenant = input.tenantId ?? unifiedApiClient.getActiveTenantId() ?? undefined;
     return this.postGateway<TData>('/api/ai/v1/assessments/generate', {
@@ -156,7 +153,6 @@ export class AiGatewayClient {
       taskType: input.taskType,
       tenantId: activeTenant,
       applicationInstanceId: input.applicationInstanceId,
-      modelOverride: input.modelOverride,
       payload: input.payload
     });
   }

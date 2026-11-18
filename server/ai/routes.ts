@@ -55,10 +55,9 @@ export function sendAiGatewayError(res: Response, err: unknown, correlationId?: 
     return;
   }
 
-  const message = err instanceof Error ? err.message : 'Central AI Gateway execution failed.';
   res.status(502).json({
     success: false,
-    error: message,
+    error: 'Central AI Gateway execution failed.',
     code: 'PROVIDER_UNAVAILABLE',
     correlationId: correlationId || null,
     timestamp: new Date().toISOString()
@@ -70,6 +69,14 @@ function normalizeRequestEnvelope(
   forcedDefaults?: Partial<Pick<AiGatewayRequestEnvelope, 'applicationId' | 'capability' | 'taskType'>>
 ): AiGatewayRequestEnvelope {
   const body = (req.body || {}) as Partial<AiGatewayRequestEnvelope> & Record<string, unknown>;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new AiGatewayError('VALIDATION_ERROR', 'AI Gateway request body must be an object.', 400);
+  }
+  for (const field of ['applicationId', 'capability', 'taskType', 'tenantId', 'applicationInstanceId', 'modelOverride', 'idempotencyKey', 'correlationId']) {
+    if (field in body && body[field] !== undefined && typeof body[field] !== 'string') {
+      throw new AiGatewayError('VALIDATION_ERROR', `AI Gateway field '${field}' must be a string.`, 400);
+    }
+  }
   const headerAppId = typeof req.headers['x-application-id'] === 'string' ? req.headers['x-application-id'].trim() : '';
   const headerInstanceId =
     typeof req.headers['x-application-instance-id'] === 'string'
@@ -81,6 +88,25 @@ function normalizeRequestEnvelope(
       : typeof req.headers['idempotency-key'] === 'string'
       ? req.headers['idempotency-key']
       : undefined;
+  const correlationId = typeof body.correlationId === 'string' ? body.correlationId : undefined;
+  if (correlationId && !/^[A-Za-z0-9_-]{1,128}$/.test(correlationId)) {
+    throw new AiGatewayError('VALIDATION_ERROR', 'Correlation ID has an invalid format.', 400);
+  }
+
+  if (body.applicationId && headerAppId && body.applicationId !== headerAppId) {
+    throw new AiGatewayError('VALIDATION_ERROR', 'Application ID header and request body must match.', 400);
+  }
+  if (
+    typeof body.applicationInstanceId === 'string' &&
+    headerInstanceId &&
+    body.applicationInstanceId !== headerInstanceId
+  ) {
+    throw new AiGatewayError(
+      'VALIDATION_ERROR',
+      'Application-instance header and request body must match.',
+      400
+    );
+  }
 
   const applicationId = (body.applicationId || forcedDefaults?.applicationId || headerAppId) as AiApplicationId;
   const capability = (body.capability || forcedDefaults?.capability) as AiCapabilityId;
@@ -118,7 +144,7 @@ function normalizeRequestEnvelope(
     payload,
     ...(typeof body.modelOverride === 'string' ? { modelOverride: body.modelOverride } : {}),
     ...(idempotencyKey ? { idempotencyKey } : {}),
-    ...(typeof body.correlationId === 'string' ? { correlationId: body.correlationId } : {})
+    ...(correlationId ? { correlationId } : {})
   };
 }
 
@@ -132,20 +158,32 @@ export function createAiGatewayRouter(options: CreateAiGatewayRouterOptions): Ro
 
   const authenticate = async (req: Request): Promise<AuthenticatedAiCaller> =>
     authenticateAiRequest(req, options.getAuthDeps());
+  const requireGatewayRead = (caller: AuthenticatedAiCaller): void => {
+    if (caller.role !== 'super_admin' && !caller.authorizedPrincipal?.hasPermission('ai.gateway.read')) {
+      throw new AiGatewayError('FORBIDDEN', 'AI Gateway read permission is required.', 403);
+    }
+  };
 
   router.get('/health', (_req: Request, res: Response) => {
     const health = options.gateway.getHealth();
-    res.status(health.gatewayReady ? 200 : 503).json(health);
+    res.status(health.gatewayReady ? 200 : 503).json({
+      status: health.status,
+      gatewayReady: health.gatewayReady,
+      providerId: health.providerId,
+      authMode: health.authMode,
+      timestamp: health.timestamp
+    });
   });
 
   router.get('/capabilities', async (req: Request, res: Response) => {
     const correlationId = (req as any).correlationId as string | undefined;
     try {
-      await authenticate(req);
+      const caller = await authenticate(req);
+      requireGatewayRead(caller);
       const appParam = typeof req.query.applicationId === 'string'
         ? (req.query.applicationId.trim() as AiApplicationId)
         : undefined;
-      const capabilities = options.gateway.listCapabilities(appParam);
+      const capabilities = await options.gateway.listCapabilities(caller, appParam);
       res.json({
         success: true,
         capabilities,
@@ -161,6 +199,7 @@ export function createAiGatewayRouter(options: CreateAiGatewayRouterOptions): Ro
     const correlationId = (req as any).correlationId as string | undefined;
     try {
       const caller = await authenticate(req);
+      requireGatewayRead(caller);
       const requestedTenantId =
         typeof req.query.tenantId === 'string'
           ? req.query.tenantId

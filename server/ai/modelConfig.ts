@@ -41,6 +41,7 @@ export interface GeminiRuntimeConfig {
   timeoutMs: number;
   maxRetries: number;
   maxPromptChars: number;
+  maxResponseChars: number;
 }
 
 export function normalizeGeminiModelId(candidate: string | undefined, fallback = 'gemini-4-hydrogen'): string {
@@ -103,9 +104,14 @@ export function resolveGeminiRuntimeConfig(env: NodeJS.ProcessEnv = process.env)
     : 3;
 
   const parsedMaxPrompt = Number(env.AI_GATEWAY_MAX_PROMPT_CHARS || 48000);
-  const maxPromptChars = Number.isFinite(parsedMaxPrompt) && parsedMaxPrompt >= 1000
+  const maxPromptChars = Number.isFinite(parsedMaxPrompt) && parsedMaxPrompt >= 1000 && parsedMaxPrompt <= 256000
     ? parsedMaxPrompt
     : 48000;
+  const parsedMaxResponse = Number(env.AI_GATEWAY_MAX_RESPONSE_CHARS || 64000);
+  const maxResponseChars = Number.isInteger(parsedMaxResponse) &&
+      parsedMaxResponse >= 1000 && parsedMaxResponse <= 256000
+    ? parsedMaxResponse
+    : 64000;
 
   return {
     authMode,
@@ -120,7 +126,8 @@ export function resolveGeminiRuntimeConfig(env: NodeJS.ProcessEnv = process.env)
     },
     timeoutMs,
     maxRetries,
-    maxPromptChars
+    maxPromptChars,
+    maxResponseChars
   };
 }
 

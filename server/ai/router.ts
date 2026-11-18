@@ -1,7 +1,5 @@
 import type { AiTaskType } from '../../packages/shared-types/src/aiGatewayContracts';
 import {
-  ALLOWED_GEMINI_MODELS,
-  normalizeGeminiModelId,
   resolveGeminiRuntimeConfig,
   resolveModelForTier
 } from './modelConfig';
@@ -45,17 +43,11 @@ export class IntelligentAiRequestRouter {
     }
 
     if (input.modelOverride && input.modelOverride.trim()) {
-      const normalized = normalizeGeminiModelId(input.modelOverride, '');
-      if (!normalized || !ALLOWED_GEMINI_MODELS.has(normalized)) {
-        throw new AiGatewayError(
-          'VALIDATION_ERROR',
-          `Requested model '${input.modelOverride}' is not permitted by platform AI policy.`,
-          400,
-          { modelOverride: input.modelOverride }
-        );
-      }
-      selectedModel = normalized;
-      strategy = `explicit_override:${normalized}`;
+      throw new AiGatewayError(
+        'VALIDATION_ERROR',
+        'Model selection is controlled by backend AI policy.',
+        400
+      );
     }
 
     return {

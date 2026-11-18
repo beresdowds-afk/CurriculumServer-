@@ -47,6 +47,8 @@ export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];
 
 export const TENANT_ROLES = {
   tenantAdmin: 'tenant_admin',
+  teacher: 'teacher',
+  examiner: 'examiner',
   staff: 'staff',
   readOnly: 'read_only'
 } as const;
