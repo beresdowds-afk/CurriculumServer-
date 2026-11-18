@@ -13,6 +13,7 @@ import type { VerifiedTenantPrincipal } from '../db/tenantContext';
 
 export type AiGatewayErrorCode =
   | 'UNAUTHENTICATED'
+  | 'AUTHORIZATION_UNAVAILABLE'
   | 'FORBIDDEN'
   | 'TENANT_ISOLATION_VIOLATION'
   | 'UNREGISTERED_APPLICATION'

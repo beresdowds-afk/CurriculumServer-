@@ -55,6 +55,7 @@ interface InvitationRow extends QueryResultRow {
   administrator_email: string;
   expires_at: Date;
   invitation_status: string;
+  intended_role_code: string;
   existing_user_id: string | null;
   existing_password_hash: string | null;
 }
@@ -474,13 +475,14 @@ export class SchoolProvisioningRepository {
            VALUES ($1, $2, $3, $4, $5, $6)`,
           [idempotencyKey, requestHash, tenant.id, schoolId, instanceId, initiatedBy]
         );
+        const invitationToken = createInvitationToken();
         const invitationResult = await client.query<{ id: string }>(
           `INSERT INTO production.school_admin_invitations
              (tenant_id, school_id, administrator_name, administrator_email,
-              token_hash, expires_at, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+              intended_role_code, token_hash, expires_at, created_by)
+           VALUES ($1, $2, $3, $4, 'tenant_admin', $5, $6, $7) RETURNING id`,
           [tenant.id, schoolId, input.administrator.fullName, input.administrator.email,
-            randomBytes(32), new Date(Date.now() + 24 * 60 * 60 * 1000), initiatedBy]
+            invitationToken.tokenHash, new Date(Date.now() + 24 * 60 * 60 * 1000), initiatedBy]
         );
         await client.query(
           `INSERT INTO production.invitation_outbox (tenant_id, invitation_id)
@@ -780,6 +782,7 @@ export class SchoolProvisioningRepository {
         `SELECT invitation.id, invitation.tenant_id, invitation.school_id,
                 invitation.administrator_name, invitation.administrator_email,
                 invitation.expires_at, invitation.status AS invitation_status,
+                invitation.intended_role_code,
                 user_record.id AS existing_user_id,
                 user_record.password_hash AS existing_password_hash
          FROM production.school_admin_invitations invitation
@@ -810,7 +813,7 @@ export class SchoolProvisioningRepository {
       await setInvitationTenantContext(client, candidate.tenant_id, tokenHash);
       const invitationResult = await client.query<InvitationRow>(
         `SELECT id, tenant_id, school_id, administrator_name, administrator_email,
-                expires_at, status AS invitation_status
+                expires_at, status AS invitation_status, intended_role_code
          FROM production.school_admin_invitations
          WHERE id = $1 AND token_hash = $2
          FOR UPDATE`,
@@ -818,16 +821,24 @@ export class SchoolProvisioningRepository {
       );
       const invitation = invitationResult.rows[0];
       if (!invitation || invitation.invitation_status !== 'pending' ||
-          invitation.expires_at.getTime() <= Date.now()) {
+          invitation.expires_at.getTime() <= Date.now() ||
+          invitation.intended_role_code !== 'tenant_admin') {
         throw new Error('INVITATION_INVALID_OR_EXPIRED');
       }
-      const userResult = await client.query<{ id: string; password_hash: string }>(
-        `SELECT id, password_hash FROM production.users
+      const userResult = await client.query<{
+        id: string;
+        password_hash: string;
+        account_status: 'active' | 'suspended';
+      }>(
+        `SELECT id, password_hash, account_status FROM production.users
          WHERE lower(email) = lower($1) FOR UPDATE`,
         [invitation.administrator_email]
       );
       let userId: string;
       if (userResult.rows[0]) {
+        if (userResult.rows[0].account_status !== 'active') {
+          throw new Error('ACCOUNT_INACTIVE');
+        }
         if (!existingPasswordHash || existingPasswordHash !== userResult.rows[0].password_hash) {
           throw new Error('ACCOUNT_CREDENTIALS_CHANGED');
         }
@@ -843,12 +854,21 @@ export class SchoolProvisioningRepository {
         userId = inserted.rows[0].id;
       }
 
+      const existingMembership = await client.query(
+        `SELECT 1 FROM production.memberships
+         WHERE tenant_id = $1 AND user_id = $2
+         FOR UPDATE`,
+        [invitation.tenant_id, userId]
+      );
+      if (existingMembership.rowCount !== 0) {
+        throw new Error('ADMIN_MEMBERSHIP_ALREADY_EXISTS');
+      }
       const membership = await client.query(
-        `INSERT INTO production.memberships (tenant_id, user_subject, user_id, role)
-         VALUES ($1, $2, $3, 'tenant_admin')
+        `INSERT INTO production.memberships (tenant_id, user_subject, user_id, role, status)
+         VALUES ($1, $2, $3, $4, 'active')
          ON CONFLICT (tenant_id, user_subject) DO NOTHING
          RETURNING user_id`,
-        [invitation.tenant_id, userId, userId]
+        [invitation.tenant_id, userId, userId, invitation.intended_role_code]
       );
       if (membership.rowCount !== 1) {
         throw new Error('ADMIN_MEMBERSHIP_ALREADY_EXISTS');
@@ -856,15 +876,24 @@ export class SchoolProvisioningRepository {
       await client.query(
         `INSERT INTO production.membership_role_assignments
            (tenant_id, user_subject, role_code, assigned_by)
-         VALUES ($1, $2, 'tenant_admin', $3)`,
-        [invitation.tenant_id, userId, `invitation:${invitation.id}`]
+         VALUES ($1, $2, $3, $4)`,
+        [invitation.tenant_id, userId, invitation.intended_role_code, `invitation:${invitation.id}`]
       );
       await client.query(
-        `UPDATE production.school_admin_invitations
-         SET status = 'accepted', accepted_at = now(), token_hash = $2
-         WHERE id = $1`,
-        [invitation.id, randomBytes(32)]
+        `INSERT INTO production.audit_events (tenant_id, actor_subject, action, details)
+         VALUES ($1, $2, 'membership_role_assigned', $3::jsonb)`,
+        [invitation.tenant_id, `invitation:${invitation.id}`,
+          JSON.stringify({ invitationId: invitation.id, roleCode: invitation.intended_role_code })]
       );
+      const accepted = await client.query(
+        `UPDATE production.school_admin_invitations
+         SET status = 'accepted', accepted_at = now(), token_hash = $2, updated_at = now()
+         WHERE id = $1 AND tenant_id = $3 AND token_hash = $4
+           AND status = 'pending' AND expires_at > now()
+         RETURNING id`,
+        [invitation.id, createInvitationToken().tokenHash, invitation.tenant_id, tokenHash]
+      );
+      if (accepted.rowCount !== 1) throw new Error('INVITATION_INVALID_OR_EXPIRED');
       await client.query(
         `UPDATE production.tenants SET status = 'approved', updated_at = now()
          WHERE id = $1`,

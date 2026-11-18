@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 import {
   PRODUCTION_CAPABILITIES, capabilityActivationProblems, evaluateProductionCapabilityGate
 } from './productionCapabilityRegistry';
+import { createProductionCapabilityGateMiddleware } from './productionCapabilityMiddleware';
 
 const notReady = [
   'central_iam',
@@ -15,7 +16,8 @@ const notReady = [
   'administrative_permissions',
   'student_lifecycle',
   'campus_logistics',
-  'application_template_discovery'
+  'application_template_discovery',
+  'question_bank_scoped_writes'
 ];
 
 test('legacy authentication endpoints remain blocked by central IAM readiness', () => {
@@ -118,9 +120,17 @@ test('a configured or disabled capability cannot bypass the registry', () => {
 });
 
 test('ready capabilities have evidence, no activation problems, and acceptance tests', () => {
+  const migrationNumbers = new Set(
+    readdirSync('src/db/migrations')
+      .map(file => Number(file.slice(0, 3)))
+      .filter(Number.isInteger)
+  );
   for (const capability of PRODUCTION_CAPABILITIES.filter(item => item.state === 'ready')) {
     assert.deepEqual(capabilityActivationProblems(capability), [], capability.id);
     for (const file of capability.acceptanceTests) assert.ok(existsSync(file), `${capability.id}: ${file}`);
+    for (const migration of capability.requiredMigrations) {
+      assert.ok(migrationNumbers.has(migration), `${capability.id}: migration ${migration}`);
+    }
   }
 });
 
@@ -134,4 +144,68 @@ test('an incomplete feature cannot bypass the lockdown by being marked ready', (
   };
   const decision = evaluateProductionCapabilityGate('GET', '/schools/me/students', [incomplete]);
   assert.equal(decision.allowed, false);
+});
+
+test('authenticated capabilities require repository, migration, permission, and readiness evidence', () => {
+  const capability = PRODUCTION_CAPABILITIES.find(item => item.id === 'central_shared_service_foundation')!;
+  const incomplete = {
+    ...capability,
+    requiredRepositories: [],
+    requiredMigrations: [],
+    readinessEvidence: [],
+    authorization: { ...capability.authorization, permissions: [] }
+  };
+  const problems = capabilityActivationProblems(incomplete);
+  assert.ok(problems.includes('authenticated capability declares no required repositories'));
+  assert.ok(problems.includes('authenticated capability declares no required migrations'));
+  assert.ok(problems.includes('operational readiness evidence is missing'));
+  assert.ok(problems.includes('tenant capability lacks tenant-context transaction or permissions'));
+});
+
+test('an overlapping unready capability prevents a ready route from being served', () => {
+  const base = PRODUCTION_CAPABILITIES.find(item => item.id === 'central_shared_service_foundation')!;
+  const ready = {
+    ...base,
+    id: 'ready-overlap',
+    routes: [{ method: 'GET' as const, path: /^\/overlap$/ }]
+  };
+  const unready = {
+    ...base,
+    id: 'unready-overlap',
+    state: 'implemented' as const,
+    routes: [{ method: 'GET' as const, path: /^\/overlap$/ }]
+  };
+  const decision = evaluateProductionCapabilityGate('GET', '/overlap', [ready, unready]);
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.capabilityId, 'unready-overlap');
+});
+
+test('unready routes return the established unavailable response', () => {
+  const middleware = createProductionCapabilityGateMiddleware();
+  const output: { status?: number; body?: Record<string, unknown> } = {};
+  const req = {
+    method: 'GET',
+    path: '/schools/me/students',
+    correlationId: 'capability-test'
+  };
+  const res = {
+    status(code: number) { output.status = code; return this; },
+    json(body: Record<string, unknown>) { output.body = body; return this; }
+  };
+  middleware(req as never, res as never, () => {
+    throw new Error('an unready capability must not reach its route');
+  });
+  assert.equal(output.status, 503);
+  assert.equal(output.body?.code, 'PRODUCTION_PERSISTENCE_UNAVAILABLE');
+  assert.equal(output.body?.capabilityId, 'student_administration');
+});
+
+test('the capability gate is mounted before API route registrations', () => {
+  const source = readFileSync('server.ts', 'utf8');
+  const gate = source.indexOf("app.use('/api', createApiCapabilityGateMiddleware())");
+  assert.notEqual(gate, -1);
+  assert.doesNotMatch(
+    source.slice(0, gate),
+    /app\.(?:get|post|put|patch|delete|all|use)\(\s*['"]\/api(?:\/|['"])/i
+  );
 });

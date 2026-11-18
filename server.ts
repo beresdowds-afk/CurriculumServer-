@@ -7,7 +7,7 @@ import { NERDC_SUBJECTS_DATABASE, NERDC_STATS } from './src/data/nerdcDatabase';
 import { ClassGrade } from './src/types';
 import { NerdcAnnualUpdateWorkerService } from './src/services/nerdcAnnualUpdateWorker';
 import { TenantSecurityContextManager } from './src/services/tenantSecurityContext';
-import { ServerTenantTokenService } from './server/tenantTokenService';
+import { ServerTenantTokenService, isPlatformAdminTokenContext } from './server/tenantTokenService';
 import { EntitlementEnforcementService } from './src/services/entitlementEnforcementService';
 import { TamperEvidentAuditService } from './src/services/tamperEvidentAuditService';
 import { TenantLifecycleManager } from './src/services/tenantLifecycleManager';
@@ -70,7 +70,8 @@ import {
   type StudentLifecycleStatus,
   type StudentTransition
 } from './server/db/schoolAdministrationRepository';
-import { evaluateProductionCapabilityGate } from './server/capabilities/productionCapabilityRegistry';
+import { createApiCapabilityGateMiddleware } from './server/capabilities/productionCapabilityMiddleware';
+import { createSchoolAdministrationGuards } from './server/authorization/schoolAdministrationGuards';
 import { LogisticsError, LogisticsRepository } from './server/logistics/logisticsRepository';
 import { validateLogisticsFeatureConfiguration } from './src/data/logisticsFeatureTemplate';
 import type { AuthorizedPrincipal } from './server/authorization/authorizedPrincipal';
@@ -208,6 +209,9 @@ app.use((req: Request, res: Response, next: express.NextFunction) => {
   next();
 });
 
+// Every API namespace must pass the capability registry before route registration.
+app.use('/api', createApiCapabilityGateMiddleware());
+
 // Server-side authorization guard for Control Plane operations (Hardened against header spoofing & weak tokens)
 function requireSuperAdmin(req: Request, res: Response, next: express.NextFunction) {
   const authHeader = (req.headers['authorization'] || '') as string;
@@ -257,7 +261,9 @@ function requireSuperAdmin(req: Request, res: Response, next: express.NextFuncti
   }
 
   const verification = ServerTenantTokenService.verifyTenantToken(token);
-  if (!verification.valid || !verification.context || verification.context.role !== 'super_admin') {
+  if (!verification.valid || !verification.context ||
+      !isPlatformAdminTokenContext(verification.context) ||
+      !isPlatformAdminEmail(verification.context.email || '')) {
     TenantSecurityContextManager.recordViolation({
       violationType: 'UNAUTHORIZED_FEATURE_ACCESS',
       sourceTenantId: verification.context?.tenantId || 'UNKNOWN',
@@ -364,8 +370,8 @@ async function requireProvisioningPlatformAdmin(req: Request, res: Response, nex
   }
   const verification = ServerTenantTokenService.verifyTenantToken(token);
   const context = verification.context;
-  if (!verification.valid || !context || context.role !== 'super_admin' ||
-      !context.email || !isPlatformAdminEmail(context.email)) {
+  if (!verification.valid || !context || !isPlatformAdminTokenContext(context) ||
+      !isPlatformAdminEmail(context.email || '')) {
     res.status(403).json({
       success: false,
       error: 'Platform administrator authorization is required.',
@@ -409,8 +415,26 @@ const authorizationMiddleware = createAuthorizationMiddleware({
   verifyToken: token => ServerTenantTokenService.verifyTenantToken(token),
   signingConfigured: hasSecureControlPlaneSecret,
   authorization: () => new AuthorizationRepository(postgresRuntime.getPool()),
+  platformAdministratorAllowed: isPlatformAdminEmail,
+  internalServiceAudience: () => process.env.INTERNAL_SERVICE_AUDIENCE,
+  authorizedInternalCallers: () => (process.env.INTERNAL_SERVICE_CALLERS || '')
+    .split(',').map(email => email.trim().toLowerCase()).filter(Boolean),
+  authorizedInternalOperations: () => {
+    const policy = JSON.parse(process.env.INTERNAL_SERVICE_OPERATIONS || '{}');
+    if (!policy || typeof policy !== 'object' || Array.isArray(policy) ||
+        Object.values(policy).some(operations =>
+          !Array.isArray(operations) || operations.some(operation => typeof operation !== 'string')
+        )) {
+      throw new Error('Internal service operation policy is invalid.');
+    }
+    return Object.fromEntries(Object.entries(policy).map(([email, operations]) => [
+      email.trim().toLowerCase(),
+      operations as string[]
+    ]));
+  },
   internalServiceKey: () => process.env.INTERNAL_SERVICE_KEY
 });
+const schoolAdministrationGuards = createSchoolAdministrationGuards(authorizationMiddleware);
 
 function resolveApplicationInstanceId(req: Request): string {
   const headerInstanceId = req.headers['x-application-instance-id'];
@@ -425,6 +449,13 @@ function resolveApplicationInstanceId(req: Request): string {
     return headerInstanceId;
   }
   return bodyInstanceId || queryInstanceId || '';
+}
+
+function requireApplicationInstancePermission(permission: string) {
+  return authorizationMiddleware.requireResourcePermission(permission, req => {
+    const resourceId = resolveApplicationInstanceId(req);
+    return resourceId ? { resourceType: 'application_instance', resourceId } : undefined;
+  });
 }
 
 function getCentralCurriculumService(): CentralCurriculumService {
@@ -471,9 +502,9 @@ function requireSharedServiceAccess(
         const applicationInstanceId = resolveApplicationInstanceId(req);
         const tenant = (req as any).trustedTenantContext;
         const principal = (req as any).authorizedPrincipal as AuthorizedPrincipal;
-        const callerKind = req.headers['x-internal-service-key'] === undefined
-          ? 'tenant_user'
-          : 'internal_service';
+        const callerKind = (req as any).internalServiceIdentity
+          ? 'internal_service'
+          : 'tenant_user';
         const effectiveRequestedOp = operation === 'authorize' && typeof req.body?.operation === 'string'
           ? req.body.operation
           : requestedConsumeOperation;
@@ -653,17 +684,6 @@ function requireSchoolAuth(req: Request, res: Response, next: express.NextFuncti
   return productionPersistenceUnavailable(req, res);
 }
 
-// Fail-closed production gate: only enabled, evidence-backed capability route
-// groups are served; everything else under /api/v1 returns 503.
-app.use('/api/v1', (req: Request, res: Response, next: express.NextFunction) => {
-  const decision = evaluateProductionCapabilityGate(req.method, req.path);
-  if (decision.allowed) {
-    next();
-    return;
-  }
-  productionPersistenceUnavailable(req, res, decision.capabilityId);
-});
-
 // -------------------------------------------------------------
 // CENTRAL AI GATEWAY & INTELLIGENT REQUEST ROUTER (Unified Backend)
 // -------------------------------------------------------------
@@ -674,7 +694,10 @@ const centralAiGatewayService = CentralAiGatewayService.withPostgresPool(() => (
 
 const getAiAuthDeps = () => ({
   pool: postgresRuntime.configured ? postgresRuntime.getPool() : undefined,
-  poolConfigured: postgresRuntime.configured
+  poolConfigured: postgresRuntime.configured,
+  internalServiceAudience: process.env.INTERNAL_SERVICE_AUDIENCE,
+  authorizedInternalCallers: (process.env.INTERNAL_SERVICE_CALLERS || '')
+    .split(',').map(email => email.trim().toLowerCase()).filter(Boolean)
 });
 
 app.use(
@@ -2338,7 +2361,7 @@ app.use('/api/v1/assessments', questionBankRateLimiter);
 
 app.get(
   '/api/v1/question-bank/categories',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankRead),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankRead),
   async (req: Request, res: Response) => {
     try {
       const categories = await getInstanceQuestionBankService().listCategories(
@@ -2354,7 +2377,7 @@ app.get(
 
 app.post(
   '/api/v1/question-bank/categories',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const { name, description, subjectReferenceId } = req.body ?? {};
@@ -2376,7 +2399,7 @@ app.post(
 
 app.get(
   '/api/v1/question-bank',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankRead),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankRead),
   async (req: Request, res: Response) => {
     try {
       const { subjectId, subjectReferenceId, classGrade, questionType, reviewStatus, difficulty, categoryId } = req.query;
@@ -2401,7 +2424,7 @@ app.get(
 
 app.post(
   '/api/v1/question-bank',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const payload = req.body ?? {};
@@ -2446,7 +2469,7 @@ app.post(
 
 app.post(
   '/api/v1/question-bank/items/:id/review',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankReview),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankReview),
   async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
@@ -2480,7 +2503,7 @@ app.post(
 
 app.delete(
   '/api/v1/question-bank/items/:id',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const deleted = await getInstanceQuestionBankService().deleteQuestion(
@@ -2501,7 +2524,7 @@ app.delete(
 
 app.post(
   '/api/v1/question-bank/seed-past-questions',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const list = await getInstanceQuestionBankService().seedStarterPastQuestions(
@@ -2517,7 +2540,7 @@ app.post(
 
 app.post(
   '/api/v1/question-bank/seed-theory-questions',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const list = await getInstanceQuestionBankService().seedStarterTheoryQuestions(
@@ -2533,7 +2556,7 @@ app.post(
 
 app.post(
   '/api/v1/question-bank/seed-practical-questions',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const list = await getInstanceQuestionBankService().seedStarterPracticalQuestions(
@@ -2549,7 +2572,7 @@ app.post(
 
 app.post(
   '/api/v1/question-bank/generate-practical',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const { subjectName, subjectId, classGrade, topic, count } = req.body ?? {};
@@ -2622,7 +2645,7 @@ app.post(
 
 app.post(
   '/api/v1/question-bank/generate-theory',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const { subjectName, subjectId, classGrade, topic, count, questionType } = req.body ?? {};
@@ -2695,7 +2718,7 @@ app.post(
 
 app.post(
   '/api/v1/question-bank/generate-objective',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const { subjectName, subjectId, classGrade, topic, count } = req.body ?? {};
@@ -2768,7 +2791,7 @@ app.post(
 
 app.get(
   '/api/v1/assessment-blueprints',
-  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsRead),
+  requireApplicationInstancePermission(PERMISSIONS.assessmentsRead),
   async (req: Request, res: Response) => {
     try {
       const blueprints = await getInstanceQuestionBankService().listBlueprints(
@@ -2784,7 +2807,7 @@ app.get(
 
 app.post(
   '/api/v1/assessment-blueprints',
-  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsManage),
+  requireApplicationInstancePermission(PERMISSIONS.assessmentsManage),
   async (req: Request, res: Response) => {
     try {
       const payload = req.body ?? {};
@@ -2817,7 +2840,7 @@ app.post(
 
 app.get(
   '/api/v1/assessments/exams',
-  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsRead),
+  requireApplicationInstancePermission(PERMISSIONS.assessmentsRead),
   async (req: Request, res: Response) => {
     try {
       const exams = await getInstanceQuestionBankService().listExamConfigurations(
@@ -2833,7 +2856,7 @@ app.get(
 
 app.post(
   '/api/v1/assessments/exams',
-  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsManage),
+  requireApplicationInstancePermission(PERMISSIONS.assessmentsManage),
   async (req: Request, res: Response) => {
     try {
       const payload = req.body ?? {};
@@ -2851,7 +2874,7 @@ app.post(
 
 app.get(
   '/api/v1/assessments/records',
-  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsRead),
+  requireApplicationInstancePermission(PERMISSIONS.assessmentsRead),
   async (req: Request, res: Response) => {
     try {
       const records = await getInstanceQuestionBankService().listAssessmentRecords(
@@ -2868,7 +2891,7 @@ app.get(
 
 app.post(
   '/api/v1/assessments/records',
-  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsManage),
+  requireApplicationInstancePermission(PERMISSIONS.assessmentsManage),
   async (req: Request, res: Response) => {
     try {
       const record = await getInstanceQuestionBankService().recordAssessmentSubmission(
@@ -2973,16 +2996,7 @@ app.post('/api/v1/server/auth/login', (req: Request, res: Response) => {
     });
     return;
   }
-  const adminTenant: any = {
-    id: 'platform-control-plane',
-    appId: 'curriculum-server-control-plane',
-    schoolName: 'Curriculum Server Control Plane',
-    subscriptionTier: 'platform',
-    status: 'active'
-  };
-  const token = ServerTenantTokenService.issueTenantToken(
-    adminTenant, 'super_admin', 3600, adminEmail
-  );
+  const token = ServerTenantTokenService.issuePlatformAdminToken(adminEmail);
   TamperEvidentAuditService.logPlatformAction({
     actor: adminEmail,
     actorRole: 'super_admin',
@@ -3387,7 +3401,8 @@ app.post('/api/v1/schools/activation', async (req: Request, res: Response) => {
     const message = error instanceof Error ? error.message : '';
     const invalid = message === 'INVITATION_INVALID_OR_EXPIRED' ||
       message === 'ADMIN_MEMBERSHIP_ALREADY_EXISTS' ||
-      message === 'ACCOUNT_CREDENTIALS_CHANGED';
+      message === 'ACCOUNT_CREDENTIALS_CHANGED' ||
+      message === 'ACCOUNT_INACTIVE';
     res.status(invalid ? 400 : 503).json({
       success: false,
       error: invalid ? 'Invitation is invalid, expired, or already used.' :
@@ -4465,7 +4480,7 @@ async function getCurrentSchoolId(req: Request, res: Response): Promise<string |
   return school.id;
 }
 
-app.get('/api/v1/schools/me/students', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/students', schoolAdministrationGuards.studentRead, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4518,7 +4533,7 @@ app.get('/api/v1/schools/me/students', authorizationMiddleware.activeMembership,
   }
 });
 
-app.post('/api/v1/schools/me/students', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.post('/api/v1/schools/me/students', schoolAdministrationGuards.studentCreate, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4543,7 +4558,7 @@ app.post('/api/v1/schools/me/students', authorizationMiddleware.activeMembership
   }
 });
 
-app.get('/api/v1/schools/me/students/:studentId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/students/:studentId', schoolAdministrationGuards.studentRecordRead, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4556,7 +4571,7 @@ app.get('/api/v1/schools/me/students/:studentId', authorizationMiddleware.active
   }
 });
 
-app.patch('/api/v1/schools/me/students/:studentId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.patch('/api/v1/schools/me/students/:studentId', schoolAdministrationGuards.studentUpdate, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4586,7 +4601,7 @@ app.patch('/api/v1/schools/me/students/:studentId', authorizationMiddleware.acti
   }
 });
 
-app.post('/api/v1/schools/me/students/:studentId/lifecycle', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.post('/api/v1/schools/me/students/:studentId/lifecycle', schoolAdministrationGuards.lifecycle, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4619,7 +4634,7 @@ app.post('/api/v1/schools/me/students/:studentId/lifecycle', authorizationMiddle
   }
 });
 
-app.post('/api/v1/schools/me/students/:studentId/class', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.post('/api/v1/schools/me/students/:studentId/class', schoolAdministrationGuards.assignClass, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4651,7 +4666,7 @@ app.post('/api/v1/schools/me/students/:studentId/class', authorizationMiddleware
   }
 });
 
-app.get('/api/v1/schools/me/students/:studentId/history', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/students/:studentId/history', schoolAdministrationGuards.studentRecordRead, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4664,7 +4679,7 @@ app.get('/api/v1/schools/me/students/:studentId/history', authorizationMiddlewar
   }
 });
 
-app.post('/api/v1/schools/me/classes', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.post('/api/v1/schools/me/classes', schoolAdministrationGuards.classCreate, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4684,7 +4699,7 @@ app.post('/api/v1/schools/me/classes', authorizationMiddleware.activeMembership,
   }
 });
 
-app.get('/api/v1/schools/me/classes', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/classes', schoolAdministrationGuards.classRead, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4719,7 +4734,7 @@ app.get('/api/v1/schools/me/classes', authorizationMiddleware.activeMembership, 
   }
 });
 
-app.patch('/api/v1/schools/me/classes/:classId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.patch('/api/v1/schools/me/classes/:classId', schoolAdministrationGuards.classUpdate, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4749,7 +4764,7 @@ app.patch('/api/v1/schools/me/classes/:classId', authorizationMiddleware.activeM
   }
 });
 
-app.get('/api/v1/schools/me/staff', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/staff', schoolAdministrationGuards.staffRead, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4789,7 +4804,7 @@ app.get('/api/v1/schools/me/staff', authorizationMiddleware.activeMembership, as
   }
 });
 
-app.post('/api/v1/schools/me/staff', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.post('/api/v1/schools/me/staff', schoolAdministrationGuards.staffCreate, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4828,7 +4843,7 @@ app.post('/api/v1/schools/me/staff', authorizationMiddleware.activeMembership, a
   }
 });
 
-app.get('/api/v1/schools/me/staff/:staffId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.get('/api/v1/schools/me/staff/:staffId', schoolAdministrationGuards.staffRecordRead, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
@@ -4841,7 +4856,7 @@ app.get('/api/v1/schools/me/staff/:staffId', authorizationMiddleware.activeMembe
   }
 });
 
-app.patch('/api/v1/schools/me/staff/:staffId', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+app.patch('/api/v1/schools/me/staff/:staffId', schoolAdministrationGuards.staffUpdate, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;

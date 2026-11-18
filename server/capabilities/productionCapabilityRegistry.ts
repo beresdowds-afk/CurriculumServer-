@@ -111,6 +111,25 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     state: 'implemented'
   },
   {
+    id: 'question_bank_scoped_writes',
+    description: 'Question Bank and assessment writes requiring principal-bound repositories and item-level scope enforcement.',
+    routes: [
+      { method: 'POST', path: /^\/(?:question-bank(?:\/.*)?|assessment-blueprints|assessments(?:\/.*)?)$/ },
+      { method: 'DELETE', path: /^\/question-bank\/items\/[0-9a-f-]+$/i }
+    ],
+    requiredRepositories: ['InstanceQuestionBankRepository', 'AuthorizationRepository'],
+    requiredMigrations: [8, 10, 15],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'database_permission_and_resource_scope',
+      permissions: ['question_bank.manage', 'question_bank.review', 'assessments.manage']
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: [],
+    readinessEvidence: [],
+    state: 'implemented'
+  },
+  {
     id: 'school_identity',
     description: 'Tenant-scoped school profile, configuration, and membership APIs.',
     routes: [
@@ -465,6 +484,22 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
   }
 ];
 
+export const LEGACY_API_CAPABILITIES: readonly CapabilityRegistration[] = [
+  {
+    id: 'legacy_liveness',
+    description: 'Legacy public liveness endpoint.',
+    routes: [{ method: 'GET', path: exact('/health') }],
+    requiredRepositories: [],
+    requiredMigrations: [],
+    authentication: 'none',
+    authorization: { rule: 'public', permissions: [] },
+    tenantContext: 'none',
+    acceptanceTests: ['server/authorization/schoolAdministrationGuards.test.ts'],
+    readinessEvidence: ['static_health_handler'],
+    state: 'ready'
+  }
+];
+
 /** Reasons a registration may not be served even if marked enabled. */
 export function capabilityActivationProblems(capability: CapabilityRegistration): string[] {
   const problems: string[] = [];
@@ -472,8 +507,27 @@ export function capabilityActivationProblems(capability: CapabilityRegistration)
   if (capability.acceptanceTests.length === 0) problems.push('no acceptance tests declared');
   if (capability.readinessEvidence.length === 0) problems.push('operational readiness evidence is missing');
   if (capability.routes.length === 0) problems.push('no routes declared');
-  if (capability.authentication !== 'none' && capability.authorization.rule === 'public') {
+  if (!capability.authorization.rule.trim()) problems.push('authorization rule is missing');
+  if (capability.authentication !== 'none' && capability.requiredRepositories.length === 0) {
+    problems.push('authenticated capability declares no required repositories');
+  }
+  if (capability.authentication !== 'none' && capability.requiredMigrations.length === 0) {
+    problems.push('authenticated capability declares no required migrations');
+  }
+  if (capability.requiredRepositories.some(repository => !repository.trim())) {
+    problems.push('required repository declaration is invalid');
+  }
+  if (capability.requiredMigrations.some(migration =>
+    !Number.isInteger(migration) || migration < 1
+  )) {
+    problems.push('required migration declaration is invalid');
+  }
+  const publicRules = ['public', 'public_reference_data'];
+  if (capability.authentication !== 'none' && publicRules.includes(capability.authorization.rule)) {
     problems.push('authenticated capability declares public authorization');
+  }
+  if (capability.authentication === 'none' && !publicRules.includes(capability.authorization.rule)) {
+    problems.push('unauthenticated capability declares non-public authorization');
   }
   if (capability.authentication === 'tenant_user_session' &&
       (capability.tenantContext !== 'transaction_local_tenant' || capability.authorization.permissions.length === 0)) {
@@ -495,12 +549,20 @@ export function evaluateProductionCapabilityGate(
   path: string,
   registry: readonly CapabilityRegistration[] = PRODUCTION_CAPABILITIES
 ): CapabilityGateDecision {
-  let blocked: CapabilityGateDecision | undefined;
-  for (const capability of registry) {
-    if (!capability.routes.some(route => route.method === method.toUpperCase() && route.path.test(path))) continue;
-    const problems = capabilityActivationProblems(capability);
-    if (problems.length === 0) return { allowed: true, capabilityId: capability.id };
-    blocked ??= { allowed: false, reason: 'capability_not_ready', capabilityId: capability.id, problems };
+  const matches = registry.filter(capability =>
+    capability.routes.some(route => route.method === method.toUpperCase() && route.path.test(path))
+  );
+  if (matches.length === 0) return { allowed: false, reason: 'unknown_route' };
+  const blocked = matches
+    .map(capability => ({ capability, problems: capabilityActivationProblems(capability) }))
+    .find(match => match.problems.length > 0);
+  if (blocked) {
+    return {
+      allowed: false,
+      reason: 'capability_not_ready',
+      capabilityId: blocked.capability.id,
+      problems: blocked.problems
+    };
   }
-  return blocked ?? { allowed: false, reason: 'unknown_route' };
+  return { allowed: true, capabilityId: matches[0].id };
 }

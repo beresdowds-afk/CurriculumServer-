@@ -143,18 +143,19 @@ test('expired and revoked service entitlements are denied immediately', () => {
 });
 
 test('provisioned curriculum and textbook services authorize consumption while deferred services fail closed', () => {
+  const curriculumApplication = application();
   const curriculum = evaluateSharedServiceAccess({
     serviceId: 'central_curriculum',
     operation: 'authorize',
     requestedOperation: 'curriculum.retrieve',
     applicationInstanceId: instanceId,
-    row: application(),
+    row: curriculumApplication,
     hasPermissions: () => true
   });
   assert.deepEqual(curriculum, {
     allowed: true,
-    entitlementId: application().entitlement_id,
-    expiresAt: application().entitlement_expires_at.toISOString()
+    entitlementId: curriculumApplication.entitlement_id,
+    expiresAt: curriculumApplication.entitlement_expires_at.toISOString()
   });
 
   const consumeOk = evaluateSharedServiceAccess({
@@ -252,6 +253,69 @@ test('cross-tenant application IDs cannot be resolved outside the signed tenant 
   assert.equal(lookup?.values?.[0], tenantId);
   assert.match(lookup?.text || '', /WHERE instance\.tenant_id = \$1 AND instance\.id = \$2/);
   assert.ok(seen.some(query => query.text.includes("shared_service_access_evaluated")));
+});
+
+test('a signed tenant context cannot be combined with a principal from another tenant', async () => {
+  const tenantPrincipal = principal(tenantId);
+  const otherTenant = principal('22222222-2222-4222-8222-222222222222');
+  const authorized = createAuthorizedPrincipal({
+    tenant: tenantPrincipal,
+    userId,
+    sessionId,
+    grants: [{ roleCode: 'tenant_admin', permissions: [permission], scopes: [] }]
+  });
+  let queried = false;
+  const repository = new SharedServiceAuthorizationRepository(fakePool(() => {
+    queried = true;
+    return { rows: [], rowCount: 0 };
+  }));
+  const decision = await repository.evaluate({
+    tenant: otherTenant,
+    principal: authorized,
+    serviceId: 'central_curriculum',
+    operation: 'discover',
+    applicationInstanceId: instanceId
+  });
+  assert.deepEqual(decision, { allowed: false, reason: 'PERMISSION_DENIED' });
+  assert.equal(queried, false);
+});
+
+test('shared-service permission grants honor application-instance resource scopes', async () => {
+  const tenantPrincipal = principal(tenantId);
+  const authorized = createAuthorizedPrincipal({
+    tenant: tenantPrincipal,
+    userId,
+    sessionId,
+    grants: [{
+      roleCode: 'staff',
+      permissions: [permission],
+      scopes: [{ resourceType: 'application_instance', resourceId: instanceId }]
+    }]
+  });
+  const pool = fakePool(text => {
+    if (text.includes('FROM production.application_instances instance')) {
+      return { rows: [application()], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 1 };
+  });
+  const repository = new SharedServiceAuthorizationRepository(pool);
+  const own = await repository.evaluate({
+    tenant: tenantPrincipal,
+    principal: authorized,
+    serviceId: 'central_curriculum',
+    operation: 'discover',
+    applicationInstanceId: instanceId
+  });
+  assert.equal(own.allowed, true);
+
+  const other = await repository.evaluate({
+    tenant: tenantPrincipal,
+    principal: authorized,
+    serviceId: 'central_curriculum',
+    operation: 'discover',
+    applicationInstanceId: '66666666-6666-4666-8666-666666666666'
+  });
+  assert.deepEqual(other, { allowed: false, reason: 'PERMISSION_DENIED' });
 });
 
 test('authorization fails closed when the tenant database is unavailable', async () => {

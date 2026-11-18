@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { randomUUID } from 'node:crypto';
 import express from 'express';
 import { ServerTenantTokenService } from '../tenantTokenService';
+import { createAuthorizedPrincipal } from '../authorization/authorizedPrincipal';
 import { CentralAiGatewayService } from './gatewayService';
 import { GoogleGeminiProviderAdapter, type GeminiTransport } from './geminiProvider';
 import { resolveGeminiAuthMode, resolveGeminiRuntimeConfig } from './modelConfig';
@@ -25,26 +27,39 @@ function makeToken(input: {
   userId?: string;
 }): string {
   const prevSecret = process.env.CONTROL_PLANE_SECRET;
+  const prevPlatformAdmins = process.env.PLATFORM_ADMIN_CREDENTIALS_JSON;
   process.env.CONTROL_PLANE_SECRET = 'test-ai-gateway-control-plane-secret-32chars!';
+  if (input.role === 'super_admin') {
+    process.env.PLATFORM_ADMIN_CREDENTIALS_JSON = JSON.stringify({ [input.email]: 'test-platform-key-that-is-at-least-32-characters' });
+  }
   try {
+    if (input.role === 'super_admin') {
+      return ServerTenantTokenService.issuePlatformAdminToken(input.email);
+    }
     return ServerTenantTokenService.issueTenantToken(
       {
         id: input.tenantId,
         appId: 'curriculum-flow',
-        schoolName: input.role === 'super_admin' ? 'Platform Control Plane' : `School ${input.tenantId.slice(0, 4)}`,
+        schoolName: `School ${input.tenantId.slice(0, 4)}`,
         subscriptionTier: 'enterprise',
         status: 'active'
       } as any,
       input.role,
       3600,
       input.email,
-      input.userId || input.email
+      input.userId || randomUUID(),
+      randomUUID()
     );
   } finally {
     if (prevSecret === undefined) {
       delete process.env.CONTROL_PLANE_SECRET;
     } else {
       process.env.CONTROL_PLANE_SECRET = prevSecret;
+    }
+    if (prevPlatformAdmins === undefined) {
+      delete process.env.PLATFORM_ADMIN_CREDENTIALS_JSON;
+    } else {
+      process.env.PLATFORM_ADMIN_CREDENTIALS_JSON = prevPlatformAdmins;
     }
   }
 }
@@ -54,6 +69,7 @@ function buildTestHarness(options: {
   env?: NodeJS.ProcessEnv;
   entitlementMode?: 'strict' | 'decoupled';
   rateLimitTestController?: AiGatewayTrafficController;
+  databaseAuthorizationUnavailable?: boolean;
 }) {
   const prevSecret = process.env.CONTROL_PLANE_SECRET;
   process.env.CONTROL_PLANE_SECRET = 'test-ai-gateway-control-plane-secret-32chars!';
@@ -88,7 +104,34 @@ function buildTestHarness(options: {
       getAuthDeps: () => ({
         poolConfigured: false,
         signingConfigured: () => true,
-        verifyToken: token => ServerTenantTokenService.verifyTenantToken(token)
+        verifyToken: token => ServerTenantTokenService.verifyTenantToken(token),
+        platformAdministratorAllowed: email => email === 'admin@curriculum.ng',
+        ...(options.databaseAuthorizationUnavailable ? {} : { authorization: {
+          authorize: async (tenant, userId, sessionId) => {
+            if (!sessionId) return { ok: false as const, reason: 'SESSION_REVOKED' as const };
+            return {
+              ok: true as const,
+              principal: createAuthorizedPrincipal({
+                tenant,
+                userId,
+                sessionId,
+                grants: [{
+                  roleCode: tenant.role,
+                  permissions: [
+                    'ai.gateway.read',
+                    'ai.curriculum.generate',
+                    'ai.assessments.generate',
+                    'ai.cbt.generate',
+                    'ai.tutor.use',
+                    'question_bank.manage',
+                    'assessments.manage'
+                  ],
+                  scopes: []
+                }]
+              })
+            };
+          }
+        } })
       })
     })
   );
@@ -120,6 +163,25 @@ async function withHttpServer(
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
 }
+
+test('AI gateway tenant requests fail closed when database authorization is unavailable', async () => {
+  const harness = buildTestHarness({
+    transport: { async generateContent() { return { text: '{"answer":"should not run"}' }; } },
+    databaseAuthorizationUnavailable: true
+  });
+  try {
+    const token = makeToken({ tenantId: TENANT_A, role: 'staff', email: 'staff@schoola.edu.ng' });
+    await withHttpServer(harness.app, async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/ai/v1/capabilities`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      assert.equal(response.status, 503);
+      assert.equal((await response.json()).code, 'AUTHORIZATION_UNAVAILABLE');
+    });
+  } finally {
+    harness.restoreEnv();
+  }
+});
 
 test('1 & 16. Curriculum Server lesson generation routes via Gateway with authentic usageMetadata metering', async () => {
   const harness = buildTestHarness({
@@ -501,7 +563,11 @@ test('8. Provisioning Agent recommendations are strictly readOnlyAdvisory and ne
   });
 
   try {
-    const adminToken = makeToken({ tenantId: 'control-plane', role: 'super_admin', email: 'admin@curriculum.ng' });
+    const adminToken = makeToken({
+      tenantId: 'platform-control-plane',
+      role: 'super_admin',
+      email: 'admin@curriculum.ng'
+    });
     const staffToken = makeToken({ tenantId: TENANT_A, role: 'staff', email: 'staff@schoola.edu.ng' });
 
     await withHttpServer(harness.app, async baseUrl => {

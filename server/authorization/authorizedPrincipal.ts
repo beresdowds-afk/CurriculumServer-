@@ -31,7 +31,11 @@ export function createAuthorizedPrincipal(input: {
   sessionId: string;
   grants: readonly RoleGrant[];
 }): AuthorizedPrincipal {
-  const grants = Object.freeze(input.grants.map(grant => Object.freeze({ ...grant })));
+  const grants = Object.freeze(input.grants.map(grant => Object.freeze({
+    roleCode: grant.roleCode,
+    permissions: Object.freeze([...grant.permissions]),
+    scopes: Object.freeze(grant.scopes.map(scope => Object.freeze({ ...scope })))
+  })));
   return Object.freeze({
     [authorized]: true as const,
     tenant: input.tenant,
@@ -58,6 +62,18 @@ export function assertAuthorized(
   permission: string
 ): asserts principal is AuthorizedPrincipal {
   if (!principal || principal[authorized] !== true || !principal.hasPermission(permission)) {
+    throw new Error('FORBIDDEN');
+  }
+}
+
+export function assertResourceAuthorized(
+  principal: AuthorizedPrincipal | undefined,
+  permission: string,
+  resourceType: string,
+  resourceId: string
+): asserts principal is AuthorizedPrincipal {
+  if (!principal || principal[authorized] !== true ||
+      !principal.hasPermissionFor(permission, resourceType, resourceId)) {
     throw new Error('FORBIDDEN');
   }
 }

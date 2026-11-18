@@ -317,9 +317,9 @@ test('Architectural separation: combined textbookQuestionBankService is deleted 
   // Central Textbook services must never run direct SQL against curriculum_topics or curriculum_learning_objectives
   assert.doesNotMatch(tbCovSrc + tbGenSrc + tbGeminiSrc + tbValSrc, /FROM\s+production\.curriculum_|JOIN\s+production\.curriculum_|FROM\s+central_curriculum\./i);
 
-  // 4. Capability routes for instance question bank and assessments are registered
+  // Writes remain unavailable until they require authorized principals and item scopes.
   assert.equal(evaluateProductionCapabilityGate('GET', '/question-bank').allowed, true);
-  assert.equal(evaluateProductionCapabilityGate('POST', '/assessment-blueprints').allowed, true);
-  assert.equal(evaluateProductionCapabilityGate('POST', '/assessments/exams').allowed, true);
-  assert.equal(evaluateProductionCapabilityGate('POST', '/assessments/records').allowed, true);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/assessment-blueprints').allowed, false);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/assessments/exams').allowed, false);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/assessments/records').allowed, false);
 });

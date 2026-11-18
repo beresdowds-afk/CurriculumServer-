@@ -34,19 +34,17 @@ export class UnifiedConnectivityTestSuite {
     const results: TestResultItem[] = [];
     const startTime = Date.now();
     const originalSecret = process.env.CONTROL_PLANE_SECRET;
+    const originalPlatformAdmins = process.env.PLATFORM_ADMIN_CREDENTIALS_JSON;
     if (!originalSecret) process.env.CONTROL_PLANE_SECRET = 'connectivity-test-secret-at-least-32-chars';
 
     // -------------------------------------------------------------
     // GROUP A: CURRICULUM SERVER CONNECTIVITY
     // -------------------------------------------------------------
     const t1Start = Date.now();
-    const adminTenant: any = {
-      id: 'platform-control-plane',
-      appId: 'CF-CONTROL-PLANE-001',
-      schoolName: 'Curriculum Server Control Plane',
-      status: 'active'
-    };
-    const superAdminToken = ServerTenantTokenService.issueTenantToken(adminTenant, 'super_admin', 3600, 'admin@curriculumserver.com.ng');
+    process.env.PLATFORM_ADMIN_CREDENTIALS_JSON = JSON.stringify({
+      'admin@curriculumserver.com.ng': 'connectivity-test-platform-key-at-least-32-chars'
+    });
+    const superAdminToken = ServerTenantTokenService.issuePlatformAdminToken('admin@curriculumserver.com.ng');
     const superAdminVerify = ServerTenantTokenService.verifyTenantToken(superAdminToken);
     results.push({
       id: 'CS-01',
@@ -96,14 +94,14 @@ export class UnifiedConnectivityTestSuite {
     // -------------------------------------------------------------
     const t5Start = Date.now();
     const schoolA = tenants[0];
-    const schoolToken = ServerTenantTokenService.issueTenantToken(schoolA, 'principal', 3600, schoolA.principalEmail);
+    const schoolToken = ServerTenantTokenService.issueTenantToken(schoolA, 'staff', 3600, schoolA.principalEmail);
     const schoolVerify = ServerTenantTokenService.verifyTenantToken(schoolToken);
     results.push({
       id: 'CF-01',
       category: 'Curriculum Flow',
-      name: 'School Flow Tenant-Scoped Authentication',
-      passed: schoolVerify.valid && schoolVerify.context?.tenantId === schoolA.id && schoolVerify.context?.role === 'principal',
-      message: `Successfully authenticated Principal to school instance ${schoolA.schoolName} (${schoolA.id}).`,
+      name: 'School Flow Tenant-Scoped Staff Authentication',
+      passed: schoolVerify.valid && schoolVerify.context?.tenantId === schoolA.id && schoolVerify.context?.role === 'staff',
+      message: `Successfully authenticated staff to school instance ${schoolA.schoolName} (${schoolA.id}).`,
       durationMs: Date.now() - t5Start
     });
 
@@ -678,6 +676,8 @@ export class UnifiedConnectivityTestSuite {
 
     if (originalSecret === undefined) delete process.env.CONTROL_PLANE_SECRET;
     else process.env.CONTROL_PLANE_SECRET = originalSecret;
+    if (originalPlatformAdmins === undefined) delete process.env.PLATFORM_ADMIN_CREDENTIALS_JSON;
+    else process.env.PLATFORM_ADMIN_CREDENTIALS_JSON = originalPlatformAdmins;
     const passCount = results.filter(r => r.passed).length;
     return {
       timestamp: new Date().toISOString(),
