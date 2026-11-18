@@ -21,7 +21,7 @@ and blockers.
 | Resource scope | `production.role_assignment_scopes` (empty scope = tenant-wide) |
 | Session identity | `production.user_sessions` (id carried as `sessionId` claim in the signed token) |
 | Session revocation | `user_sessions.revoked_at`; membership revocation also revokes sessions |
-| Platform administrators | Environment-configured, token role `super_admin`; never a tenant role or membership |
+| Platform administrators | Allowlisted platform credentials and signed control-plane tokens; never a tenant role or membership |
 
 Existing user ids, membership rows and `memberships.user_subject` values are
 preserved. Legacy `memberships.role` is retained; migration 008 backfills
@@ -40,12 +40,26 @@ normalized assignments from it without discarding any subject.
 * Authentication (signed token, `ServerTenantTokenService`) only identifies the user, tenant and session.
 * PostgreSQL decides current membership, roles, permissions and scopes on every request
   (`server/authorization/authorizationRepository.ts`). Token role claims are never the permission source.
-* `AuthorizedPrincipal` (branded, frozen) is created only by the repository after DB checks.
+* `AuthorizedPrincipal` (branded and deeply frozen) is created only after DB checks.
   Privileged repository methods (`updateConfiguration`, `assignRole`, `revokeMembership`)
-  require it via `assertAuthorized`, so they do not rely on Express guards alone.
+  and `revokeSession` require it via `assertAuthorized` and recheck the actor's current
+  session, membership and permission inside the write transaction.
 * Middleware (`server/authorization/middleware.ts`): `authenticated`, `activeMembership`,
   `requirePermission`, `requireResourcePermission`, `tenantAdministrator`,
-  `platformAdministrator`, `internalService` (`x-internal-service-key`, `INTERNAL_SERVICE_KEY` ≥ 32 chars).
+  `platformAdministrator`, and `internalService`. Platform access requires the signed
+  `platform-control-plane` issuer/audience context and an email in
+  `PLATFORM_ADMIN_CREDENTIALS_JSON`; a `super_admin` token claim alone is insufficient.
+* New tenant role assignments are limited to `tenant_admin`, `staff`, and `read_only`.
+  Existing normalized assignments remain readable for compatibility; platform
+  `super_admin` is never a tenant assignment. Resource-scoped permissions are checked
+  against the requested resource (including application-instance scopes).
+* AI tenant access has no token-role permission fallback: PostgreSQL session, membership,
+  assignments and permissions are required. Missing database authorization returns 503.
+* Internal service authentication supports Cloud Run's `X-Serverless-Authorization`
+  Google OIDC ID token with an exact configured audience and allowlisted caller emails
+  (`INTERNAL_SERVICE_AUDIENCE`, `INTERNAL_SERVICE_CALLERS`). The legacy
+  `x-internal-service-key` remains supported during migration, but service identity
+  alone grants no tenant permission, platform access, or infrastructure IAM.
 * School application access is no longer restricted to `tenant_admin`; permissions decide.
 * Tenant context is transaction-local and signed by the server (`withTenantTransaction`). RLS calls
   `production.verified_authorization_context_kind()` and compares the signed tenant assertion with

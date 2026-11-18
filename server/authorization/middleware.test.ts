@@ -4,12 +4,13 @@ import { createAuthorizationMiddleware } from './middleware';
 import { createAuthorizedPrincipal } from './authorizedPrincipal';
 import { PERMISSIONS } from './permissions';
 import { principal } from '../db/testSupport';
+import type { TenantSecurityContext } from '../../src/services/tenantSecurityContext';
 
 const tenantId = '11111111-1111-4111-8111-111111111111';
 const userId = '22222222-2222-4222-8222-222222222222';
 const sessionId = '33333333-3333-4333-8333-333333333333';
 
-function context(overrides: Record<string, unknown> = {}) {
+function context(overrides: Record<string, unknown> = {}): TenantSecurityContext {
   return {
     tenantId, userId, sessionId, role: 'tenant_admin', appId: 'curriculum-flow', schoolName: 'S',
     subscriptionTier: 't', status: 'ACTIVE', databaseName: 'd', storageNamespace: '/s',
@@ -22,6 +23,7 @@ function build(options: {
   token?: { valid: boolean; context?: any };
   result?: any;
   key?: string;
+  platformAdministratorAllowed?: (email: string) => boolean;
 } = {}) {
   return createAuthorizationMiddleware({
     verifyToken: () => options.token ?? { valid: true, context: context() },
@@ -35,6 +37,7 @@ function build(options: {
         })
       }
     }),
+    platformAdministratorAllowed: options.platformAdministratorAllowed,
     internalServiceKey: () => options.key
   });
 }
@@ -88,25 +91,123 @@ test('token role claims are not the permission source', async () => {
   assert.equal(allowed.nexted, true);
 });
 
+test('staff and read-only principals cannot perform tenant administrator operations', async () => {
+  for (const roleCode of ['staff', 'read_only']) {
+    const user = createAuthorizedPrincipal({
+      tenant: principal(tenantId),
+      userId,
+      sessionId,
+      grants: [{
+        roleCode,
+        permissions: [PERMISSIONS.schoolProfileRead],
+        scopes: []
+      }]
+    });
+    const middleware = build({ result: { ok: true, principal: user } });
+    assert.equal((await run(middleware.tenantAdministrator)).status, 403, roleCode);
+    assert.equal(
+      (await run(middleware.requirePermission(PERMISSIONS.membershipRolesAssign))).status,
+      403,
+      roleCode
+    );
+  }
+});
+
 test('resource-scoped grants do not apply to other resources', async () => {
   const scoped = createAuthorizedPrincipal({
     tenant: principal(tenantId), userId, sessionId,
-    grants: [{ roleCode: 'staff', permissions: [PERMISSIONS.schoolProfileRead], scopes: [{ resourceType: 'class', resourceId: 'a' }] }]
+    grants: [{
+      roleCode: 'staff',
+      permissions: [PERMISSIONS.schoolProfileRead],
+      scopes: [{ resourceType: 'class', resourceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }]
+    }]
   });
   const mw = build({ result: { ok: true, principal: scoped } });
-  const other = await run(mw.requireResourcePermission(PERMISSIONS.schoolProfileRead, () => ({ resourceType: 'class', resourceId: 'b' })));
+  const other = await run(mw.requireResourcePermission(PERMISSIONS.schoolProfileRead, () => ({
+    resourceType: 'class',
+    resourceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  })));
   assert.equal(other.status, 403);
-  const own = await run(mw.requireResourcePermission(PERMISSIONS.schoolProfileRead, () => ({ resourceType: 'class', resourceId: 'a' })));
+  const own = await run(mw.requireResourcePermission(PERMISSIONS.schoolProfileRead, () => ({
+    resourceType: 'class',
+    resourceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  })));
   assert.equal(own.nexted, true);
   const wide = await run(mw.requirePermission(PERMISSIONS.schoolProfileRead));
   assert.equal(wide.status, 403, 'scoped grants are not tenant-wide');
 });
 
 test('platform administrators are not tenant users and tenant users are not platform administrators', async () => {
-  const platform = build({ token: { valid: true, context: context({ role: 'super_admin', userId: undefined, sessionId: undefined }) } });
+  const platformContext = context({
+    tenantId: 'platform-control-plane',
+    role: 'super_admin',
+    issuer: 'CurriculumServer-ControlPlane',
+    audience: 'platform-control-plane',
+    email: 'platform@example.invalid',
+    userId: undefined,
+    sessionId: undefined
+  });
+  const platform = build({
+    token: { valid: true, context: platformContext },
+    platformAdministratorAllowed: email => email === 'platform@example.invalid'
+  });
   assert.equal((await run(platform.activeMembership)).status, 403);
   assert.equal((await run(platform.platformAdministrator)).nexted, true);
   assert.equal((await run(build().platformAdministrator)).status, 403);
+  assert.equal((await run(build({
+    token: { valid: true, context: platformContext },
+    platformAdministratorAllowed: () => false
+  }).platformAdministrator)).status, 403);
+  assert.equal((await run(build({
+    token: { valid: true, context: context({ role: 'super_admin', email: 'platform@example.invalid' }) },
+    platformAdministratorAllowed: () => true
+  }).platformAdministrator)).status, 403);
+});
+
+test('authorization dependency failures and invalid resource resolvers fail closed', async () => {
+  const unavailable = createAuthorizationMiddleware({
+    verifyToken: () => ({ valid: true, context: context() }),
+    signingConfigured: () => true,
+    authorization: () => { throw new Error('database unavailable'); }
+  });
+  assert.equal((await run(unavailable.activeMembership)).status, 503);
+
+  const middleware = build();
+  assert.equal((await run(middleware.requireResourcePermission(
+    PERMISSIONS.schoolProfileRead,
+    () => { throw new Error('resource unavailable'); }
+  ))).status, 403);
+  assert.equal((await run(middleware.requireResourcePermission(
+    PERMISSIONS.schoolProfileRead,
+    () => ({ resourceType: 'application_instance', resourceId: '' })
+  ))).status, 403);
+
+  assert.equal((await run(build({
+    token: {
+      valid: true,
+      context: context({
+        tenantId: '',
+        userId: undefined,
+        sessionId: undefined
+      })
+    }
+  }).activeMembership)).status, 403);
+});
+
+test('authorized principal grants and nested scopes are immutable', () => {
+  const scopes = [{ resourceType: 'class', resourceId: 'a' }];
+  const permissions: string[] = [PERMISSIONS.schoolProfileRead];
+  const grant = { roleCode: 'staff', permissions, scopes };
+  const principalValue = createAuthorizedPrincipal({
+    tenant: principal(tenantId), userId, sessionId, grants: [grant]
+  });
+  scopes[0].resourceId = 'b';
+  permissions.push(PERMISSIONS.schoolConfigurationManage);
+  grant.roleCode = 'tenant_admin';
+  assert.equal(principalValue.hasPermissionFor(PERMISSIONS.schoolProfileRead, 'class', 'a'), true);
+  assert.equal(principalValue.hasPermission(PERMISSIONS.schoolConfigurationManage), false);
+  assert.equal(Object.isFrozen(principalValue.grants[0].scopes[0]), true);
+  assert.equal(Object.isFrozen(principalValue.grants[0].permissions), true);
 });
 
 test('internal service authentication requires a strong configured key', async () => {
@@ -116,4 +217,49 @@ test('internal service authentication requires a strong configured key', async (
   const mw = build({ key });
   assert.equal((await run(mw.internalService, { 'x-internal-service-key': 'wrong' })).status, 401);
   assert.equal((await run(mw.internalService, { 'x-internal-service-key': key })).nexted, true);
+});
+
+test('Google service identities require a valid identity, expected audience, and authorized caller', async () => {
+  const middleware = createAuthorizationMiddleware({
+    verifyToken: () => ({ valid: false }),
+    signingConfigured: () => true,
+    authorization: () => { throw new Error('not used'); },
+    internalServiceAudience: () => 'https://curriculum.example/internal',
+    authorizedInternalCallers: () => ['worker@project.iam.gserviceaccount.com'],
+    verifyInternalServiceIdentity: async token => {
+      if (token === 'invalid') return undefined;
+      if (token === 'wrong-audience') {
+        return {
+          email: 'worker@project.iam.gserviceaccount.com',
+          audience: 'https://other.example/internal',
+          subject: 'worker'
+        };
+      }
+      if (token === 'unlisted-caller') {
+        return {
+          email: 'other@project.iam.gserviceaccount.com',
+          audience: 'https://curriculum.example/internal',
+          subject: 'other'
+        };
+      }
+      return {
+        email: 'worker@project.iam.gserviceaccount.com',
+        audience: 'https://curriculum.example/internal',
+        subject: 'worker'
+      };
+    }
+  });
+  const header = (token: string) => ({ 'x-serverless-authorization': `Bearer ${token}` });
+  assert.equal((await run(middleware.internalService, header('invalid'))).status, 401);
+  assert.equal((await run(middleware.internalService, header('wrong-audience'))).status, 401);
+  assert.equal((await run(middleware.internalService, header('unlisted-caller'))).status, 401);
+  assert.equal((await run(middleware.internalService, header('valid'))).nexted, true);
+
+  const unconfigured = createAuthorizationMiddleware({
+    verifyToken: () => ({ valid: false }),
+    signingConfigured: () => true,
+    authorization: () => { throw new Error('not used'); },
+    verifyInternalServiceIdentity: async () => undefined
+  });
+  assert.equal((await run(unconfigured.internalService, header('valid'))).status, 503);
 });

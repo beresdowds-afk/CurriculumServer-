@@ -2,6 +2,15 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { TenantSchoolApp } from '../src/types';
 import type { TenantSecurityContext } from '../src/services/tenantSecurityContext';
 
+export function isPlatformAdminTokenContext(context: TenantSecurityContext): boolean {
+  return context.role === 'super_admin' &&
+    context.tenantId === 'platform-control-plane' &&
+    context.issuer === 'CurriculumServer-ControlPlane' &&
+    context.audience === 'platform-control-plane' &&
+    typeof context.email === 'string' &&
+    context.email.length > 0;
+}
+
 function getSigningSecret(): string {
   const secret = process.env.CONTROL_PLANE_SECRET || '';
   if (secret.length < 32 ||

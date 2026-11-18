@@ -117,6 +117,20 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
     const secondSchoolSession = await authz.createSession(tenantB, activeA.account.userId, 3600);
     assert.equal((await authz.authorize(tenantB, activeA.account.userId, secondSchoolSession.sessionId)).ok, true);
 
+    const expiredSession = await authz.createSession(tenantA, activeA.account.userId, 3600);
+    await withControlPlaneTransaction(pool, admin, client =>
+      client.query(
+        `UPDATE production.user_sessions
+         SET issued_at = now() - interval '1 day', expires_at = now() - interval '1 minute'
+         WHERE id = $1`,
+        [expiredSession.sessionId]
+      )
+    );
+    assert.deepEqual(
+      await authz.authorize(tenantA, activeA.account.userId, expiredSession.sessionId),
+      { ok: false, reason: 'SESSION_REVOKED' }
+    );
+
     // RLS on new tables.
     const seen = await withTenantTransaction(pool, tenantB, c =>
       c.query('SELECT count(*)::int AS n FROM production.user_sessions WHERE tenant_id = $1', [a.record.tenantId]));
@@ -138,13 +152,53 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
                      VALUES ($1, $2, 'staff', 'test-setup')`, [a.record.tenantId, staffEmail]);
     });
     const staffSession = await authz.createSession(tenantA, staffUserId, 3600);
+    const scopedResourceId = randomUUID();
+    await withControlPlaneTransaction(pool, admin, client =>
+      client.query(
+        `INSERT INTO production.role_assignment_scopes (tenant_id, assignment_id, resource_type, resource_id)
+         SELECT $1, id, 'class', $3 FROM production.membership_role_assignments
+         WHERE tenant_id = $1 AND user_subject = $2 AND role_code = 'staff' AND revoked_at IS NULL`,
+        [a.record.tenantId, staffEmail, scopedResourceId]
+      )
+    );
     const staffAuth = await authz.authorize(tenantA, staffUserId, staffSession.sessionId);
     assert.equal(staffAuth.ok, true);
     const staffPrincipal = (staffAuth as Extract<typeof staffAuth, { ok: true }>).principal;
+    assert.equal(staffPrincipal.hasPermission(PERMISSIONS.schoolProfileRead), false);
+    assert.equal(staffPrincipal.hasPermissionFor(
+      PERMISSIONS.schoolProfileRead, 'class', scopedResourceId
+    ), true);
+    assert.equal(staffPrincipal.hasPermissionFor(
+      PERMISSIONS.schoolProfileRead, 'class', randomUUID()
+    ), false);
     await assert.rejects(authz.assignRole(staffPrincipal, staffUserId, 'tenant_admin'), /FORBIDDEN|permission/i);
 
+    await assert.rejects(
+      authz.assignRole(adminPrincipal, staffUserId, 'super_admin'),
+      /TENANT_ROLE_INVALID/
+    );
+
+    await withControlPlaneTransaction(pool, admin, client =>
+      client.query(
+        `UPDATE production.memberships SET status = 'suspended', status_changed_at = now()
+         WHERE tenant_id = $1 AND user_id = $2`,
+        [a.record.tenantId, staffUserId]
+      )
+    );
+    assert.deepEqual(
+      await authz.authorize(tenantA, staffUserId, staffSession.sessionId),
+      { ok: false, reason: 'MEMBERSHIP_INACTIVE' }
+    );
+    await withControlPlaneTransaction(pool, admin, client =>
+      client.query(
+        `UPDATE production.memberships SET status = 'active', status_changed_at = now()
+         WHERE tenant_id = $1 AND user_id = $2`,
+        [a.record.tenantId, staffUserId]
+      )
+    );
+
     // Session revocation takes effect immediately.
-    await authz.revokeSession(tenantA, staffSession.sessionId, 'test');
+    await authz.revokeSession(adminPrincipal, staffSession.sessionId, 'test');
     assert.deepEqual(await authz.authorize(tenantA, staffUserId, staffSession.sessionId),
       { ok: false, reason: 'SESSION_REVOKED' });
 
