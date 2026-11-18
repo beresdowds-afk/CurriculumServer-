@@ -15,6 +15,7 @@ import { textbookGenerationEngine } from './src/services/textbookGenerationEngin
 import { CentralCurriculumError } from './server/curriculum/centralCurriculumRepository';
 import { CentralCurriculumService } from './server/curriculum/centralCurriculumService';
 import { CentralTextbookService } from './server/textbooks/centralTextbookService';
+import { GeminiTextbookOperationalAdapter } from './server/textbooks/geminiTextbookAdapter';
 import { CentralTextbookError } from './server/textbooks/centralTextbookRepository';
 import { InstanceQuestionBankService } from './server/questionBank/instanceQuestionBankService';
 import { InstanceQuestionBankError } from './server/questionBank/instanceQuestionBankRepository';
@@ -465,7 +466,8 @@ function getCentralCurriculumService(): CentralCurriculumService {
 function getCentralTextbookService(): CentralTextbookService {
   const curriculumService = getCentralCurriculumService();
   return new CentralTextbookService(postgresRuntime.getPool(), {
-    curriculumPort: curriculumService.retrieval
+    curriculumPort: curriculumService.retrieval,
+    aiAdapter: new GeminiTextbookOperationalAdapter(centralAiGatewayService)
   });
 }
 

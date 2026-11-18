@@ -152,6 +152,7 @@ export class CentralTextbookGenerationService {
 
       try {
         const candidate = await this.aiAdapter.generateOutline({
+          actor,
           subject,
           classGrade: gradeRecord.name,
           topics: topicsForGrade,
@@ -326,6 +327,7 @@ export class CentralTextbookGenerationService {
       });
       try {
         const res = await this.aiAdapter.generateChapterSections({
+          actor,
           textbook,
           chapter,
           topics: chapterTopics

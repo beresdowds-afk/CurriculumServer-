@@ -570,6 +570,12 @@ test('GeminiTextbookOperationalAdapter fails explicitly when GEMINI_API_KEY is a
     const adapter = new GeminiTextbookOperationalAdapter();
     await assert.rejects(
       () => adapter.generateOutline({
+        actor: {
+          tenantId: 'platform-control-plane',
+          role: 'super_admin',
+          email: 'admin@curriculum.ng',
+          userId: 'platform-editorial-admin'
+        } as any,
         subject: { id: 'sub-math', name: 'Mathematics', code: 'MTH', educationLevelCode: 'jss', version: { id: 'V1', title: 'V1', versionTag: '1', isOfficialVerified: false } } as any,
         classGrade: 'JSS 1',
         topics: []

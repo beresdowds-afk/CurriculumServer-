@@ -18,7 +18,8 @@ import { enforceAiAuthorizationAndEntitlement, resolveAiEntitlementMode } from '
 import {
   listCapabilitiesForApplication,
   REGISTERED_AI_APPLICATIONS,
-  resolveCapabilityPolicy
+  resolveCapabilityPolicy,
+  resolveSupportedInstanceApplicationIds
 } from './capabilityRegistry';
 import { GoogleGeminiProviderAdapter } from './geminiProvider';
 import { PLATFORM_GCP_ENVIRONMENT, resolveGeminiRuntimeConfig } from './modelConfig';
@@ -29,6 +30,7 @@ import { defaultAiRequestRouter, IntelligentAiRequestRouter } from './router';
 import {
   AiGatewayError,
   type AiProviderAdapter,
+  type AiProviderGenerateResult,
   type AiUsageAggregateRecord,
   type AuthenticatedAiCaller
 } from './types';
@@ -125,9 +127,11 @@ export class CentralAiGatewayService {
     const cfg = resolveGeminiRuntimeConfig(env);
     const { databaseConfigured } = this.getStoreFn();
     const authMode = this.provider.getAuthMode();
+    const persistenceReady = databaseConfigured || env.NODE_ENV !== 'production';
+    const gatewayReady = authMode !== 'unconfigured' && persistenceReady;
     return {
-      status: authMode === 'unconfigured' ? 'degraded' : 'healthy',
-      gatewayReady: authMode !== 'unconfigured',
+      status: gatewayReady ? 'healthy' : 'degraded',
+      gatewayReady,
       providerId: 'GOOGLE_GEMINI',
       authMode,
       gcpProjectId: cfg.gcpProjectId,
@@ -141,8 +145,24 @@ export class CentralAiGatewayService {
     };
   }
 
-  listCapabilities(applicationId?: AiApplicationId): AiGatewayCapabilityDescriptor[] {
-    return listCapabilitiesForApplication(applicationId).map(policy => ({
+  async listCapabilities(
+    caller: AuthenticatedAiCaller,
+    applicationId?: AiApplicationId
+  ): Promise<AiGatewayCapabilityDescriptor[]> {
+    const { store, databaseConfigured } = this.getStoreFn();
+    const env = this.getEnvFn();
+    const providerReady = this.provider.getAuthMode() !== 'unconfigured';
+    const registryReady = databaseConfigured || env.NODE_ENV !== 'production';
+    const policies = listCapabilitiesForApplication(applicationId);
+    const enabled = await Promise.all(policies.map(async policy => {
+      if (!policy.enabled || !providerReady || !registryReady) return false;
+      try {
+        return await store.isCapabilityEnabled(caller.verifiedPrincipal, policy.capability);
+      } catch {
+        return !databaseConfigured && policy.enabled;
+      }
+    }));
+    return policies.map((policy, index) => ({
       capability: policy.capability,
       applicationId: policy.applicationId,
       description: policy.description,
@@ -155,7 +175,7 @@ export class CentralAiGatewayService {
       requiredPermissions: [...policy.requiredPermissions],
       rateLimitPerMinute: policy.rateLimitPerMinute,
       maxConcurrency: policy.maxConcurrency,
-      enabled: policy.enabled
+      enabled: enabled[index]
     }));
   }
 
@@ -384,8 +404,16 @@ export class CentralAiGatewayService {
 
   async execute<TData = unknown>(input: ExecuteAiRequestInput): Promise<AiGatewayResponseEnvelope<TData>> {
     const { caller, envelope } = input;
-    if (!envelope || typeof envelope !== 'object' || !envelope.payload || typeof envelope.payload !== 'object') {
+    if (!envelope || typeof envelope !== 'object' || !envelope.payload ||
+        typeof envelope.payload !== 'object' || Array.isArray(envelope.payload)) {
       throw new AiGatewayError('VALIDATION_ERROR', 'AI Gateway request requires a structured payload object.', 400);
+    }
+    if (
+      caller.applicationInstanceId &&
+      envelope.applicationInstanceId &&
+      caller.applicationInstanceId !== envelope.applicationInstanceId
+    ) {
+      throw new AiGatewayError('VALIDATION_ERROR', 'Application-instance header and request body must match.', 400);
     }
 
     const requestId = crypto.randomUUID();
@@ -395,7 +423,58 @@ export class CentralAiGatewayService {
       `ai_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
 
     const policy = resolveCapabilityPolicy(envelope.applicationId, envelope.capability, envelope.taskType);
-    const { store, pool } = this.getStoreFn();
+    const { store, pool, databaseConfigured } = this.getStoreFn();
+    const env = this.getEnvFn();
+    if (!databaseConfigured && env.NODE_ENV === 'production') {
+      throw new AiGatewayError('AUTHORIZATION_UNAVAILABLE', 'AI capability registry is not available.', 503);
+    }
+    let capabilityEnabled = false;
+    try {
+      capabilityEnabled = await store.isCapabilityEnabled(caller.verifiedPrincipal, policy.capability);
+    } catch {
+      if (databaseConfigured) {
+        throw new AiGatewayError('AUTHORIZATION_UNAVAILABLE', 'AI capability readiness is unavailable.', 503);
+      }
+      capabilityEnabled = env.NODE_ENV !== 'production' && policy.enabled;
+    }
+    if (!policy.enabled || !capabilityEnabled) {
+      throw new AiGatewayError('UNSUPPORTED_CAPABILITY', 'The requested AI capability is disabled or not ready.', 403);
+    }
+    const cfg = resolveGeminiRuntimeConfig(env);
+    const payloadJson = JSON.stringify(envelope.payload);
+    if (Buffer.byteLength(payloadJson, 'utf8') > cfg.maxPromptChars) {
+      throw new AiGatewayError(
+        'VALIDATION_ERROR',
+        `AI request payload exceeds the ${cfg.maxPromptChars}-character input limit.`,
+        413
+      );
+    }
+    if (envelope.idempotencyKey && !/^[A-Za-z0-9._:-]{8,128}$/.test(envelope.idempotencyKey)) {
+      throw new AiGatewayError('VALIDATION_ERROR', 'Idempotency key must be 8-128 safe characters.', 400);
+    }
+
+    if (env.NODE_ENV === 'production' && !databaseConfigured) {
+      throw new AiGatewayError(
+        'AUTHORIZATION_UNAVAILABLE',
+        'Durable AI usage and audit persistence is not configured.',
+        503
+      );
+    }
+
+    const isPlatformAdmin = caller.role === PLATFORM_ADMIN_ROLE;
+    const tenantForInstanceResolution = isPlatformAdmin
+      ? envelope.tenantId
+      : caller.tenantId || undefined;
+    let effectiveInstanceId: string | null = null;
+    if (tenantForInstanceResolution) {
+      const requestedInstanceId = envelope.applicationInstanceId || caller.applicationInstanceId || undefined;
+      effectiveInstanceId = await store.resolveApplicationInstance(
+        caller.verifiedPrincipal,
+        tenantForInstanceResolution,
+        resolveSupportedInstanceApplicationIds(policy),
+        requestedInstanceId
+      );
+    }
 
     const { effectiveTenantId, maxConcurrency } = await enforceAiAuthorizationAndEntitlement({
       caller,
@@ -403,7 +482,7 @@ export class CentralAiGatewayService {
       policy,
       requestedTenantId: envelope.tenantId,
       headerTenantId: input.headerTenantId,
-      requestedApplicationInstanceId: envelope.applicationInstanceId,
+      requestedApplicationInstanceId: effectiveInstanceId || envelope.applicationInstanceId,
       store,
       entitlementMode: this.getEntitlementModeFn(),
       correlationId
@@ -413,14 +492,12 @@ export class CentralAiGatewayService {
     this.traffic.checkAndConsumeRateLimit(trafficKey, policy.rateLimitPerMinute);
     const releaseSlot = this.traffic.acquireConcurrencySlot(trafficKey, maxConcurrency);
 
-    const effectiveInstanceId = envelope.applicationInstanceId || caller.applicationInstanceId || null;
-
     try {
       const routing = this.router.route({
         policy,
         requestedTask: envelope.taskType,
         modelOverride: envelope.modelOverride,
-        env: this.getEnvFn()
+        env
       });
 
       if (routing.authMode === 'unconfigured') {
@@ -442,29 +519,48 @@ export class CentralAiGatewayService {
       );
 
       const orchestrated = buildOrchestratedPrompt(routing.taskType, envelope.payload, schoolContext);
-
-      await store.recordRequestStart(caller.verifiedPrincipal, {
-        id: requestId,
-        correlationId,
-        idempotencyKey: envelope.idempotencyKey,
-        tenantId: effectiveTenantId,
-        applicationInstanceId: effectiveInstanceId,
-        applicationId: envelope.applicationId,
-        capability: policy.capability,
-        taskType: routing.taskType,
-        actorUserId: caller.userId,
-        actorRole: caller.role,
-        providerId: routing.providerId,
-        modelId: routing.modelId,
-        routingStrategy: routing.strategy,
-        requestMetadata: {
-          subjectName: envelope.payload.subjectName ?? null,
-          classGrade: envelope.payload.classGrade ?? null
-        }
-      });
+      if (orchestrated.contents.length > cfg.maxPromptChars) {
+        throw new AiGatewayError(
+          'VALIDATION_ERROR',
+          `AI request exceeds the ${cfg.maxPromptChars}-character input limit.`,
+          413
+        );
+      }
 
       try {
-        const providerResult = await this.provider.generate({
+        await store.recordRequestStart(caller.verifiedPrincipal, {
+          id: requestId,
+          correlationId,
+          idempotencyKey: envelope.idempotencyKey,
+          tenantId: effectiveTenantId,
+          applicationInstanceId: effectiveInstanceId,
+          applicationId: envelope.applicationId,
+          capability: policy.capability,
+          taskType: routing.taskType,
+          actorUserId: caller.userId,
+          actorRole: caller.role,
+          providerId: routing.providerId,
+          modelId: routing.modelId,
+          routingStrategy: routing.strategy,
+          requestMetadata: {
+            subjectName: envelope.payload.subjectName ?? null,
+            classGrade: envelope.payload.classGrade ?? null
+          }
+        });
+      } catch (err) {
+        if ((err as { code?: string })?.code === '23505' && envelope.idempotencyKey) {
+          throw new AiGatewayError(
+            'IDEMPOTENCY_CONFLICT',
+            'A request with this idempotency key has already been accepted.',
+            409
+          );
+        }
+        throw err;
+      }
+
+      let providerResult: AiProviderGenerateResult | undefined;
+      try {
+        providerResult = await this.provider.generate({
           modelId: routing.modelId,
           contents: orchestrated.contents,
           systemInstruction: orchestrated.systemInstruction,
@@ -476,9 +572,23 @@ export class CentralAiGatewayService {
           correlationId,
           label: `${envelope.applicationId}:${policy.capability}:${routing.taskType}`
         });
+        if (providerResult.rawText.length > cfg.maxResponseChars) {
+          throw new AiGatewayError(
+            'INVALID_AI_RESPONSE',
+            `AI provider response exceeds the ${cfg.maxResponseChars}-character output limit.`,
+            502
+          );
+        }
 
         const validated = validateAiResponse(routing.taskType, providerResult.rawText);
         const processed = this.postProcessOutput(routing.taskType, validated, envelope.payload, caller);
+        if (Buffer.byteLength(JSON.stringify(processed), 'utf8') > cfg.maxResponseChars) {
+          throw new AiGatewayError(
+            'INVALID_AI_RESPONSE',
+            `AI response exceeds the ${cfg.maxResponseChars}-character output limit.`,
+            502
+          );
+        }
 
         await store.recordRequestFinish({
           requestId,
@@ -562,10 +672,10 @@ export class CentralAiGatewayService {
           providerId: routing.providerId,
           modelId: routing.modelId,
           status: finishStatus,
-          attemptCount: Number(gwErr.details?.attemptCount ?? 1),
-          latencyMs: 0,
+          attemptCount: providerResult?.attemptCount ?? Number(gwErr.details?.attemptCount ?? 1),
+          latencyMs: providerResult?.latencyMs ?? 0,
           httpStatus: gwErr.httpStatus,
-          usage: ZERO_USAGE,
+          usage: providerResult?.usage ?? ZERO_USAGE,
           errorCode: gwErr.code,
           errorMessage: gwErr.message,
           principal: caller.verifiedPrincipal

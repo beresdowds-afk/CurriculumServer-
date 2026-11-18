@@ -1,9 +1,8 @@
 import { resolveCapabilityPolicy } from '../ai/capabilityRegistry';
-import { GoogleGeminiProviderAdapter } from '../ai/geminiProvider';
-import { normalizeGeminiModelId, resolveGeminiRuntimeConfig } from '../ai/modelConfig';
-import { buildOrchestratedPrompt } from '../ai/promptOrchestrator';
-import { validateAiResponse } from '../ai/responseValidator';
+import { CentralAiGatewayService } from '../ai/gatewayService';
+import { resolveGeminiRuntimeConfig } from '../ai/modelConfig';
 import { AiGatewayError, type AiProviderAdapter } from '../ai/types';
+import type { VerifiedTenantPrincipal } from '../db/tenantContext';
 import type {
   CurriculumCompetencyRecord,
   CurriculumSubjectDetail,
@@ -74,12 +73,14 @@ export interface TextbookAiExecutionMetadata {
 export interface TextbookAiAdapter {
   getExecutionMetadata?(): TextbookAiExecutionMetadata;
   generateOutline(input: {
+    actor: VerifiedTenantPrincipal;
     subject: CurriculumSubjectDetail;
     classGrade: string;
     topics: CurriculumTopicRecord[];
     competencies?: CurriculumCompetencyRecord[];
   }): Promise<GeneratedOutlinePayload>;
   generateChapterSections(input: {
+    actor: VerifiedTenantPrincipal;
     textbook: CentralTextbookDetail;
     chapter: CentralTextbookChapterRecord;
     topics?: CurriculumTopicRecord[];
@@ -93,7 +94,6 @@ export function resolveGeminiTextbookConfig(env: NodeJS.ProcessEnv = process.env
   maxRetries: number;
 } {
   const gatewayCfg = resolveGeminiRuntimeConfig(env);
-  const model = normalizeGeminiModelId(env.GEMINI_TEXTBOOK_MODEL || gatewayCfg.defaultModels.standard, 'gemini-4-hydrogen');
   const promptVersion = (env.GEMINI_TEXTBOOK_PROMPT_VERSION || 'v2.nerdc-grounded').trim();
   const parsedTimeout = Number(env.GEMINI_TEXTBOOK_TIMEOUT_MS || gatewayCfg.timeoutMs);
   const timeoutMs = Number.isFinite(parsedTimeout) && parsedTimeout >= 2000 ? parsedTimeout : gatewayCfg.timeoutMs;
@@ -101,7 +101,7 @@ export function resolveGeminiTextbookConfig(env: NodeJS.ProcessEnv = process.env
   const maxRetries = Number.isInteger(parsedRetries) && parsedRetries >= 1 && parsedRetries <= 5
     ? parsedRetries
     : gatewayCfg.maxRetries;
-  return { model, promptVersion, timeoutMs, maxRetries };
+  return { model: gatewayCfg.defaultModels.standard, promptVersion, timeoutMs, maxRetries };
 }
 
 /**
@@ -111,10 +111,12 @@ export function resolveGeminiTextbookConfig(env: NodeJS.ProcessEnv = process.env
  */
 export class GeminiTextbookOperationalAdapter implements TextbookAiAdapter {
   private readonly cfg = resolveGeminiTextbookConfig();
-  private readonly provider: AiProviderAdapter;
+  private readonly gateway: CentralAiGatewayService;
 
-  constructor(provider?: AiProviderAdapter) {
-    this.provider = provider ?? new GoogleGeminiProviderAdapter();
+  constructor(gatewayOrProvider?: CentralAiGatewayService | AiProviderAdapter) {
+    this.gateway = gatewayOrProvider instanceof CentralAiGatewayService
+      ? gatewayOrProvider
+      : new CentralAiGatewayService(gatewayOrProvider ? { provider: gatewayOrProvider } : {});
   }
 
   getExecutionMetadata(): TextbookAiExecutionMetadata {
@@ -125,8 +127,24 @@ export class GeminiTextbookOperationalAdapter implements TextbookAiAdapter {
         responseMimeType: 'application/json',
         timeoutMs: this.cfg.timeoutMs,
         maxRetries: this.cfg.maxRetries,
-        authMode: this.provider.getAuthMode()
+        authMode: this.gateway.getHealth().authMode
       }
+    };
+  }
+
+  private createCaller(actor: VerifiedTenantPrincipal) {
+    if (actor.role !== 'super_admin') {
+      throw new CentralTextbookError('FORBIDDEN', 'Only central editorial administrators may initiate textbook generation.');
+    }
+    return {
+      callerType: 'platform_admin' as const,
+      userId: actor.userId || actor.email || 'platform_editorial_admin',
+      email: actor.email || 'platform_editorial_admin',
+      role: actor.role,
+      tenantId: null,
+      applicationInstanceId: null,
+      verifiedPrincipal: actor,
+      permissions: ['*']
     };
   }
 
@@ -148,12 +166,13 @@ export class GeminiTextbookOperationalAdapter implements TextbookAiAdapter {
   }
 
   async generateOutline(input: {
+    actor: VerifiedTenantPrincipal;
     subject: CurriculumSubjectDetail;
     classGrade: string;
     topics: CurriculumTopicRecord[];
     competencies?: CurriculumCompetencyRecord[];
   }): Promise<GeneratedOutlinePayload> {
-    const policy = resolveCapabilityPolicy('CURRICULUM_SERVER', 'TEXTBOOK_GENERATION', 'textbook_outline');
+    resolveCapabilityPolicy('CURRICULUM_SERVER', 'TEXTBOOK_GENERATION', 'textbook_outline');
     const groundedTopics = input.topics.map(t => ({
       topicId: t.id,
       term: t.term,
@@ -166,7 +185,14 @@ export class GeminiTextbookOperationalAdapter implements TextbookAiAdapter {
     }));
 
     try {
-      const orchestrated = buildOrchestratedPrompt('textbook_outline', {
+      const result = await this.gateway.execute<GeneratedOutlinePayload>({
+        caller: this.createCaller(input.actor),
+        envelope: {
+          applicationId: 'CURRICULUM_SERVER',
+          capability: 'TEXTBOOK_GENERATION',
+          taskType: 'textbook_outline',
+          correlationId: `tb_outline_${input.subject.id}`,
+          payload: {
         subjectName: input.subject.name,
         subjectCode: input.subject.code,
         educationLevelCode: input.subject.educationLevelCode,
@@ -177,33 +203,23 @@ export class GeminiTextbookOperationalAdapter implements TextbookAiAdapter {
         isOfficialVerified: input.subject.version.isOfficialVerified,
         topics: groundedTopics,
         competencies: (input.competencies || []).slice(0, 20).map(c => ({ code: c.competencyCode, title: c.title }))
+          }
+        }
       });
 
-      const result = await this.provider.generate({
-        modelId: this.cfg.model,
-        contents: orchestrated.contents,
-        systemInstruction: orchestrated.systemInstruction,
-        responseMimeType: 'application/json',
-        responseSchema: orchestrated.responseSchema,
-        temperature: policy.temperature,
-        timeoutMs: this.cfg.timeoutMs,
-        maxRetries: this.cfg.maxRetries,
-        correlationId: `tb_outline_${input.subject.id}`,
-        label: 'CURRICULUM_SERVER:TEXTBOOK_GENERATION:textbook_outline'
-      });
-
-      return validateAiResponse('textbook_outline', result.rawText) as GeneratedOutlinePayload;
+      return result.data;
     } catch (err) {
       this.mapGatewayFailure(err);
     }
   }
 
   async generateChapterSections(input: {
+    actor: VerifiedTenantPrincipal;
     textbook: CentralTextbookDetail;
     chapter: CentralTextbookChapterRecord;
     topics?: CurriculumTopicRecord[];
   }): Promise<GeneratedChapterSectionsPayload> {
-    const policy = resolveCapabilityPolicy('CURRICULUM_SERVER', 'TEXTBOOK_GENERATION', 'textbook_chapter');
+    resolveCapabilityPolicy('CURRICULUM_SERVER', 'TEXTBOOK_GENERATION', 'textbook_chapter');
     const groundedTopics = (input.topics || []).map(t => ({
       topicId: t.id,
       title: t.title,
@@ -215,7 +231,14 @@ export class GeminiTextbookOperationalAdapter implements TextbookAiAdapter {
     }));
 
     try {
-      const orchestrated = buildOrchestratedPrompt('textbook_chapter', {
+      const result = await this.gateway.execute<GeneratedChapterSectionsPayload>({
+        caller: this.createCaller(input.actor),
+        envelope: {
+          applicationId: 'CURRICULUM_SERVER',
+          capability: 'TEXTBOOK_GENERATION',
+          taskType: 'textbook_chapter',
+          correlationId: `tb_chapter_${input.textbook.id}_${input.chapter.chapterNumber}`,
+          payload: {
         subjectName: input.textbook.subjectName,
         classGrade: input.textbook.classGradeName,
         curriculumVersionId: input.textbook.curriculumVersionId,
@@ -224,22 +247,11 @@ export class GeminiTextbookOperationalAdapter implements TextbookAiAdapter {
         chapterSummary: input.chapter.summary,
         learningObjectives: input.chapter.learningObjectives,
         topics: groundedTopics
+          }
+        }
       });
 
-      const result = await this.provider.generate({
-        modelId: this.cfg.model,
-        contents: orchestrated.contents,
-        systemInstruction: orchestrated.systemInstruction,
-        responseMimeType: 'application/json',
-        responseSchema: orchestrated.responseSchema,
-        temperature: policy.temperature,
-        timeoutMs: this.cfg.timeoutMs,
-        maxRetries: this.cfg.maxRetries,
-        correlationId: `tb_chap_${input.textbook.id}_${input.chapter.chapterNumber}`,
-        label: `CURRICULUM_SERVER:TEXTBOOK_GENERATION:chapter_${input.chapter.chapterNumber}`
-      });
-
-      return validateAiResponse('textbook_chapter', result.rawText) as GeneratedChapterSectionsPayload;
+      return result.data;
     } catch (err) {
       this.mapGatewayFailure(err);
     }

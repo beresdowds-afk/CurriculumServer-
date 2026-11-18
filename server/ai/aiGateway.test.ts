@@ -11,14 +11,18 @@ import { resolveGeminiAuthMode, resolveGeminiRuntimeConfig } from './modelConfig
 import { AiGatewayTrafficController } from './rateLimiter';
 import { createAiGatewayRouter } from './routes';
 import { AiGatewayError } from './types';
+import type { AiCapabilityId } from '../../packages/shared-types/src/aiGatewayContracts';
 import { InMemoryAiGatewayStore } from './usageMetering';
 import { GeminiTextbookOperationalAdapter } from '../textbooks/geminiTextbookAdapter';
 import { CentralTextbookError } from '../textbooks/centralTextbookRepository';
 import { AiGatewayClient, AiGatewayClientError } from '../../src/services/aiGatewayClient';
+import type { VerifiedTenantPrincipal } from '../db/tenantContext';
 
 const TENANT_A = '11111111-1111-4111-8111-111111111111';
 const TENANT_B = '22222222-2222-4222-8222-222222222222';
 const INSTANCE_A = 'aaaa1111-aaaa-4111-8111-aaaaaaaa1111';
+const INSTANCE_B = 'bbbb2222-bbbb-4222-8222-bbbbbbbbbbbb';
+const INSTANCE_CBT = 'cccc3333-cccc-4333-8333-cccccccccccc';
 
 function makeToken(input: {
   tenantId: string;
@@ -70,11 +74,32 @@ function buildTestHarness(options: {
   entitlementMode?: 'strict' | 'decoupled';
   rateLimitTestController?: AiGatewayTrafficController;
   databaseAuthorizationUnavailable?: boolean;
+  authorizationFailure?: 'SESSION_REVOKED' | 'MEMBERSHIP_INACTIVE';
+  permissions?: string[];
+  disabledCapabilities?: AiCapabilityId[];
 }) {
   const prevSecret = process.env.CONTROL_PLANE_SECRET;
   process.env.CONTROL_PLANE_SECRET = 'test-ai-gateway-control-plane-secret-32chars!';
 
   const store = new InMemoryAiGatewayStore();
+  store.registerApplicationInstance({
+    id: INSTANCE_A,
+    tenantId: TENANT_A,
+    applicationId: 'app_curriculum_flow'
+  });
+  for (const capability of options.disabledCapabilities || []) {
+    store.capabilityEnabled.set(capability, false);
+  }
+  store.registerApplicationInstance({
+    id: INSTANCE_B,
+    tenantId: TENANT_B,
+    applicationId: 'app_curriculum_flow'
+  });
+  store.registerApplicationInstance({
+    id: INSTANCE_CBT,
+    tenantId: TENANT_A,
+    applicationId: 'app_cbt_sovereign'
+  });
   const traffic = options.rateLimitTestController ?? new AiGatewayTrafficController();
   const env = options.env ?? {
     NODE_ENV: 'test',
@@ -109,6 +134,9 @@ function buildTestHarness(options: {
         ...(options.databaseAuthorizationUnavailable ? {} : { authorization: {
           authorize: async (tenant, userId, sessionId) => {
             if (!sessionId) return { ok: false as const, reason: 'SESSION_REVOKED' as const };
+            if (options.authorizationFailure) {
+              return { ok: false as const, reason: options.authorizationFailure };
+            }
             return {
               ok: true as const,
               principal: createAuthorizedPrincipal({
@@ -117,7 +145,7 @@ function buildTestHarness(options: {
                 sessionId,
                 grants: [{
                   roleCode: tenant.role,
-                  permissions: [
+                  permissions: options.permissions || [
                     'ai.gateway.read',
                     'ai.curriculum.generate',
                     'ai.assessments.generate',
@@ -177,6 +205,184 @@ test('AI gateway tenant requests fail closed when database authorization is unav
       });
       assert.equal(response.status, 503);
       assert.equal((await response.json()).code, 'AUTHORIZATION_UNAVAILABLE');
+    });
+  } finally {
+    harness.restoreEnv();
+  }
+});
+
+test('AI gateway rejects unauthenticated, revoked, and suspended-membership requests before provider execution', async () => {
+  let providerCalls = 0;
+  const harness = buildTestHarness({
+    transport: {
+      async generateContent() {
+        providerCalls += 1;
+        return { text: '{"answer":"must not run"}' };
+      }
+    },
+    authorizationFailure: 'SESSION_REVOKED'
+  });
+  try {
+    await withHttpServer(harness.app, async baseUrl => {
+      const unauthenticated = await fetch(`${baseUrl}/api/ai/v1/curriculum/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload: { topicTitle: 'Algebra' } })
+      });
+      assert.equal(unauthenticated.status, 401);
+
+      const token = makeToken({ tenantId: TENANT_A, role: 'staff', email: 'staff@schoola.edu.ng' });
+      const revoked = await fetch(`${baseUrl}/api/ai/v1/curriculum/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          applicationId: 'CURRICULUM_SERVER',
+          capability: 'LESSON_GENERATION',
+          payload: { subjectName: 'Mathematics', classGrade: 'SS 1', topicTitle: 'Algebra' }
+        })
+      });
+      assert.equal(revoked.status, 403);
+      assert.equal((await revoked.json()).code, 'FORBIDDEN');
+      assert.equal(providerCalls, 0);
+    });
+  } finally {
+    harness.restoreEnv();
+  }
+});
+
+test('AI gateway rejects unauthorized and substituted instances, unready capabilities, and browser-selected models', async () => {
+  let providerCalls = 0;
+  const harness = buildTestHarness({
+    transport: {
+      async generateContent() {
+        providerCalls += 1;
+        return { text: JSON.stringify({ title: 'Math', sections: [{ sectionName: 'A', questions: [{ questionText: 'x', correctAnswer: 'x' }] }] }) };
+      }
+    },
+    permissions: ['ai.gateway.read', 'ai.curriculum.generate'],
+    disabledCapabilities: ['EXAMINATION_GENERATION']
+  });
+  try {
+    await withHttpServer(harness.app, async baseUrl => {
+      const token = makeToken({ tenantId: TENANT_A, role: 'staff', email: 'staff@schoola.edu.ng' });
+      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+      const denied = await fetch(`${baseUrl}/api/ai/v1/cbt/generate`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          applicationId: 'CURRICULUM_FLOW',
+          capability: 'CBT_GENERATION',
+          payload: { subjectName: 'Biology', classGrade: 'SS 1' }
+        })
+      });
+      assert.equal(denied.status, 403);
+      assert.equal((await denied.json()).code, 'FORBIDDEN');
+
+      const substituted = await fetch(`${baseUrl}/api/ai/v1/assessments/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          applicationId: 'SCHOOL_INSTANCE',
+          capability: 'SCHOOL_EXAMINATION_GENERATION',
+          applicationInstanceId: INSTANCE_B,
+          payload: { subjectName: 'Mathematics', classGrade: 'SS 1' }
+        })
+      });
+      assert.equal(substituted.status, 403);
+
+      const disabled = await fetch(`${baseUrl}/api/ai/v1/assessments/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          applicationId: 'CURRICULUM_FLOW',
+          capability: 'EXAMINATION_GENERATION',
+          payload: { subjectName: 'Mathematics', classGrade: 'SS 1' }
+        })
+      });
+      assert.equal(disabled.status, 403);
+      assert.equal((await disabled.json()).code, 'UNSUPPORTED_CAPABILITY');
+
+      const override = await fetch(`${baseUrl}/api/ai/v1/curriculum/generate`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          applicationId: 'CURRICULUM_SERVER',
+          capability: 'LESSON_GENERATION',
+          modelOverride: 'gemini-4-hydrogen',
+          payload: { subjectName: 'Mathematics', classGrade: 'SS 1', topicTitle: 'Algebra' }
+        })
+      });
+      assert.equal(override.status, 400);
+      assert.equal(providerCalls, 0);
+    });
+  } finally {
+    harness.restoreEnv();
+  }
+});
+
+test('AI gateway idempotency prevents duplicate provider calls and output limits reject oversized responses', async () => {
+  let providerCalls = 0;
+  const harness = buildTestHarness({
+    env: {
+      NODE_ENV: 'test',
+      GOOGLE_CLOUD_PROJECT: 'curious-subject-477114-e4',
+      GOOGLE_CLOUD_LOCATION: 'europe-west1',
+      AI_GATEWAY_MAX_RESPONSE_CHARS: '1000'
+    },
+    transport: {
+      async generateContent(_cfg, params) {
+        providerCalls += 1;
+        return {
+          text: providerCalls === 1
+            ? JSON.stringify({
+                subject: 'Mathematics',
+                topic: 'Algebra',
+                behavioralObjectives: ['Solve linear equations'],
+                presentationSteps: [{}]
+              })
+            : 'a'.repeat(1001)
+        };
+      }
+    }
+  });
+  try {
+    await withHttpServer(harness.app, async baseUrl => {
+      const token = makeToken({ tenantId: TENANT_A, role: 'staff', email: 'staff@schoola.edu.ng' });
+      const duplicateBody = JSON.stringify({
+        applicationId: 'CURRICULUM_SERVER',
+        capability: 'LESSON_GENERATION',
+        payload: { subjectName: 'Mathematics', classGrade: 'SS 1', topicTitle: 'Algebra' }
+      });
+      const sendDuplicate = () => fetch(`${baseUrl}/api/ai/v1/curriculum/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          'Idempotency-Key': 'lesson-request-0001'
+        },
+        body: duplicateBody
+      });
+      assert.equal((await sendDuplicate()).status, 200);
+      const duplicate = await sendDuplicate();
+      assert.equal(duplicate.status, 409);
+      assert.equal((await duplicate.json()).code, 'IDEMPOTENCY_CONFLICT');
+      assert.equal(providerCalls, 1);
+      assert.equal(harness.store.requests.size, 1);
+
+      const tooLarge = await fetch(`${baseUrl}/api/ai/v1/curriculum/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          applicationId: 'CURRICULUM_SERVER',
+          capability: 'CURRICULUM_CONTENT_GENERATION',
+          taskType: 'curriculum_tutor',
+          payload: { question: 'Explain algebra briefly.' }
+        })
+      });
+      assert.equal(tooLarge.status, 502);
+      assert.equal((await tooLarge.json()).code, 'INVALID_AI_RESPONSE');
+      assert.equal(providerCalls, 2);
+      assert.equal(harness.store.audits.some(audit => audit.decision === 'allowed'), true);
     });
   } finally {
     harness.restoreEnv();
@@ -299,8 +505,23 @@ test('2. Curriculum Server central textbook outline/chapter generation via Gatew
     () => ({ NODE_ENV: 'test', GOOGLE_CLOUD_PROJECT: 'curious-subject-477114-e4', GOOGLE_CLOUD_LOCATION: 'europe-west1' })
   );
 
-  const adapter = new GeminiTextbookOperationalAdapter(mockProvider);
+  const env = {
+    NODE_ENV: 'test',
+    GOOGLE_CLOUD_PROJECT: 'curious-subject-477114-e4',
+    GOOGLE_CLOUD_LOCATION: 'europe-west1'
+  };
+  const adapter = new GeminiTextbookOperationalAdapter(new CentralAiGatewayService({
+    provider: mockProvider,
+    getEnv: () => env
+  }));
+  const actor = {
+    tenantId: 'platform-control-plane',
+    role: 'super_admin',
+    email: 'admin@curriculum.ng',
+    userId: 'platform-editorial-admin'
+  } as VerifiedTenantPrincipal;
   const outline = await adapter.generateOutline({
+    actor,
     subject: {
       id: 'sub-phy',
       name: 'Physics',
@@ -326,6 +547,7 @@ test('2. Curriculum Server central textbook outline/chapter generation via Gatew
   assert.equal(outline.chapters.length, 1);
 
   const chapter = await adapter.generateChapterSections({
+    actor,
     textbook: { id: 'tb-1', subjectName: 'Physics', classGradeName: 'SS 1', curriculumVersionId: 'ver-1' } as any,
     chapter: { chapterNumber: 1, title: 'Motion', summary: 'Motion', learningObjectives: ['Define velocity'] } as any,
     topics: []
@@ -342,6 +564,7 @@ test('2. Curriculum Server central textbook outline/chapter generation via Gatew
   await assert.rejects(
     () =>
       unconfiguredAdapter.generateOutline({
+        actor,
         subject: { id: 's1', name: 'Math', code: 'MTH', educationLevelCode: 'jss', version: { id: 'v1', title: 'v1', versionTag: '1', isOfficialVerified: false } } as any,
         classGrade: 'JSS 1',
         topics: []
@@ -491,7 +714,7 @@ test('3, 4, 5, 6 & 7. Curriculum Flow & School Instance exam, CBT, and Question 
         body: JSON.stringify({
           applicationId: 'SCHOOL_INSTANCE',
           capability: 'SCHOOL_CBT_GENERATION',
-          applicationInstanceId: INSTANCE_A,
+          applicationInstanceId: INSTANCE_CBT,
           payload: { subjectName: 'Biology', classGrade: 'SS 2' }
         })
       });
@@ -903,6 +1126,35 @@ test('15 & 16b. Rate limit (429 + Retry-After), strict revoked/quota entitlement
       });
       assert.equal(quotaRes.status, 429);
       assert.equal((await quotaRes.json()).code, 'QUOTA_EXCEEDED');
+
+      harness.store.setEntitlement({
+        id: 'ent-1',
+        tenantId: TENANT_A,
+        applicationInstanceId: INSTANCE_A,
+        applicationId: 'SCHOOL_INSTANCE',
+        status: 'active',
+        allowedCapabilities: ['SCHOOL_ASSESSMENT_GENERATION'],
+        dailyRequestLimit: 10,
+        monthlyRequestLimit: 2,
+        monthlyTokenLimit: 100000,
+        maxConcurrentRequests: 5,
+        expiresAt: new Date(Date.now() + 86400_000).toISOString()
+      });
+      const monthlyQuotaRes = await fetch(`${baseUrl}/api/ai/v1/assessments/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          applicationId: 'SCHOOL_INSTANCE',
+          capability: 'SCHOOL_ASSESSMENT_GENERATION',
+          taskType: 'taught_assessment',
+          payload: { subjectName: 'Math', classGrade: 'SS 1', completedTopics: ['Sets'] }
+        })
+      });
+      assert.equal(monthlyQuotaRes.status, 429);
+      assert.equal((await monthlyQuotaRes.json()).code, 'QUOTA_EXCEEDED');
+      assert.ok(harness.store.audits.some(audit =>
+        audit.decision === 'quota_exceeded' && audit.details?.monthlyRequestLimit === 2
+      ));
 
       // Direct traffic controller rate limit check (429 + Retry-After header)
       for (let i = 0; i < 60; i += 1) {

@@ -9,7 +9,7 @@ import type {
 import type { DatabasePool } from '../db/postgres';
 import { withControlPlaneTransaction, withTenantTransaction, type VerifiedTenantPrincipal } from '../db/tenantContext';
 import { TamperEvidentAuditService } from '../../src/services/tamperEvidentAuditService';
-import type { AiUsageAggregateRecord, TenantAiEntitlementRecord } from './types';
+import { AiGatewayError, type AiUsageAggregateRecord, type TenantAiEntitlementRecord } from './types';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -65,6 +65,16 @@ export interface AiAuditRecordInput {
 }
 
 export interface AiGatewayPersistenceStore {
+  isCapabilityEnabled(
+    principal: VerifiedTenantPrincipal,
+    capability: AiCapabilityId
+  ): Promise<boolean>;
+  resolveApplicationInstance(
+    principal: VerifiedTenantPrincipal,
+    tenantId: string,
+    supportedApplicationIds: readonly string[],
+    requestedInstanceId?: string
+  ): Promise<string>;
   getTenantEntitlement(
     principal: VerifiedTenantPrincipal,
     tenantId: string,
@@ -72,6 +82,7 @@ export interface AiGatewayPersistenceStore {
     applicationInstanceId?: string | null
   ): Promise<TenantAiEntitlementRecord | undefined>;
   countTenantRequestsToday(principal: VerifiedTenantPrincipal, tenantId: string): Promise<number>;
+  countTenantRequestsThisMonth(principal: VerifiedTenantPrincipal, tenantId: string): Promise<number>;
   recordRequestStart(principal: VerifiedTenantPrincipal, input: AiRequestStartInput): Promise<void>;
   recordRequestFinish(input: AiRequestFinishInput): Promise<void>;
   recordAudit(input: AiAuditRecordInput): Promise<void>;
@@ -97,6 +108,60 @@ function runWithPrincipal<T>(
  */
 export class PostgresAiGatewayStore implements AiGatewayPersistenceStore {
   constructor(private readonly pool: DatabasePool) {}
+
+  async isCapabilityEnabled(
+    principal: VerifiedTenantPrincipal,
+    capability: AiCapabilityId
+  ): Promise<boolean> {
+    return runWithPrincipal(this.pool, principal, async client => {
+      const { rows } = await client.query(
+        `SELECT is_enabled
+         FROM production.ai_gateway_capabilities
+         WHERE capability_id = $1`,
+        [capability]
+      );
+      return rows.length === 1 && rows[0].is_enabled === true;
+    });
+  }
+
+  async resolveApplicationInstance(
+    principal: VerifiedTenantPrincipal,
+    tenantId: string,
+    supportedApplicationIds: readonly string[],
+    requestedInstanceId?: string
+  ): Promise<string> {
+    if (!supportedApplicationIds.length) {
+      throw new AiGatewayError('FORBIDDEN', 'This AI capability is not available to school instances.', 403);
+    }
+    if (requestedInstanceId && !UUID.test(requestedInstanceId)) {
+      throw new AiGatewayError('FORBIDDEN', 'The requested application instance is invalid.', 403);
+    }
+
+    return runWithPrincipal(this.pool, principal, async client => {
+      const { rows } = await client.query(
+        `SELECT id
+         FROM production.application_instances
+         WHERE tenant_id = $1
+           AND status = 'active'
+           AND application_id = ANY($2::text[])
+           AND ($3::uuid IS NULL OR id = $3::uuid)
+         ORDER BY created_at DESC
+         LIMIT 2`,
+        [tenantId, supportedApplicationIds, requestedInstanceId || null]
+      );
+      if (rows.length === 0) {
+        throw new AiGatewayError('FORBIDDEN', 'No active authorized application instance was found.', 403);
+      }
+      if (rows.length > 1) {
+        throw new AiGatewayError(
+          'VALIDATION_ERROR',
+          'An application-instance ID is required when multiple eligible instances exist.',
+          400
+        );
+      }
+      return rows[0].id;
+    });
+  }
 
   async getTenantEntitlement(
     principal: VerifiedTenantPrincipal,
@@ -149,6 +214,19 @@ export class PostgresAiGatewayStore implements AiGatewayPersistenceStore {
          WHERE tenant_id = $1
            AND created_at >= date_trunc('day', now())
            AND status IN ('executing', 'completed')`,
+        [tenantId]
+      );
+      return Number(rows[0]?.cnt ?? 0);
+    });
+  }
+
+  async countTenantRequestsThisMonth(principal: VerifiedTenantPrincipal, tenantId: string): Promise<number> {
+    return runWithPrincipal(this.pool, principal, async client => {
+      const { rows } = await client.query(
+        `SELECT count(*)::int AS cnt
+         FROM production.ai_gateway_requests
+         WHERE tenant_id = $1
+           AND created_at >= date_trunc('month', now())`,
         [tenantId]
       );
       return Number(rows[0]?.cnt ?? 0);
@@ -353,6 +431,8 @@ export class PostgresAiGatewayStore implements AiGatewayPersistenceStore {
  */
 export class InMemoryAiGatewayStore implements AiGatewayPersistenceStore {
   readonly entitlements = new Map<string, TenantAiEntitlementRecord>();
+  readonly applicationInstances = new Map<string, { tenantId: string; applicationId: string; status: string }>();
+  readonly capabilityEnabled = new Map<AiCapabilityId, boolean>();
   readonly requests = new Map<string, AiRequestStartInput & {
     status: string;
     attemptCount: number;
@@ -362,16 +442,71 @@ export class InMemoryAiGatewayStore implements AiGatewayPersistenceStore {
   }>();
   readonly audits: Array<AiAuditRecordInput & { id: string; createdAt: string }> = [];
 
+  async isCapabilityEnabled(
+    _principal: VerifiedTenantPrincipal,
+    capability: AiCapabilityId
+  ): Promise<boolean> {
+    return this.capabilityEnabled.get(capability) ?? true;
+  }
+
+  registerApplicationInstance(input: {
+    id: string;
+    tenantId: string;
+    applicationId: string;
+    status?: string;
+  }): void {
+    this.applicationInstances.set(input.id, {
+      tenantId: input.tenantId,
+      applicationId: input.applicationId,
+      status: input.status || 'active'
+    });
+  }
+
+  async resolveApplicationInstance(
+    _principal: VerifiedTenantPrincipal,
+    tenantId: string,
+    supportedApplicationIds: readonly string[],
+    requestedInstanceId?: string
+  ): Promise<string> {
+    const matches = [...this.applicationInstances.entries()]
+      .filter(([id, instance]) =>
+        instance.tenantId === tenantId &&
+        instance.status === 'active' &&
+        supportedApplicationIds.includes(instance.applicationId) &&
+        (!requestedInstanceId || id === requestedInstanceId)
+      );
+    if (matches.length === 0) {
+      throw new AiGatewayError('FORBIDDEN', 'No active authorized application instance was found.', 403);
+    }
+    if (matches.length > 1) {
+      throw new AiGatewayError(
+        'VALIDATION_ERROR',
+        'An application-instance ID is required when multiple eligible instances exist.',
+        400
+      );
+    }
+    return matches[0][0];
+  }
+
   setEntitlement(entitlement: TenantAiEntitlementRecord): void {
-    this.entitlements.set(`${entitlement.tenantId}:${entitlement.applicationId}`, entitlement);
+    this.entitlements.set(
+      `${entitlement.tenantId}:${entitlement.applicationId}:${entitlement.applicationInstanceId}`,
+      entitlement
+    );
   }
 
   async getTenantEntitlement(
     _principal: VerifiedTenantPrincipal,
     tenantId: string,
-    applicationId: AiApplicationId
+    applicationId: AiApplicationId,
+    applicationInstanceId?: string | null
   ): Promise<TenantAiEntitlementRecord | undefined> {
-    return this.entitlements.get(`${tenantId}:${applicationId}`);
+    return this.entitlements.get(`${tenantId}:${applicationId}:${applicationInstanceId || ''}`) ||
+      [...this.entitlements.values()].find(entitlement =>
+        entitlement.tenantId === tenantId &&
+        entitlement.applicationId === applicationId &&
+        (!applicationInstanceId || entitlement.applicationInstanceId === applicationInstanceId)
+      );
   }
 
   async countTenantRequestsToday(_principal: VerifiedTenantPrincipal, tenantId: string): Promise<number> {
@@ -390,7 +525,26 @@ export class InMemoryAiGatewayStore implements AiGatewayPersistenceStore {
     return count;
   }
 
+  async countTenantRequestsThisMonth(_principal: VerifiedTenantPrincipal, tenantId: string): Promise<number> {
+    const now = new Date();
+    const startOfMonth = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+    let count = 0;
+    for (const req of this.requests.values()) {
+      if (req.tenantId === tenantId && new Date(req.createdAt).getTime() >= startOfMonth) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   async recordRequestStart(_principal: VerifiedTenantPrincipal, input: AiRequestStartInput): Promise<void> {
+    if (input.idempotencyKey && [...this.requests.values()].some(request =>
+      request.applicationId === input.applicationId &&
+      request.capability === input.capability &&
+      request.idempotencyKey === input.idempotencyKey
+    )) {
+      throw Object.assign(new Error('Duplicate AI request idempotency key.'), { code: '23505' });
+    }
     this.requests.set(input.id, {
       ...input,
       status: 'executing',
