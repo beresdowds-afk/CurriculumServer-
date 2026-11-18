@@ -187,7 +187,7 @@ export const PastQuestionsProvenanceTab: React.FC<PastQuestionsProvenanceTabProp
     {
       id: 'prov-q5',
       sourceCategory: 'ai_assisted_practice',
-      aiModelIdentifier: 'gemini-3.7-flash (Server-Side)',
+      aiModelIdentifier: 'gemini-4-hydrogen (Central AI Gateway)',
       copyrightComplianceStatus: 'independent_authoring',
       subject: 'Physics',
       classGrade: 'SS 1',

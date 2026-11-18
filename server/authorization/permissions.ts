@@ -35,7 +35,12 @@ export const PERMISSIONS = {
   assessmentsRead: 'assessments.read',
   assessmentsManage: 'assessments.manage',
   sharedCurriculumConsume: 'shared.curriculum.consume',
-  sharedTextbooksConsume: 'shared.textbooks.consume'
+  sharedTextbooksConsume: 'shared.textbooks.consume',
+  aiGatewayRead: 'ai.gateway.read',
+  aiCurriculumGenerate: 'ai.curriculum.generate',
+  aiAssessmentsGenerate: 'ai.assessments.generate',
+  aiCbtGenerate: 'ai.cbt.generate',
+  aiTutorUse: 'ai.tutor.use'
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

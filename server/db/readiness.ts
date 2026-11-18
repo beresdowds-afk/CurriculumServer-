@@ -99,7 +99,12 @@ const REQUIRED_TABLES = [
   'central_textbooks.textbook_illustrations',
   'central_textbooks.textbook_glossaries',
   'central_textbooks.textbook_validation_reports',
-  'central_textbooks.textbook_revisions'
+  'central_textbooks.textbook_revisions',
+  'production.ai_gateway_capabilities',
+  'production.tenant_ai_entitlements',
+  'production.ai_gateway_requests',
+  'production.ai_gateway_usage_metrics',
+  'production.ai_gateway_audit_events'
 ];
 
 export interface CapabilityReadiness {

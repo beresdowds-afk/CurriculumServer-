@@ -3,6 +3,7 @@ import {
   UserProfile, 
   UserRole 
 } from '../types';
+import { aiGatewayClient } from '../services/aiGatewayClient';
 import { 
   Sparkles, 
   Send, 
@@ -108,23 +109,21 @@ export const CurriculumAdvisorModal: React.FC<CurriculumAdvisorModalProps> = ({
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/ai/curriculum-tutor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const result = await aiGatewayClient.generateCurriculum<{ answer?: string; response?: string }>({
+        capability: 'CURRICULUM_CONTENT_GENERATION',
+        taskType: 'curriculum_tutor',
+        payload: {
           role: currentUser.role,
           userQuery: query,
-          context: `User Name: ${currentUser.name}, School: Federal Government College Lagos, Current Term: Term 1 (2026/2027)`
-        })
+          context: `User Name: ${currentUser.name}, Current Term: Term 1 (2026/2027)`
+        }
       });
-
-      if (!response.ok) throw new Error('Advisor API call failed');
-      const data = await response.json();
+      const data = result.data || {};
 
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         sender: 'ai',
-        text: data.response || 'I am here to guide your curriculum implementation.',
+        text: data.response || data.answer || 'I am here to guide your curriculum implementation.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
 

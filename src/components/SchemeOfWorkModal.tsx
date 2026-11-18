@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SubjectCurriculum, ClassGrade, Term, SchemeOfWorkItem } from '../types';
 import { NERDC_SUBJECTS_DATABASE } from '../data/nerdcDatabase';
+import { aiGatewayClient } from '../services/aiGatewayClient';
 import { 
   X, 
   Layers, 
@@ -55,23 +56,22 @@ export const SchemeOfWorkModal: React.FC<SchemeOfWorkModalProps> = ({
     setError(null);
 
     try {
-      const res = await fetch('/api/ai/scheme-of-work', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const result = await aiGatewayClient.generateCurriculum<{
+        subject: string;
+        classGrade: string;
+        term: string;
+        weeks: SchemeOfWorkItem[];
+      }>({
+        capability: 'LESSON_GENERATION',
+        taskType: 'scheme_of_work',
+        payload: {
           subjectName: activeSubject.name,
           classGrade,
-          term,
-        }),
+          term
+        }
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to generate scheme of work');
-      }
-
-      const data = await res.json();
-      setSchemeData(data);
+      setSchemeData(result.data);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'An error occurred while generating the scheme of work.');

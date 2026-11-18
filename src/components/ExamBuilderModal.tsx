@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { SubjectCurriculum, CurriculumTopic, ExamQuestion, ClassGrade } from '../types';
 import { NERDC_SUBJECTS_DATABASE } from '../data/nerdcDatabase';
+import { aiGatewayClient } from '../services/aiGatewayClient';
 import { 
   X, 
   Sparkles, 
@@ -80,26 +81,21 @@ export const ExamBuilderModal: React.FC<ExamBuilderModalProps> = ({
     setShowAnswers(false);
 
     try {
-      const res = await fetch('/api/ai/exam-builder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const result = await aiGatewayClient.generateAssessment<{ questions?: ExamQuestion[] }>({
+        applicationId: 'CURRICULUM_FLOW',
+        capability: 'EXAMINATION_GENERATION',
+        taskType: 'exam_builder',
+        payload: {
           subjectName: activeSubject.name,
           classGrade,
           topicTitle,
           targetExam,
           count: questionCount,
-          questionType,
-        }),
+          questionType
+        }
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to generate questions');
-      }
-
-      const data = await res.json();
-      setQuestions(data.questions || []);
+      setQuestions(result.data?.questions || []);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'An error occurred while generating questions.');

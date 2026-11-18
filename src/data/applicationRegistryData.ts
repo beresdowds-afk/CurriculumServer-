@@ -313,10 +313,10 @@ export const INITIAL_REGISTERED_FEATURES: RegisteredFeature[] = [
     applicationAssociation: 'app_curriculum_flow',
     dependencies: [],
     requiredPermissions: ['use_ai_tools'],
-    apiDependencies: ['/api/curriculum/subjects', 'Gemini AI API'],
-    databaseRequirements: ['ai_prompts_audit_table'],
+    apiDependencies: ['/api/curriculum/subjects', '/api/ai/v1/curriculum/generate', '/api/ai/v1/assessments/generate'],
+    databaseRequirements: ['ai_gateway_requests', 'ai_gateway_usage_metrics'],
     storageRequirements: [],
-    configOptions: { model: 'gemini-2.5-flash', temperature: 0.7 },
+    configOptions: { model: 'gemini-4-hydrogen', temperature: 0.4, gateway: 'unified-backend' },
     version: '3.0.0',
     availabilityStatus: 'available',
     honestyStatus: 'fully_implemented'

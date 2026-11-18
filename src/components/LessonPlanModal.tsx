@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { SubjectCurriculum, CurriculumTopic, LessonPlanResponse, ClassGrade, Term } from '../types';
 import { NERDC_SUBJECTS_DATABASE } from '../data/nerdcDatabase';
+import { aiGatewayClient } from '../services/aiGatewayClient';
 import { 
   X, 
   Sparkles, 
@@ -97,27 +98,21 @@ export const LessonPlanModal: React.FC<LessonPlanModalProps> = ({
     setError(null);
 
     try {
-      const res = await fetch('/api/ai/lesson-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const result = await aiGatewayClient.generateCurriculum<LessonPlanResponse>({
+        capability: 'LESSON_GENERATION',
+        taskType: 'lesson_note',
+        payload: {
           subjectName: activeSubject.name,
           classGrade,
           topicTitle,
           subTopic,
           durationMinutes: duration,
           term,
-          contextNotes,
-        }),
+          contextNotes
+        }
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to generate lesson plan');
-      }
-
-      const data: LessonPlanResponse = await res.json();
-      setLessonPlan(data);
+      setLessonPlan(result.data);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'An error occurred while generating the lesson plan.');

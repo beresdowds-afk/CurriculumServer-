@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserProfile, QuestionBankItem } from '../types';
 import { MOCK_QUESTION_BANK, MOCK_USERS } from '../data/curriculumFlowData';
+import { aiGatewayClient } from '../services/aiGatewayClient';
 import { 
   Layers, 
   Sparkles, 
@@ -78,10 +79,11 @@ export const QuestionBankTab: React.FC<QuestionBankTabProps> = ({
     const qType = item.type || item.questionType;
 
     try {
-      const response = await fetch('/api/ai/variable-questions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const result = await aiGatewayClient.generateAssessment<{ variants?: any[]; variations?: any[] }>({
+        applicationId: 'CURRICULUM_FLOW',
+        capability: 'QUESTION_BANK_GENERATION',
+        taskType: 'variable_questions',
+        payload: {
           subjectName: subj,
           classGrade: item.classGrade,
           topicTitle: topic,
@@ -89,15 +91,11 @@ export const QuestionBankTab: React.FC<QuestionBankTabProps> = ({
           baseQuestionPrompt: promptText,
           questionType: qType,
           variantCount: 3
-        })
+        }
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to generate question variations');
-      }
-
-      const data = await response.json();
-      setGeneratedVariants(data.variations || []);
+      const data = result.data;
+      setGeneratedVariants(data?.variations || data?.variants || []);
     } catch (err) {
       console.error('Variable question error:', err);
     } finally {

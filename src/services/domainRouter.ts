@@ -101,7 +101,67 @@ export function detectActiveApplication(): ActiveApplicationType {
     'universal-onboarding'
   ];
 
-  export function setActiveApplication(
+  const flowRoutes = [
+    'flow',
+    'command_center',
+    'curriculum_explorer',
+    'question_bank',
+    'secure_examination',
+    'taught_assessment',
+    'remedial_hub',
+    'academic_records',
+    'student_dashboard',
+    'teacher_dashboard',
+    'parent_dashboard',
+    'school-erp'
+  ];
+
+  for (const route of serverRoutes) {
+    if (hash.includes(route)) return 'curriculum_server';
+  }
+
+  for (const route of flowRoutes) {
+    if (hash.includes(route)) return 'curriculum_flow';
+  }
+
+  // 5. Unknown custom domains remain instance homepages.
+  const isDevelopmentHost =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname.endsWith('.run.app') ||
+    hostname.includes('webcontainer');
+
+  if (!isDevelopmentHost) {
+    return 'instance_homepage';
+  }
+
+  // 6. Local developer preference.
+  const savedApp = localStorage.getItem('cs_active_app');
+
+  if (
+    savedApp === 'curriculum_server' ||
+    savedApp === 'curriculum_flow' ||
+    savedApp === 'instance_homepage'
+  ) {
+    return savedApp as ActiveApplicationType;
+  }
+
+  return 'curriculum_flow';
+}
+
+export function getResolvedInstanceParam(): string {
+  if (typeof window === 'undefined') return 'tenant-apex-01';
+  const searchParams = new URLSearchParams(window.location.search);
+  const instanceParam = searchParams.get('instance') || searchParams.get('domain');
+  if (instanceParam) return instanceParam;
+
+  const savedInstance = localStorage.getItem('cs_active_instance');
+  if (savedInstance) return savedInstance;
+
+  return 'tenant-apex-01';
+}
+
+export function setActiveApplication(
   app: ActiveApplicationType,
   instanceId?: string
 ): void {
@@ -158,67 +218,4 @@ export function detectActiveApplication(): ActiveApplicationType {
       detail: { app, instanceId }
     })
   );
-}
-
-  for (const route of serverRoutes) {
-    if (hash.includes(route)) return 'curriculum_server';
-  }
-
-  for (const route of flowRoutes) {
-    if (hash.includes(route)) return 'curriculum_flow';
-  }
-
-  // 5. Unknown custom domains remain instance homepages.
-  const isDevelopmentHost =
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname.endsWith('.run.app') ||
-    hostname.includes('webcontainer');
-
-  if (!isDevelopmentHost) {
-    return 'instance_homepage';
-  }
-
-  // 6. Local developer preference.
-  const savedApp = localStorage.getItem('cs_active_app');
-
-  if (
-    savedApp === 'curriculum_server' ||
-    savedApp === 'curriculum_flow' ||
-    savedApp === 'instance_homepage'
-  ) {
-    return savedApp as ActiveApplicationType;
-  }
-
-  return 'curriculum_flow';
-}
-
-export function getResolvedInstanceParam(): string {
-  if (typeof window === 'undefined') return 'tenant-apex-01';
-  const searchParams = new URLSearchParams(window.location.search);
-  const instanceParam = searchParams.get('instance') || searchParams.get('domain');
-  if (instanceParam) return instanceParam;
-
-  const savedInstance = localStorage.getItem('cs_active_instance');
-  if (savedInstance) return savedInstance;
-
-  return 'tenant-apex-01';
-}
-
-export function setActiveApplication(app: ActiveApplicationType, instanceId?: string): void {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('cs_active_app', app);
-    if (instanceId) {
-      localStorage.setItem('cs_active_instance', instanceId);
-    }
-    const url = new URL(window.location.href);
-    if (app === 'curriculum_server') url.searchParams.set('app', 'server');
-    else if (app === 'curriculum_flow') url.searchParams.set('app', 'flow');
-    else if (app === 'instance_homepage') {
-      url.searchParams.set('app', 'instance');
-      if (instanceId) url.searchParams.set('instance', instanceId);
-    }
-    window.history.pushState({}, '', url.toString());
-    window.dispatchEvent(new CustomEvent('cs_application_switch', { detail: { app, instanceId } }));
-  }
 }

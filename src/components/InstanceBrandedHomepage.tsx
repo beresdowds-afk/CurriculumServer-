@@ -7,6 +7,7 @@ import {
   InstitutionPresetType,
   HomepageSectionType
 } from '../types/homepageEngine';
+import { aiGatewayClient } from '../services/aiGatewayClient';
 import { 
   School, 
   GraduationCap, 
@@ -107,6 +108,7 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
   const [activeFeatureTest, setActiveFeatureTest] = useState<'none' | 'exam_gen' | 'lesson_approval' | 'vault_storage' | 'attendance' | 'fees_payment'>('none');
   const [testSubject, setTestSubject] = useState('General Mathematics');
   const [generatedQuestions, setGeneratedQuestions] = useState<any[] | null>(null);
+  const [questionGenError, setQuestionGenError] = useState<string | null>(null);
   const [isTestGenerating, setIsTestGenerating] = useState(false);
   const [lessonNoteStatus, setLessonNoteStatus] = useState<'pending' | 'approved' | 'revision'>('pending');
   const [vaultBackups, setVaultBackups] = useState([
@@ -1382,34 +1384,23 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
               <button
                 onClick={async () => {
                   setIsTestGenerating(true);
+                  setQuestionGenError(null);
+                  setGeneratedQuestions(null);
                   try {
-                    const res = await fetch('/api/v1/question-bank/generate-objective', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ subjectName: testSubject, classGrade: 'SS 2', count: 2 })
-                    });
-                    const data = await res.json();
-                    if (data.success && data.questions) {
-                      setGeneratedQuestions(data.questions);
-                    } else {
-                      setGeneratedQuestions([
-                        {
-                          stem: `Which of the following is the primary NERDC curriculum objective for ${testSubject}?`,
-                          options: { A: 'Mastery of fundamental principles', B: 'Rote memorization only', C: 'Tax evasion procedures', D: 'Manual typewriter operation' },
-                          correctOption: 'A',
-                          pedagogicalExplanation: 'Curriculum objective focuses on conceptual mastery and application.'
-                        }
-                      ]);
-                    }
-                  } catch {
-                    setGeneratedQuestions([
-                      {
-                        stem: `Sample objective question for ${testSubject} under NERDC 2026 standards.`,
-                        options: { A: 'Option Alpha', B: 'Option Beta', C: 'Option Gamma', D: 'Option Delta' },
-                        correctOption: 'A',
-                        pedagogicalExplanation: 'Verified correct option with pedagogical reasoning.'
+                    const result = await aiGatewayClient.generateAssessment<{ questions?: any[] }>({
+                      applicationId: 'SCHOOL_INSTANCE',
+                      capability: 'SCHOOL_QUESTION_BANK_GENERATION',
+                      taskType: 'question_bank_items',
+                      payload: {
+                        subjectName: testSubject,
+                        classGrade: 'SS 2',
+                        count: 2,
+                        questionType: 'objective'
                       }
-                    ]);
+                    });
+                    setGeneratedQuestions(result.data?.questions || []);
+                  } catch (err: any) {
+                    setQuestionGenError(err?.message || 'AI Question Bank generation failed. Please sign in and verify gateway access.');
                   } finally {
                     setIsTestGenerating(false);
                   }
@@ -1420,22 +1411,34 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
                 {isTestGenerating ? <span>Generating AI Questions...</span> : <span>Generate AI Question Paper Now</span>}
               </button>
 
+              {questionGenError && (
+                <div className="p-3 bg-red-950/60 border border-red-800 rounded-xl text-red-300 text-xs">
+                  {questionGenError}
+                </div>
+              )}
+
               {generatedQuestions && (
                 <div className="space-y-3 pt-2">
-                  <span className="font-bold text-emerald-400 block">Generated Questions ({generatedQuestions.length}):</span>
-                  {generatedQuestions.map((q, i) => (
-                    <div key={i} className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
-                      <p className="font-semibold text-white">Q{i+1}: {q.stem}</p>
-                      <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-300">
-                        {Object.entries(q.options || {}).map(([k, v]) => (
-                          <div key={k} className={`p-1.5 rounded-lg border ${k === q.correctOption ? 'bg-emerald-950 border-emerald-600 text-emerald-300 font-bold' : 'bg-slate-900 border-slate-800'}`}>
-                            {k}: {String(v)}
-                          </div>
-                        ))}
+                  <span className="font-bold text-emerald-400 block">Generated Questions ({generatedQuestions.length} · Pending Teacher Review):</span>
+                  {generatedQuestions.map((q, i) => {
+                    const optionEntries = Array.isArray(q.options)
+                      ? q.options.map((o: any) => [o.key, o.text])
+                      : Object.entries(q.options || {});
+                    const correctKey = q.correctAnswer || q.correctOption;
+                    return (
+                      <div key={i} className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+                        <p className="font-semibold text-white">Q{i+1}: {q.stem}</p>
+                        <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-300">
+                          {optionEntries.map(([k, v]: [string, any]) => (
+                            <div key={k} className={`p-1.5 rounded-lg border ${k === correctKey ? 'bg-emerald-950 border-emerald-600 text-emerald-300 font-bold' : 'bg-slate-900 border-slate-800'}`}>
+                              {k}: {String(v)}
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-slate-400 italic">Explanation: {q.explanation || q.pedagogicalExplanation}</p>
                       </div>
-                      <p className="text-[10px] text-slate-400 italic">Explanation: {q.pedagogicalExplanation}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -23,3 +23,4 @@ export * from './schoolAdministrationTemplate';
 export * from '../../../src/types/storageAndDatabase';
 export * from '../../../src/types/applicationRegistry';
 export * from '../../../src/types/iiapEngine';
+export * from './aiGatewayContracts';

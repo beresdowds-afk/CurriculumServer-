@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SubjectCurriculum } from '../types';
 import { NERDC_SUBJECTS_DATABASE } from '../data/nerdcDatabase';
+import { aiGatewayClient } from '../services/aiGatewayClient';
 import { 
   X, 
   Sparkles, 
@@ -70,25 +71,21 @@ How can I assist your teaching, lesson preparation, or curriculum planning today
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/ai/curriculum-tutor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const result = await aiGatewayClient.generateCurriculum<{ answer?: string; response?: string }>({
+        capability: 'CURRICULUM_CONTENT_GENERATION',
+        taskType: 'curriculum_tutor',
+        payload: {
           question: query,
-          subjectContext: selectedSubject,
-        }),
+          subjectContext: selectedSubject
+        }
       });
 
-      if (!res.ok) {
-        throw new Error('Failed to get answer');
-      }
-
-      const data = await res.json();
+      const data = result.data || {};
 
       const botMsg: ChatMessage = {
         id: `b-${Date.now()}`,
         sender: 'assistant',
-        text: data.answer || 'I could not generate a response. Please try again.',
+        text: data.answer || data.response || 'I could not generate a response. Please try again.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 

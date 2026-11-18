@@ -4,6 +4,7 @@ import {
   SubjectCurriculum, 
   ClassGrade 
 } from '../types';
+import { aiGatewayClient } from '../services/aiGatewayClient';
 import { 
   CheckCircle2, 
   Sparkles, 
@@ -59,10 +60,11 @@ export const TaughtAssessmentTab: React.FC<TaughtAssessmentTabProps> = ({
     const selectedTopicsList = allTopics.filter(t => completedTopicIds.includes(t.id));
 
     try {
-      const response = await fetch('/api/ai/taught-assessment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const result = await aiGatewayClient.generateAssessment<any>({
+        applicationId: 'CURRICULUM_FLOW',
+        capability: 'ASSESSMENT_SUPPORT',
+        taskType: 'taught_assessment',
+        payload: {
           subjectName: activeSubject.name,
           classGrade: selectedGrade,
           assessmentTitle: `${activeSubject.name} ${assessmentType}`,
@@ -71,12 +73,10 @@ export const TaughtAssessmentTab: React.FC<TaughtAssessmentTabProps> = ({
             completionPercentage: 100
           })),
           totalMarks: totalMarks
-        })
+        }
       });
 
-      if (!response.ok) throw new Error('Failed to generate taught assessment');
-      const data = await response.json();
-      setGeneratedAssessment(data);
+      setGeneratedAssessment(result.data);
     } catch (err) {
       console.error('Taught assessment error:', err);
     } finally {

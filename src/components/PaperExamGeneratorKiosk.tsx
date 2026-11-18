@@ -8,6 +8,7 @@ import {
 } from '../types';
 import { NERDC_SUBJECTS_DATABASE } from '../data/nerdcDatabase';
 import { generateExamPdf, ExamPdfOptions } from '../services/examPdfGenerator';
+import { aiGatewayClient } from '../services/aiGatewayClient';
 import { 
   FileText, 
   Download, 
@@ -138,11 +139,12 @@ export const PaperExamGeneratorKiosk: React.FC<PaperExamGeneratorKioskProps> = (
     setIsCompiling(true);
 
     try {
-      // 1. Call AI endpoint
-      const examRes = await fetch('/api/ai/secure-exam', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Call Central AI Gateway (fail closed if unavailable or unauthenticated; never synthesize fake exams)
+      const examEnvelope = await aiGatewayClient.generateAssessment<any>({
+        applicationId: 'CURRICULUM_FLOW',
+        capability: 'EXAMINATION_GENERATION',
+        taskType: 'secure_exam',
+        payload: {
           subjectName: selectedSubject.name,
           classGrade,
           term,
@@ -150,62 +152,10 @@ export const PaperExamGeneratorKiosk: React.FC<PaperExamGeneratorKioskProps> = (
           mcqCount,
           theoryCount,
           targetExam: examType
-        })
+        }
       });
 
-      let examData;
-      if (examRes.ok) {
-        examData = await examRes.json();
-      } else {
-        // Fallback robust generator
-        examData = {
-          title: `${selectedSubject.name} ${classGrade} ${term} ${examType}`,
-          durationMinutes,
-          totalMarks: 100,
-          instructions: [
-            'Write your Examination Number, Class, and Seat Number clearly on your answer booklet.',
-            'Answer ALL questions in Section A (Objective) on the provided OMR Optical Sheet.',
-            'Answer required questions from Section B (Theory) showing all step-by-step working.',
-            'Programmable calculators and mobile devices are strictly forbidden.'
-          ],
-          sections: [
-            {
-              sectionName: 'Section A (Objective/MCQ)',
-              instructions: `Answer all ${mcqCount} questions. Each question carries 1 mark.`,
-              marks: mcqCount,
-              questions: Array.from({ length: mcqCount }).map((_, i) => ({
-                questionNumber: i + 1,
-                questionType: 'multiple_choice',
-                questionText: `Which of the following principles best illustrates the foundational law in ${selectedSubject.name} Topic ${i + 1}?`,
-                options: [
-                  { key: 'A', text: `Primary hypothesis of direct equilibrium` },
-                  { key: 'B', text: `Secondary inverse proportionality theorem` },
-                  { key: 'C', text: `Empirical coefficient of kinetic expansion` },
-                  { key: 'D', text: `Standard conservation postulate` }
-                ],
-                marks: 1,
-                topic: selectedSubject.themes[0]?.topics[i % 3]?.title || 'Core Subject Mechanics',
-                cognitiveLevel: 'Applying',
-                difficulty: 'Medium'
-              }))
-            },
-            {
-              sectionName: 'Section B (Theory & Structured)',
-              instructions: `Answer any 3 questions from this section. (15 Marks each = 45 Marks).`,
-              marks: 45,
-              questions: Array.from({ length: theoryCount }).map((_, i) => ({
-                questionNumber: i + 1,
-                questionType: 'structured_theory',
-                questionText: `(a) State and explain two fundamental applications of ${selectedSubject.themes[0]?.topics[i % 3]?.title || 'the syllabus concept'} in the Nigerian economy. [6 Marks]\n(b) Using step-by-step calculations or analytical proofs, evaluate the critical parameters given standard test conditions. [9 Marks]`,
-                marks: 15,
-                topic: selectedSubject.themes[0]?.topics[i % 3]?.title || 'Applied Theory',
-                cognitiveLevel: 'Analyzing',
-                difficulty: 'Hard'
-              }))
-            }
-          ]
-        };
-      }
+      const examData = examEnvelope.data;
 
       const newExamId = `CF-EXAM-${classGrade.replace(/\s+/g, '')}-${selectedSubject.code}-${term.replace(/\s+/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
       const newHash = `sha256-${Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;

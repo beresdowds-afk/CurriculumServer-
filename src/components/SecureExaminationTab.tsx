@@ -9,6 +9,7 @@ import { Principal2FAGate } from './Principal2FAGate';
 import { PaperExamGeneratorKiosk } from './PaperExamGeneratorKiosk';
 import { CBTExamKiosk } from './CBTExamKiosk';
 import { MOCK_SECURE_EXAMS, MOCK_MARKING_SCHEMES } from '../data/curriculumFlowData';
+import { aiGatewayClient } from '../services/aiGatewayClient';
 import { 
   Lock, 
   Unlock, 
@@ -81,11 +82,12 @@ export const SecureExaminationTab: React.FC<SecureExaminationTabProps> = ({
     setIsGeneratingExam(true);
 
     try {
-      // 1. Generate Exam Paper
-      const examRes = await fetch('/api/ai/secure-exam', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // 1. Generate Exam Paper via Central AI Gateway
+      const examEnvelope = await aiGatewayClient.generateAssessment<any>({
+        applicationId: 'CURRICULUM_FLOW',
+        capability: 'EXAMINATION_GENERATION',
+        taskType: 'secure_exam',
+        payload: {
           subjectName: genSubject,
           classGrade: genGrade,
           term: genTerm,
@@ -93,41 +95,49 @@ export const SecureExaminationTab: React.FC<SecureExaminationTabProps> = ({
           coveredTopics: ['Algebraic Processes', 'Quadratic Equations', 'Logarithms & Indices', 'Geometry & Trigonometry'],
           sectionAQuestionsCount: genSecACount,
           sectionBQuestionsCount: genSecBCount
-        })
+        }
       });
+      const examData = examEnvelope.data || {};
+      const sectionA = examData.sectionA || {
+        instructions: examData.sections?.[0]?.instructions || 'Answer all objective questions.',
+        totalMarks: examData.sections?.[0]?.marks || genSecACount * 2,
+        questions: examData.sections?.[0]?.questions || []
+      };
+      const sectionB = examData.sectionB || {
+        instructions: examData.sections?.[1]?.instructions || 'Answer structured theory questions.',
+        totalMarks: examData.sections?.[1]?.marks || genSecBCount * 10,
+        questions: examData.sections?.[1]?.questions || []
+      };
 
-      if (!examRes.ok) throw new Error('Failed to generate secure exam');
-      const examData = await examRes.json();
-
-      // 2. Generate Separate Marking Scheme
-      const schemeRes = await fetch('/api/ai/marking-scheme', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // 2. Generate Separate Marking Scheme via Central AI Gateway
+      const schemeEnvelope = await aiGatewayClient.generateAssessment<any>({
+        applicationId: 'CURRICULUM_FLOW',
+        capability: 'MARKING_ASSISTANCE',
+        taskType: 'marking_scheme',
+        payload: {
           examId: examData.examId,
           examTitle: examData.title,
-          subjectName: examData.subjectName,
-          classGrade: examData.classGrade,
-          questions: [...(examData.sectionA?.questions || []), ...(examData.sectionB?.questions || [])]
-        })
+          subjectName: examData.subjectName || genSubject,
+          classGrade: examData.classGrade || genGrade,
+          term: genTerm,
+          questions: [...(sectionA.questions || []), ...(sectionB.questions || [])]
+        }
       });
-
-      if (!schemeRes.ok) throw new Error('Failed to generate marking scheme');
-      const schemeData = await schemeRes.json();
+      const schemeData = schemeEnvelope.data || {};
 
       const newExam: SecureExaminationPaper = {
         id: `exam-${Date.now()}`,
         examId: examData.examId,
         title: examData.title,
-        subjectName: examData.subjectName,
-        classGrade: examData.classGrade,
-        term: examData.term,
+        subjectName: examData.subjectName || genSubject,
+        classGrade: examData.classGrade || genGrade,
+        term: examData.term || genTerm,
         academicYear: examData.academicYear || '2026/2027',
         durationMinutes: examData.durationMinutes || 120,
         totalMarks: examData.totalMarks || 100,
-        generalInstructions: examData.generalInstructions || [],
-        sectionA: examData.sectionA,
-        sectionB: examData.sectionB,
+        generalInstructions: examData.generalInstructions || examData.instructions || [],
+        sectionA,
+        sectionB,
         generationHash: examData.generationHash,
         markingSchemeId: `scheme-${Date.now()}`,
         isLocked: false,
@@ -138,7 +148,7 @@ export const SecureExaminationTab: React.FC<SecureExaminationTabProps> = ({
             action: 'generated',
             performedBy: currentUser.name,
             timestamp: new Date().toISOString(),
-            ipHash: '102.89.44.12'
+            ipHash: 'gateway-authenticated'
           }
         ],
         createdAt: new Date().toISOString()
@@ -153,9 +163,9 @@ export const SecureExaminationTab: React.FC<SecureExaminationTabProps> = ({
         isConfidential: true,
         unlockedAt: undefined,
         unlockedBy: undefined,
-        sectionARubric: schemeData.sectionARubric || [],
-        sectionBRubric: schemeData.sectionBRubric || [],
-        generalExaminerNotes: schemeData.generalExaminerNotes || []
+        sectionARubric: schemeData.sectionARubric || (Array.isArray(schemeData.items) ? schemeData.items.filter((i: any) => String(i.section || '').toLowerCase().includes('a')) : []),
+        sectionBRubric: schemeData.sectionBRubric || (Array.isArray(schemeData.items) ? schemeData.items.filter((i: any) => !String(i.section || '').toLowerCase().includes('a')) : []),
+        generalExaminerNotes: schemeData.generalExaminerNotes || schemeData.generalMarkingInstructions || []
       };
 
       onAddExam(newExam, newScheme);

@@ -4,6 +4,7 @@ import {
   AdaptiveRemedialUnit, 
   ClassGrade 
 } from '../types';
+import { aiGatewayClient } from '../services/aiGatewayClient';
 import { 
   Sparkles, 
   ArrowRight, 
@@ -68,23 +69,20 @@ export const AdaptiveRemedialTab: React.FC<AdaptiveRemedialTabProps> = ({
     setIsGenerating(true);
 
     try {
-      const response = await fetch('/api/ai/adaptive-remedial', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const result = await aiGatewayClient.generateAssessment<any>({
+        applicationId: 'CURRICULUM_FLOW',
+        capability: 'ASSESSMENT_SUPPORT',
+        taskType: 'adaptive_remedial',
+        payload: {
           subjectName: genSubject,
           classGrade: genGrade,
           topicTitle: genTopic,
           teacherComment: genComment,
           understandingLevel: genUnderstanding
-        })
+        }
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to generate adaptive remedial');
-      }
-
-      const data = await response.json();
+      const data = result.data || {};
       const newUnit: AdaptiveRemedialUnit = {
         id: `rem-${Date.now()}`,
         originalLessonId: `ln-auto-${Date.now()}`,
