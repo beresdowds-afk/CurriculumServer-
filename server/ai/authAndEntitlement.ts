@@ -1,12 +1,16 @@
 import type { Request } from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import type { AiApplicationId } from '../../packages/shared-types/src/aiGatewayContracts';
-import { ServerTenantTokenService } from '../tenantTokenService';
-import { hasSecureControlPlaneSecret } from '../schoolProvisioning';
+import { ServerTenantTokenService, isPlatformAdminTokenContext } from '../tenantTokenService';
 import { createVerifiedTenantPrincipal } from '../db/tenantContext';
 import type { DatabasePool } from '../db/postgres';
-import { AuthorizationRepository } from '../authorization/authorizationRepository';
+import { AuthorizationRepository, type AuthorizationSource } from '../authorization/authorizationRepository';
 import { PLATFORM_ADMIN_ROLE } from '../authorization/permissions';
+import { hasSecureControlPlaneSecret, isPlatformAdminEmail } from '../schoolProvisioning';
+import {
+  verifyGoogleServiceIdentityToken,
+  type GoogleServiceIdentity
+} from '../authorization/googleServiceIdentity';
 import { TenantSecurityContextManager } from '../../src/services/tenantSecurityContext';
 import { AiGatewayError, type AiCapabilityPolicy, type AuthenticatedAiCaller } from './types';
 import type { AiGatewayPersistenceStore } from './usageMetering';
@@ -30,10 +34,18 @@ export interface AuthenticateAiCallerDependencies {
   verifyToken?: typeof ServerTenantTokenService.verifyTenantToken;
   signingConfigured?: () => boolean;
   internalServiceKey?: () => string | undefined;
+  internalServiceAudience?: string;
+  authorizedInternalCallers?: readonly string[];
+  verifyInternalServiceIdentity?: (
+    token: string,
+    audience: string
+  ) => Promise<GoogleServiceIdentity | undefined>;
+  platformAdministratorAllowed?: (email: string) => boolean;
+  authorization?: AuthorizationSource;
 }
 
 /**
- * Authenticates the caller purely from cryptographic Bearer tokens (and optional internal service key).
+ * Authenticates callers from signed tenant/platform tokens and optional verified service identity.
  * Raw client-supplied headers (x-tenant-id, x-role, x-user-role) are NEVER trusted for identity.
  */
 export async function authenticateAiRequest(
@@ -52,9 +64,37 @@ export async function authenticateAiRequest(
   const authHeader = (req.headers.authorization || '').trim();
   const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
 
+  const internalIdentityHeader = req.headers['x-serverless-authorization'];
+  const internalIdentityToken = typeof internalIdentityHeader === 'string' &&
+    internalIdentityHeader.startsWith('Bearer ')
+    ? internalIdentityHeader.slice(7).trim()
+    : '';
+  let internalServiceVerified = false;
+  if (internalIdentityToken) {
+    const audience = deps.internalServiceAudience || '';
+    const allowedCallers = deps.authorizedInternalCallers || [];
+    if (!audience || allowedCallers.length === 0) {
+      throw new AiGatewayError('UNAUTHENTICATED', 'Internal service identity is not configured.', 503);
+    }
+    let identity: GoogleServiceIdentity | undefined;
+    try {
+      identity = await (deps.verifyInternalServiceIdentity || verifyGoogleServiceIdentityToken)(
+        internalIdentityToken,
+        audience
+      );
+    } catch {
+      throw new AiGatewayError('UNAUTHENTICATED', 'Internal service identity verification is unavailable.', 503);
+    }
+    if (!identity || typeof identity.email !== 'string' || !identity.email ||
+        identity.audience !== audience ||
+        !allowedCallers.some(caller => caller.toLowerCase() === identity.email.toLowerCase())) {
+      throw new AiGatewayError('UNAUTHENTICATED', 'Internal service identity is invalid or unauthorized.', 401);
+    }
+    internalServiceVerified = true;
+  }
+
   const internalKeyHeader = req.headers['x-internal-service-key'];
   const expectedInternalKey = deps.internalServiceKey?.() ?? process.env.INTERNAL_SERVICE_KEY;
-  let internalServiceVerified = false;
   if (typeof internalKeyHeader === 'string' && internalKeyHeader.length > 0) {
     if (!expectedInternalKey || expectedInternalKey.length < 32) {
       throw new AiGatewayError('UNAUTHENTICATED', 'Internal service key verification unavailable.', 503);
@@ -92,6 +132,18 @@ export async function authenticateAiRequest(
     : '';
 
   if (ctx.role === PLATFORM_ADMIN_ROLE) {
+    let platformAdministratorAllowed = false;
+    try {
+      platformAdministratorAllowed = Boolean(
+        isPlatformAdminTokenContext(ctx) &&
+        (deps.platformAdministratorAllowed || isPlatformAdminEmail)(ctx.email || '')
+      );
+    } catch {
+      platformAdministratorAllowed = false;
+    }
+    if (!platformAdministratorAllowed) {
+      throw new AiGatewayError('FORBIDDEN', 'Platform administrator authorization is required.', 403);
+    }
     return {
       callerType: internalServiceVerified ? 'internal_service' : 'platform_admin',
       userId: ctx.userId || ctx.email || 'platform_admin',
@@ -112,89 +164,50 @@ export async function authenticateAiRequest(
     );
   }
 
-  // If PostgreSQL & full session tracking are configured and token holds userId + sessionId, verify active DB membership
-  if (deps.poolConfigured && deps.pool && ctx.userId && ctx.sessionId && UUID.test(ctx.userId)) {
-    const authRepo = new AuthorizationRepository(deps.pool);
-    const dbAuth = await authRepo.authorize(principal, ctx.userId, ctx.sessionId);
-    if (dbAuth.ok === false) {
-      throw new AiGatewayError(
-        'FORBIDDEN',
-        dbAuth.reason === 'SESSION_REVOKED'
-          ? 'Your session has been revoked.'
-          : 'Tenant membership is not active.',
-        403,
-        { reason: dbAuth.reason }
-      );
-    }
-    const grantedPermissions = [
-      ...new Set(dbAuth.principal.grants.flatMap(g => g.permissions))
-    ];
-    return {
-      callerType: internalServiceVerified ? 'internal_service' : 'tenant_user',
-      userId: ctx.userId,
-      email: ctx.email || ctx.userId,
-      role: dbAuth.principal.roles[0] || ctx.role,
-      tenantId: principal.tenantId,
-      applicationInstanceId: headerInstanceId || null,
-      verifiedPrincipal: principal,
-      authorizedPrincipal: dbAuth.principal,
-      permissions: grantedPermissions
-    };
+  if (!ctx.userId || !UUID.test(ctx.userId) || !ctx.sessionId || !UUID.test(ctx.sessionId)) {
+    throw new AiGatewayError('FORBIDDEN', 'A valid tenant user session is required.', 403);
   }
-
-  // Verified signed tenant token fallback when session DB is absent in non-DB/test setups
-  const derivedRolePermissions: Record<string, string[]> = {
-    tenant_admin: [
-      'ai.gateway.read',
-      'ai.curriculum.generate',
-      'ai.assessments.generate',
-      'ai.cbt.generate',
-      'ai.tutor.use',
-      'question_bank.manage',
-      'assessments.manage'
-    ],
-    staff: [
-      'ai.gateway.read',
-      'ai.curriculum.generate',
-      'ai.assessments.generate',
-      'ai.cbt.generate',
-      'ai.tutor.use',
-      'question_bank.manage'
-    ],
-    teacher: [
-      'ai.gateway.read',
-      'ai.curriculum.generate',
-      'ai.assessments.generate',
-      'ai.cbt.generate',
-      'ai.tutor.use',
-      'question_bank.manage'
-    ],
-    exam_officer: [
-      'ai.gateway.read',
-      'ai.assessments.generate',
-      'ai.cbt.generate',
-      'question_bank.manage'
-    ],
-    principal: [
-      'ai.gateway.read',
-      'ai.curriculum.generate',
-      'ai.assessments.generate',
-      'ai.cbt.generate',
-      'ai.tutor.use',
-      'question_bank.manage'
-    ],
-    read_only: ['ai.gateway.read']
-  };
-
+  let authRepo: AuthorizationSource;
+  if (deps.authorization) {
+    authRepo = deps.authorization;
+  } else if (deps.poolConfigured && deps.pool) {
+    authRepo = new AuthorizationRepository(deps.pool);
+  } else {
+    throw new AiGatewayError('AUTHORIZATION_UNAVAILABLE', 'Database authorization is unavailable.', 503);
+  }
+  let dbAuth;
+  try {
+    dbAuth = await authRepo.authorize(principal, ctx.userId, ctx.sessionId);
+  } catch {
+    throw new AiGatewayError('AUTHORIZATION_UNAVAILABLE', 'Database authorization is unavailable.', 503);
+  }
+  if (dbAuth.ok === false) {
+    throw new AiGatewayError(
+      'FORBIDDEN',
+      dbAuth.reason === 'SESSION_REVOKED'
+        ? 'Your session is no longer active.'
+        : dbAuth.reason === 'MEMBERSHIP_INACTIVE'
+          ? 'Tenant membership is not active.'
+          : 'The tenant identity is inconsistent.',
+      403,
+      { reason: dbAuth.reason }
+    );
+  }
+  const grantedPermissions: string[] = [
+    ...new Set<string>(dbAuth.principal.grants
+      .filter(grant => grant.scopes.length === 0)
+      .flatMap(grant => grant.permissions))
+  ];
   return {
     callerType: internalServiceVerified ? 'internal_service' : 'tenant_user',
-    userId: ctx.userId || ctx.email || `tenant:${ctx.tenantId}`,
-    email: ctx.email || `tenant:${ctx.tenantId}`,
-    role: ctx.role,
+    userId: ctx.userId,
+    email: ctx.email || ctx.userId,
+    role: dbAuth.principal.roles[0] || 'unauthorized',
     tenantId: principal.tenantId,
     applicationInstanceId: headerInstanceId || null,
     verifiedPrincipal: principal,
-    permissions: derivedRolePermissions[ctx.role] || []
+    authorizedPrincipal: dbAuth.principal,
+    permissions: grantedPermissions
   };
 }
 
@@ -265,15 +278,15 @@ export async function enforceAiAuthorizationAndEntitlement(input: {
     );
   }
 
-  if (input.applicationId === 'PROVISIONING_AGENT' && !isPlatformAdmin && caller.callerType !== 'internal_service') {
+  if (input.applicationId === 'PROVISIONING_AGENT' && !isPlatformAdmin) {
     throw new AiGatewayError(
       'FORBIDDEN',
-      'Provisioning agent AI capabilities require platform administrator or authorized internal service identity.',
+      'Provisioning agent AI capabilities require platform administrator authorization.',
       403
     );
   }
 
-  if (policy.capability === 'TEXTBOOK_GENERATION' && !isPlatformAdmin && caller.callerType !== 'internal_service') {
+  if (policy.capability === 'TEXTBOOK_GENERATION' && !isPlatformAdmin) {
     throw new AiGatewayError(
       'FORBIDDEN',
       'Central authoritative textbook generation requires platform editorial administrator identity.',
@@ -281,9 +294,17 @@ export async function enforceAiAuthorizationAndEntitlement(input: {
     );
   }
 
-  // Permission check (platform admin passes when allowed or platform-scoped)
+  // Tenant permission checks are resolved from the current database principal.
   if (!isPlatformAdmin && policy.requiredPermissions.length > 0) {
-    const missing = policy.requiredPermissions.filter(perm => !caller.permissions.includes(perm));
+    const applicationInstanceId = input.requestedApplicationInstanceId || caller.applicationInstanceId;
+    const missing = policy.requiredPermissions.filter(permission => {
+      if (caller.authorizedPrincipal?.hasPermission(permission)) return false;
+      return !applicationInstanceId || !caller.authorizedPrincipal?.hasPermissionFor(
+        permission,
+        'application_instance',
+        applicationInstanceId
+      );
+    });
     if (missing.length > 0) {
       await input.store.recordAudit({
         correlationId: input.correlationId,

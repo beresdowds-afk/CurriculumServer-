@@ -49,7 +49,8 @@ export function authenticateSharedServiceCaller(
   }
 ): void {
   const authenticateTenantUser = () => dependencies.tenantUser(req, res, next);
-  if (req.headers['x-internal-service-key'] !== undefined) {
+  if (req.headers['x-internal-service-key'] !== undefined ||
+      req.headers['x-serverless-authorization'] !== undefined) {
     dependencies.internalService(req, res, authenticateTenantUser);
     return;
   }
@@ -173,6 +174,10 @@ export class SharedServiceAuthorizationRepository {
   }): Promise<SharedServiceAccessDecision> {
     const service = getCentralSharedService(input.serviceId);
     if (!service) return { allowed: false, reason: 'UNKNOWN_SERVICE' };
+    if (input.principal.tenantId !== input.tenant.tenantId ||
+        input.principal.tenant.tenantId !== input.tenant.tenantId) {
+      return { allowed: false, reason: 'PERMISSION_DENIED' };
+    }
     const entitlementMode = input.entitlementMode ?? resolveSharedServiceEntitlementMode();
     return withTenantTransaction(this.pool, input.tenant, async client => {
       let row: ApplicationEntitlementRow | undefined;
@@ -216,7 +221,13 @@ export class SharedServiceAuthorizationRepository {
         applicationInstanceId: input.applicationInstanceId,
         row,
         entitlementMode,
-        hasPermissions: permissions => permissions.every(permission => input.principal.hasPermission(permission))
+        hasPermissions: permissions => permissions.every(permission =>
+          input.principal.hasPermissionFor(
+            permission,
+            'application_instance',
+            input.applicationInstanceId
+          )
+        )
       });
 
       await client.query(
@@ -252,6 +263,10 @@ export class SharedServiceAuthorizationRepository {
     units?: number;
     correlationId?: string;
   }): Promise<void> {
+    if (input.principal.tenantId !== input.tenant.tenantId ||
+        input.principal.tenant.tenantId !== input.tenant.tenantId) {
+      throw new Error('FORBIDDEN');
+    }
     if (!UUID.test(input.applicationInstanceId)) return;
     await withTenantTransaction(this.pool, input.tenant, async client => {
       await client.query(

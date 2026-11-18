@@ -7,7 +7,7 @@ import { NERDC_SUBJECTS_DATABASE, NERDC_STATS } from './src/data/nerdcDatabase';
 import { ClassGrade } from './src/types';
 import { NerdcAnnualUpdateWorkerService } from './src/services/nerdcAnnualUpdateWorker';
 import { TenantSecurityContextManager } from './src/services/tenantSecurityContext';
-import { ServerTenantTokenService } from './server/tenantTokenService';
+import { ServerTenantTokenService, isPlatformAdminTokenContext } from './server/tenantTokenService';
 import { EntitlementEnforcementService } from './src/services/entitlementEnforcementService';
 import { TamperEvidentAuditService } from './src/services/tamperEvidentAuditService';
 import { TenantLifecycleManager } from './src/services/tenantLifecycleManager';
@@ -70,7 +70,7 @@ import {
   type StudentLifecycleStatus,
   type StudentTransition
 } from './server/db/schoolAdministrationRepository';
-import { evaluateProductionCapabilityGate } from './server/capabilities/productionCapabilityRegistry';
+import { createProductionCapabilityGateMiddleware } from './server/capabilities/productionCapabilityMiddleware';
 import { LogisticsError, LogisticsRepository } from './server/logistics/logisticsRepository';
 import { validateLogisticsFeatureConfiguration } from './src/data/logisticsFeatureTemplate';
 import type { AuthorizedPrincipal } from './server/authorization/authorizedPrincipal';
@@ -257,7 +257,9 @@ function requireSuperAdmin(req: Request, res: Response, next: express.NextFuncti
   }
 
   const verification = ServerTenantTokenService.verifyTenantToken(token);
-  if (!verification.valid || !verification.context || verification.context.role !== 'super_admin') {
+  if (!verification.valid || !verification.context ||
+      !isPlatformAdminTokenContext(verification.context) ||
+      !isPlatformAdminEmail(verification.context.email || '')) {
     TenantSecurityContextManager.recordViolation({
       violationType: 'UNAUTHORIZED_FEATURE_ACCESS',
       sourceTenantId: verification.context?.tenantId || 'UNKNOWN',
@@ -364,8 +366,8 @@ async function requireProvisioningPlatformAdmin(req: Request, res: Response, nex
   }
   const verification = ServerTenantTokenService.verifyTenantToken(token);
   const context = verification.context;
-  if (!verification.valid || !context || context.role !== 'super_admin' ||
-      !context.email || !isPlatformAdminEmail(context.email)) {
+  if (!verification.valid || !context || !isPlatformAdminTokenContext(context) ||
+      !isPlatformAdminEmail(context.email || '')) {
     res.status(403).json({
       success: false,
       error: 'Platform administrator authorization is required.',
@@ -409,6 +411,10 @@ const authorizationMiddleware = createAuthorizationMiddleware({
   verifyToken: token => ServerTenantTokenService.verifyTenantToken(token),
   signingConfigured: hasSecureControlPlaneSecret,
   authorization: () => new AuthorizationRepository(postgresRuntime.getPool()),
+  platformAdministratorAllowed: isPlatformAdminEmail,
+  internalServiceAudience: () => process.env.INTERNAL_SERVICE_AUDIENCE,
+  authorizedInternalCallers: () => (process.env.INTERNAL_SERVICE_CALLERS || '')
+    .split(',').map(email => email.trim().toLowerCase()).filter(Boolean),
   internalServiceKey: () => process.env.INTERNAL_SERVICE_KEY
 });
 
@@ -425,6 +431,13 @@ function resolveApplicationInstanceId(req: Request): string {
     return headerInstanceId;
   }
   return bodyInstanceId || queryInstanceId || '';
+}
+
+function requireApplicationInstancePermission(permission: string) {
+  return authorizationMiddleware.requireResourcePermission(permission, req => {
+    const resourceId = resolveApplicationInstanceId(req);
+    return resourceId ? { resourceType: 'application_instance', resourceId } : undefined;
+  });
 }
 
 function getCentralCurriculumService(): CentralCurriculumService {
@@ -471,9 +484,9 @@ function requireSharedServiceAccess(
         const applicationInstanceId = resolveApplicationInstanceId(req);
         const tenant = (req as any).trustedTenantContext;
         const principal = (req as any).authorizedPrincipal as AuthorizedPrincipal;
-        const callerKind = req.headers['x-internal-service-key'] === undefined
-          ? 'tenant_user'
-          : 'internal_service';
+        const callerKind = (req as any).internalServiceIdentity
+          ? 'internal_service'
+          : 'tenant_user';
         const effectiveRequestedOp = operation === 'authorize' && typeof req.body?.operation === 'string'
           ? req.body.operation
           : requestedConsumeOperation;
@@ -655,14 +668,7 @@ function requireSchoolAuth(req: Request, res: Response, next: express.NextFuncti
 
 // Fail-closed production gate: only enabled, evidence-backed capability route
 // groups are served; everything else under /api/v1 returns 503.
-app.use('/api/v1', (req: Request, res: Response, next: express.NextFunction) => {
-  const decision = evaluateProductionCapabilityGate(req.method, req.path);
-  if (decision.allowed) {
-    next();
-    return;
-  }
-  productionPersistenceUnavailable(req, res, decision.capabilityId);
-});
+app.use('/api/v1', createProductionCapabilityGateMiddleware());
 
 // -------------------------------------------------------------
 // CENTRAL AI GATEWAY & INTELLIGENT REQUEST ROUTER (Unified Backend)
@@ -674,7 +680,10 @@ const centralAiGatewayService = CentralAiGatewayService.withPostgresPool(() => (
 
 const getAiAuthDeps = () => ({
   pool: postgresRuntime.configured ? postgresRuntime.getPool() : undefined,
-  poolConfigured: postgresRuntime.configured
+  poolConfigured: postgresRuntime.configured,
+  internalServiceAudience: process.env.INTERNAL_SERVICE_AUDIENCE,
+  authorizedInternalCallers: (process.env.INTERNAL_SERVICE_CALLERS || '')
+    .split(',').map(email => email.trim().toLowerCase()).filter(Boolean)
 });
 
 app.use(
@@ -2338,7 +2347,7 @@ app.use('/api/v1/assessments', questionBankRateLimiter);
 
 app.get(
   '/api/v1/question-bank/categories',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankRead),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankRead),
   async (req: Request, res: Response) => {
     try {
       const categories = await getInstanceQuestionBankService().listCategories(
@@ -2354,7 +2363,7 @@ app.get(
 
 app.post(
   '/api/v1/question-bank/categories',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const { name, description, subjectReferenceId } = req.body ?? {};
@@ -2376,7 +2385,7 @@ app.post(
 
 app.get(
   '/api/v1/question-bank',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankRead),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankRead),
   async (req: Request, res: Response) => {
     try {
       const { subjectId, subjectReferenceId, classGrade, questionType, reviewStatus, difficulty, categoryId } = req.query;
@@ -2401,7 +2410,7 @@ app.get(
 
 app.post(
   '/api/v1/question-bank',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const payload = req.body ?? {};
@@ -2446,7 +2455,7 @@ app.post(
 
 app.post(
   '/api/v1/question-bank/items/:id/review',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankReview),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankReview),
   async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
@@ -2480,7 +2489,7 @@ app.post(
 
 app.delete(
   '/api/v1/question-bank/items/:id',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const deleted = await getInstanceQuestionBankService().deleteQuestion(
@@ -2501,7 +2510,7 @@ app.delete(
 
 app.post(
   '/api/v1/question-bank/seed-past-questions',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const list = await getInstanceQuestionBankService().seedStarterPastQuestions(
@@ -2517,7 +2526,7 @@ app.post(
 
 app.post(
   '/api/v1/question-bank/seed-theory-questions',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const list = await getInstanceQuestionBankService().seedStarterTheoryQuestions(
@@ -2533,7 +2542,7 @@ app.post(
 
 app.post(
   '/api/v1/question-bank/seed-practical-questions',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const list = await getInstanceQuestionBankService().seedStarterPracticalQuestions(
@@ -2549,7 +2558,7 @@ app.post(
 
 app.post(
   '/api/v1/question-bank/generate-practical',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const { subjectName, subjectId, classGrade, topic, count } = req.body ?? {};
@@ -2622,7 +2631,7 @@ app.post(
 
 app.post(
   '/api/v1/question-bank/generate-theory',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const { subjectName, subjectId, classGrade, topic, count, questionType } = req.body ?? {};
@@ -2695,7 +2704,7 @@ app.post(
 
 app.post(
   '/api/v1/question-bank/generate-objective',
-  authorizationMiddleware.requirePermission(PERMISSIONS.questionBankManage),
+  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
   async (req: Request, res: Response) => {
     try {
       const { subjectName, subjectId, classGrade, topic, count } = req.body ?? {};
@@ -2768,7 +2777,7 @@ app.post(
 
 app.get(
   '/api/v1/assessment-blueprints',
-  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsRead),
+  requireApplicationInstancePermission(PERMISSIONS.assessmentsRead),
   async (req: Request, res: Response) => {
     try {
       const blueprints = await getInstanceQuestionBankService().listBlueprints(
@@ -2784,7 +2793,7 @@ app.get(
 
 app.post(
   '/api/v1/assessment-blueprints',
-  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsManage),
+  requireApplicationInstancePermission(PERMISSIONS.assessmentsManage),
   async (req: Request, res: Response) => {
     try {
       const payload = req.body ?? {};
@@ -2817,7 +2826,7 @@ app.post(
 
 app.get(
   '/api/v1/assessments/exams',
-  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsRead),
+  requireApplicationInstancePermission(PERMISSIONS.assessmentsRead),
   async (req: Request, res: Response) => {
     try {
       const exams = await getInstanceQuestionBankService().listExamConfigurations(
@@ -2833,7 +2842,7 @@ app.get(
 
 app.post(
   '/api/v1/assessments/exams',
-  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsManage),
+  requireApplicationInstancePermission(PERMISSIONS.assessmentsManage),
   async (req: Request, res: Response) => {
     try {
       const payload = req.body ?? {};
@@ -2851,7 +2860,7 @@ app.post(
 
 app.get(
   '/api/v1/assessments/records',
-  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsRead),
+  requireApplicationInstancePermission(PERMISSIONS.assessmentsRead),
   async (req: Request, res: Response) => {
     try {
       const records = await getInstanceQuestionBankService().listAssessmentRecords(
@@ -2868,7 +2877,7 @@ app.get(
 
 app.post(
   '/api/v1/assessments/records',
-  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsManage),
+  requireApplicationInstancePermission(PERMISSIONS.assessmentsManage),
   async (req: Request, res: Response) => {
     try {
       const record = await getInstanceQuestionBankService().recordAssessmentSubmission(
