@@ -126,46 +126,49 @@ export class CustomerOnboardingClient {
 
   public async initializePayment(
     provider: 'paystack' | 'flutterwave' | 'opay' | 'interswitch' | 'bank_wire',
-    amountNGN: number,
+    obligationId: string,
     customerEmail: string,
-    customerName: string,
-    instanceType: string,
-    billingModel: 'monthly' | 'yearly' | 'lease_to_own'
+    idempotencyKey = crypto.randomUUID()
   ): Promise<PaymentInitializationResponse> {
-    const res = await fetch('/api/v1/server/payments/initialize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, amountNGN, customerEmail, customerName, instanceType, billingModel })
-    });
-    if (!res.ok) {
-      throw new Error('Failed to initialize payment gateway checkout.');
+    if (provider === 'bank_wire') {
+      throw new Error('Bank transfer checkout is unavailable until an approved bank integration is configured.');
     }
-    const json = await res.json();
-    return json.data;
+    const response = await unifiedApiClient.requestAuthenticatedSchoolFlow<{
+      success: boolean;
+      data: PaymentInitializationResponse;
+    }>('/api/v1/server/payments/initialize', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify({ provider, obligationId, customerEmail })
+    });
+    if (!response.success || !response.data?.authorizationUrl) {
+      throw new Error('Payment provider did not return a valid checkout session.');
+    }
+    return response.data;
   }
 
   public async verifyPayment(
     instanceId: string,
     reference: string,
     provider: 'paystack' | 'flutterwave' | 'opay' | 'interswitch' | 'bank_wire',
-    amountNGN: number
+    amountNGN: number,
+    providerTransactionId?: string
   ): Promise<PaymentVerificationResponse> {
-    const res = await fetch('/api/v1/server/payments/verify', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ instanceId, reference, provider, amountNGN })
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw Object.assign(new Error(err.error || 'Payment verification failed at provider gateway.'), {
-        status: res.status,
-        correlationId: err.correlationId
-      });
+    void amountNGN;
+    if (provider === 'bank_wire') {
+      throw new Error('Bank transfer verification is unavailable until an approved bank integration is configured.');
     }
-    const json = await res.json();
-    return json.data;
+    const response = await unifiedApiClient.requestAuthenticatedSchoolFlow<{
+      success: boolean;
+      data: PaymentVerificationResponse;
+    }>('/api/v1/server/payments/verify', {
+      method: 'POST',
+      body: JSON.stringify({ instanceId, reference, provider, providerTransactionId })
+    });
+    if (!response.success || !response.data) {
+      throw new Error('Trusted provider verification did not return a payment result.');
+    }
+    return response.data;
   }
 
   public async reviewInstanceRequest(requestId: string, approved: boolean, notes: string): Promise<UniversalInstanceRecord> {
