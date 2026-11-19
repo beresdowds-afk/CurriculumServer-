@@ -139,8 +139,9 @@ class CipaAgentService {
         { stepNumber: 4, stepName: 'Execute Project Factory', description: 'Create isolated GCP project and apply security baselines.', component: 'Project Factory', identityRequired: 'project-factory', requiresPiamApproval: false, status: 'pending' },
         { stepNumber: 5, stepName: 'Deploy Cloud Run Services', description: 'Deploy Curriculum Server and Curriculum Flow container revisions.', component: 'Infrastructure Deployer', identityRequired: 'infrastructure-deployer', requiresPiamApproval: false, status: 'pending' },
         { stepNumber: 6, stepName: 'Provision Dedicated Cloud SQL', description: 'Provision curriculum_platform database and control_plane/curriculum_flow schemas.', component: 'Infrastructure Deployer', identityRequired: 'infrastructure-deployer', requiresPiamApproval: false, status: 'pending' },
-        { stepNumber: 7, stepName: 'Configure Custom Domain & SSL', description: 'Map greenfield.edu.ng with Google-managed SSL certificate.', component: 'Domain Manager', identityRequired: 'domain-manager', requiresPiamApproval: false, status: 'pending' },
-        { stepNumber: 8, stepName: 'Verify Activation Health', description: 'Perform automated health checks, database connectivity, and tenant isolation tests.', component: 'Orchestrator', identityRequired: 'provisioning-orchestrator', requiresPiamApproval: false, status: 'pending' }
+        { stepNumber: 7, stepName: 'Provision School Payment Provider', description: 'Coordinate tenant-scoped provider onboarding only after PIAM approval and verify provider responses.', component: 'Payment Provider Provisioner', identityRequired: 'payment-provider-provisioner-runtime', requiresPiamApproval: true, status: 'pending' },
+        { stepNumber: 8, stepName: 'Configure Custom Domain & SSL', description: 'Map greenfield.edu.ng with Google-managed SSL certificate.', component: 'Domain Manager', identityRequired: 'domain-manager', requiresPiamApproval: false, status: 'pending' },
+        { stepNumber: 9, stepName: 'Verify Activation Health', description: 'Perform automated health checks, database connectivity, and tenant isolation tests.', component: 'Orchestrator', identityRequired: 'provisioning-orchestrator', requiresPiamApproval: false, status: 'pending' }
       ],
       lifecycleState: 'Awaiting Privileged Approval',
       piamApprovalStatus: 'pending_approval',
@@ -234,8 +235,9 @@ class CipaAgentService {
       { stepNumber: 4, stepName: 'Execute Project Factory', description: 'Create isolated GCP project and apply security baselines.', component: 'Project Factory', identityRequired: 'project-factory', requiresPiamApproval: false, status: 'pending' },
       { stepNumber: 5, stepName: 'Deploy Cloud Run Services', description: 'Deploy Curriculum Server and Curriculum Flow container revisions.', component: 'Infrastructure Deployer', identityRequired: 'infrastructure-deployer', requiresPiamApproval: false, status: 'pending' },
       { stepNumber: 6, stepName: 'Provision Dedicated Cloud SQL', description: 'Provision curriculum_platform database and control_plane/curriculum_flow schemas.', component: 'Infrastructure Deployer', identityRequired: 'infrastructure-deployer', requiresPiamApproval: false, status: 'pending' },
-      { stepNumber: 7, stepName: 'Configure Custom Domain & SSL', description: 'Map institutional domain with Google-managed SSL certificate.', component: 'Domain Manager', identityRequired: 'domain-manager', requiresPiamApproval: false, status: 'pending' },
-      { stepNumber: 8, stepName: 'Verify Activation Health', description: 'Perform automated health checks, database connectivity, and tenant isolation tests.', component: 'Orchestrator', identityRequired: 'provisioning-orchestrator', requiresPiamApproval: false, status: 'pending' }
+      { stepNumber: 7, stepName: 'Provision School Payment Provider', description: 'Coordinate tenant-scoped provider onboarding only after PIAM approval and verify provider responses.', component: 'Payment Provider Provisioner', identityRequired: 'payment-provider-provisioner-runtime', requiresPiamApproval: true, status: 'pending' },
+      { stepNumber: 8, stepName: 'Configure Custom Domain & SSL', description: 'Map institutional domain with Google-managed SSL certificate.', component: 'Domain Manager', identityRequired: 'domain-manager', requiresPiamApproval: false, status: 'pending' },
+      { stepNumber: 9, stepName: 'Verify Activation Health', description: 'Perform automated health checks, database connectivity, and tenant isolation tests.', component: 'Orchestrator', identityRequired: 'provisioning-orchestrator', requiresPiamApproval: false, status: 'pending' }
     ];
   }
 

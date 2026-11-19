@@ -256,6 +256,51 @@ export interface SchoolProvisioningOperationResponse {
   provisioning?: SchoolProvisioningConfirmation;
 }
 
+export type SchoolPaymentProvider =
+  | 'paystack'
+  | 'flutterwave'
+  | 'opay'
+  | 'interswitch'
+  | 'bank_transfer';
+
+export type SchoolPaymentProviderOperation =
+  | 'onboard'
+  | 'rotate_credentials'
+  | 'health_check'
+  | 'suspend'
+  | 'revoke';
+
+/**
+ * CIPA's approved, tenant-scoped handoff to the payment-provider job.
+ * Provider secrets are referenced by Secret Manager resource name and are
+ * never included in the provisioning contract.
+ */
+export interface SchoolPaymentProviderProvisioningContract {
+  schemaVersion: 1;
+  operationId: string;
+  idempotencyKey: string;
+  tenantId: string;
+  schoolId: string;
+  provider: SchoolPaymentProvider;
+  operation: SchoolPaymentProviderOperation;
+  credentialSecretVersion: string;
+  approval: {
+    status: 'approved';
+    piamApprovalId: string;
+    approverIdentity: string;
+    approvedAt: string;
+    expiresAt: string;
+  };
+  configuration: {
+    merchantName: string;
+    merchantEmail: string;
+    webhookUrl: string;
+    requestedCapabilities: string[];
+    settlementAccountReference?: string;
+    providerAccountReference?: string;
+  };
+}
+
 export interface SchoolAdministratorLoginResponse {
   token: string;
   tenantId: string;
