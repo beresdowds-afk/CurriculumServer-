@@ -563,27 +563,26 @@ export interface PaymentInitializationRequest {
 }
 
 export interface PaymentInitializationResponse {
-  provider: 'paystack' | 'opay';
+  provider: 'paystack' | 'flutterwave' | 'opay' | 'interswitch';
   reference: string;
   authorizationUrl: string;
-  amountNGN: number;
-  checkoutParameters: Record<string, string>;
+  invoiceNumber: string;
+  amountMinor: number;
+  currency: string;
+  status: 'pending';
 }
 
 export interface PaymentVerificationRequest {
-  provider: 'paystack' | 'opay';
+  provider: 'paystack' | 'flutterwave' | 'opay' | 'interswitch';
   reference: string;
-  amountNGN: number;
+  providerTransactionId?: string;
 }
 
 export interface PaymentVerificationResponse {
-  verified: boolean;
-  provider: 'paystack' | 'opay';
-  reference: string;
-  amountNGN: number;
-  paidAt: string;
-  channel: string;
-  gatewayResponse: string;
+  status: 'settled' | 'failed' | 'pending';
+  alreadyProcessed?: boolean;
+  receiptNumber?: string;
+  auditReference?: string;
 }
 
 export interface InstanceActivationResponse {

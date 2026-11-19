@@ -248,6 +248,20 @@ class UnifiedApiClient {
     return this.request<T>(endpoint, options, 'control_plane');
   }
 
+  public async requestAuthenticatedSchoolFlow<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    if (!this.schoolFlowToken || !this.isAuthenticated('school_flow')) {
+      throw {
+        success: false,
+        error: 'A valid authenticated school session is required.',
+        code: 'UNAUTHENTICATED',
+        status: 401,
+        correlationId: this.generateCorrelationId(),
+        timestamp: new Date().toISOString()
+      } satisfies StandardApiErrorResponse;
+    }
+    return this.request<T>(endpoint, options, 'school_flow');
+  }
+
   /**
    * Generic GET request with automatic token injection based on endpoint
    */

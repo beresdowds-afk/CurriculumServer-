@@ -257,43 +257,6 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
     }, 600);
   };
 
-  // Phase 8: Universal Onboarding Action Handlers
-  const handleSimulatePayment = async (record: UniversalInstanceRecord) => {
-    setActionLoadingId(record.instanceId);
-    setActionFeedbackMsg(null);
-    try {
-      const pRef = `PSTK_LIVE_REF_${Date.now().toString(16).substring(2, 8)}`;
-      const res = await customerOnboardingClient.verifyPayment(
-        record.instanceId,
-        pRef,
-        record.payment?.provider || 'paystack',
-        record.payment?.amountNGN || 150000
-      );
-      if (res.verified) {
-        setActionFeedbackMsg({
-          id: record.instanceId,
-          type: 'success',
-          message: `Official ${record.payment?.provider?.toUpperCase() || 'PSP'} payment verified successfully (Ref: ${res.reference}). Status updated to verified. Ready for IIAPE provisioning.`
-        });
-        await refreshUniversalRequests();
-      } else {
-        setActionFeedbackMsg({
-          id: record.instanceId,
-          type: 'error',
-          message: (res as any).message || 'Payment verification failed at PSP gateway.'
-        });
-      }
-    } catch (err: any) {
-      setActionFeedbackMsg({
-        id: record.instanceId,
-        type: 'error',
-        message: err.message || 'Payment verification failed.'
-      });
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
-
   const handleExecuteProvisioning = async (record: UniversalInstanceRecord) => {
     setActionLoadingId(record.instanceId);
     setActionFeedbackMsg(null);
@@ -1389,16 +1352,11 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
                           </button>
                         )}
 
-                        {/* 2. Official PSP Payment Simulation */}
+                        {/* Provider callbacks, not browser actions, settle platform payments. */}
                         {req.payment?.paymentStatus !== 'verified' && (
-                          <button
-                            onClick={() => handleSimulatePayment(req)}
-                            disabled={isLoading}
-                            className="px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-emerald-950/40"
-                          >
-                            <CreditCard className="w-3.5 h-3.5" />
-                            <span>Verify {req.payment?.provider?.toUpperCase() || 'PSP'}</span>
-                          </button>
+                          <span className="px-3 py-1.5 rounded-xl border border-amber-700/40 text-amber-200 text-xs">
+                            Awaiting verified provider settlement
+                          </span>
                         )}
 
                         {/* 3. Execute Provisioning */}

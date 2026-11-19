@@ -12,10 +12,7 @@ import {
   PaymentChannel,
   Student
 } from '../types';
-import { 
-  numberToWordsNaira,
-  generateVirtualNuban
-} from '../data/bursaryAccountsData';
+import { numberToWordsNaira } from '../data/bursaryAccountsData';
 import { INITIAL_STUDENTS } from '../data/schoolManagementData';
 import { 
   Plus, 

@@ -33,7 +33,6 @@ import {
   INITIAL_ACADEMIC_TERM_BUDGET_SUMMARIES,
   INITIAL_SUNDRY_PAYMENTS,
   compileStudentAccountSummaries,
-  generateVirtualNuban,
   numberToWordsNaira
 } from '../data/bursaryAccountsData';
 import { OfficialReceiptModal } from './OfficialReceiptModal';
@@ -413,7 +412,7 @@ export const AccountManagementTab: React.FC<AccountManagementTabProps> = ({ curr
       recipientName: inv.parentName,
       studentName: `${inv.studentName} (${inv.classGrade})`,
       title: 'Fee Payment & Academic Clearance Reminder',
-      message: `Dear ${inv.parentName}, outstanding balance for ${inv.studentName} is ₦${inv.balanceDue.toLocaleString()}. Please settle via Paystack/OPay virtual account (${generateVirtualNuban(inv.admissionNumber).accountNumber}).`,
+      message: `Dear ${inv.parentName}, outstanding balance for ${inv.studentName} is ₦${inv.balanceDue.toLocaleString()}. Please contact your school for approved payment instructions.`,
       timestamp: new Date().toISOString(),
       status: 'delivered',
       relatedInvoiceNumber: inv.invoiceNumber
@@ -807,7 +806,6 @@ export const AccountManagementTab: React.FC<AccountManagementTabProps> = ({ curr
                     <th className="py-3.5 px-4 text-right">Balance Due</th>
                     <th className="py-3.5 px-4 text-center">Installment Plan & Next Due</th>
                     <th className="py-3.5 px-4 text-center">Academic Clearance</th>
-                    <th className="py-3.5 px-4">Dedicated Virtual NUBAN</th>
                     <th className="py-3.5 px-4 text-center">Actions</th>
                   </tr>
                 </thead>
@@ -918,15 +916,6 @@ export const AccountManagementTab: React.FC<AccountManagementTabProps> = ({ curr
                                 <span>DEBTOR BLOCKED</span>
                               </span>
                             )}
-                          </td>
-
-                          {/* Virtual NUBAN */}
-                          <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-300">
-                              <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-                              <span className="font-bold text-white">{acc.virtualNubanAccount.accountNumber}</span>
-                            </div>
-                            <span className="text-[9px] text-slate-500 block">OPay / Wema Auto-Credit</span>
                           </td>
 
                           {/* Actions */}
@@ -1540,90 +1529,6 @@ export const AccountManagementTab: React.FC<AccountManagementTabProps> = ({ curr
           currentUser={currentUser}
           transactions={transactions}
           invoices={invoices}
-          onTriggerSimulatedPayment={(channel, amount, studentAdmNo) => {
-            // Find target student invoice
-            const inv = invoices.find(i => i.admissionNumber === studentAdmNo) || invoices[0];
-            if (inv) {
-              const txRef = channel === 'paystack'
-                ? `PSTK_CF_${Date.now()}`
-                : `OPAY_TX_${Date.now()}`;
-              
-              const fee = channel === 'paystack' ? Math.min(2000, amount * 0.015) : 50;
-              const receiptNo = `REC-2026-T3-${Math.floor(1000 + Math.random() * 9000)}`;
-
-              const newTx: PaymentTransaction = {
-                id: `tx-${Date.now()}`,
-                receiptNumber: receiptNo,
-                transactionReference: txRef,
-                invoiceId: inv.id,
-                invoiceNumber: inv.invoiceNumber,
-                studentId: inv.studentId,
-                studentName: inv.studentName,
-                admissionNumber: inv.admissionNumber,
-                classGrade: inv.classGrade,
-                amountPaid: amount,
-                gatewayFee: fee,
-                netAmount: amount - fee,
-                paymentChannel: channel,
-                channelDetails: {
-                  bankName: channel === 'paystack' ? 'Access Bank (Paystack Split)' : 'OPay Digital Bank (Paycom)',
-                  pspReference: txRef,
-                  senderAccountName: inv.parentName,
-                  virtualAccountNumber: channel === 'opay' ? '9920192834' : undefined
-                },
-                paymentDate: new Date().toISOString(),
-                status: 'successful',
-                verifiedBy: `${currentUser.title || ''} ${currentUser.firstName} ${currentUser.lastName}`.trim(),
-                verifiedAt: new Date().toISOString(),
-                notes: `Simulated ${channel.toUpperCase()} automated webhook settlement`
-              };
-
-              const newRec: OfficialReceipt = {
-                id: `rec-${Date.now()}`,
-                receiptNumber: receiptNo,
-                transactionId: newTx.id,
-                transactionReference: txRef,
-                invoiceId: inv.id,
-                invoiceNumber: inv.invoiceNumber,
-                studentId: inv.studentId,
-                studentName: inv.studentName,
-                admissionNumber: inv.admissionNumber,
-                classGrade: inv.classGrade,
-                parentName: inv.parentName,
-                parentPhone: inv.parentPhone,
-                parentEmail: inv.parentEmail,
-                amountInFigures: amount,
-                amountInWords: numberToWordsNaira(amount),
-                paymentChannel: channel,
-                paymentDate: new Date().toISOString(),
-                totalInvoiceAmount: inv.totalAmount,
-                amountPaidThisTransaction: amount,
-                totalCumulativePaid: inv.amountPaid + amount,
-                balanceRemaining: Math.max(0, inv.balance - amount),
-                authorizedBursarName: `${currentUser.title || ''} ${currentUser.firstName} ${currentUser.lastName}`.trim(),
-                qrVerificationCode: `https://verify.curriculumflow.com.ng/receipt/${receiptNo}`,
-                generatedAt: new Date().toISOString()
-              };
-
-              setTransactions(prev => [newTx, ...prev]);
-              setReceipts(prev => [newRec, ...prev]);
-              setInvoices(prev => prev.map(i => {
-                if (i.id === inv.id) {
-                  const newPaid = i.amountPaid + amount;
-                  const newBal = Math.max(0, i.totalAmount - newPaid);
-                  return {
-                    ...i,
-                    amountPaid: newPaid,
-                    balance: newBal,
-                    status: newBal === 0 ? 'paid' : 'partially_paid'
-                  };
-                }
-                return i;
-              }));
-
-              showToast(`Simulated ${channel.toUpperCase()} payment of ₦${amount.toLocaleString()} posted to student ledger & receipt #${receiptNo} generated!`);
-            }
-          }}
         />
       )}
 
