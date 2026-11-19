@@ -7,7 +7,7 @@ import {
   PlatformAuditRecord,
   CurriculumServerSaaSMetrics
 } from '../types';
-import { OPTIONAL_FEATURE_DEFINITIONS, INITIAL_SAAS_METRICS, INITIAL_SAAS_INVOICES } from '../mockCurriculumServerData';
+import { OPTIONAL_FEATURE_DEFINITIONS, INITIAL_SAAS_METRICS } from '../mockCurriculumServerData';
 import { globalBackupService } from '../services/backupRestoreService';
 import { globalAuditLogService } from '../services/auditLogService';
 import { TenantSecurityContextManager } from '../services/tenantSecurityContext';
@@ -146,76 +146,14 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
   const [isRunningAuditTests, setIsRunningAuditTests] = useState(false);
   const [exportingAuditFormat, setExportingAuditFormat] = useState<'json' | 'csv' | null>(null);
 
-  const [invoicesList, setInvoicesList] = useState<TenantBillingInvoice[]>(() => {
-    const filtered = invoices.filter(inv => inv.tenantAppId === tenant.id || inv.tenantAppId === tenant.appId || inv.tenantSchoolName === tenant.schoolName);
-    if (filtered.length > 0) return filtered;
-    const fallbackMatching = INITIAL_SAAS_INVOICES.filter(inv => inv.tenantAppId === tenant.id || inv.tenantAppId === tenant.appId || inv.tenantSchoolName === tenant.schoolName);
-    return fallbackMatching.length > 0 ? fallbackMatching : INITIAL_SAAS_INVOICES;
-  });
-  const [verifyingInvoiceId, setVerifyingInvoiceId] = useState<string | null>(null);
-  const [activeSimulatingInvoice, setActiveSimulatingInvoice] = useState<TenantBillingInvoice | null>(null);
+  const tenantInvoices = invoices.filter(inv => inv.tenantAppId === tenant.id || inv.tenantAppId === tenant.appId || inv.tenantSchoolName === tenant.schoolName);
   const [gatewayToast, setGatewayToast] = useState<{ message: string; type: 'success' | 'failed' | 'info' } | null>(null);
 
-  const tenantInvoices = invoicesList;
   const tenantAuditLogs = globalAuditLogService.getLogs({ tenantId: tenant.id });
   const usageTracker = EntitlementEnforcementService.getUsageTracker(tenant.id);
   const planPolicy = DEFAULT_PLAN_POLICIES[tenant.subscriptionTier] || DEFAULT_PLAN_POLICIES.Starter;
   const leaseToOwnInfo = TenantLifecycleManager.calculateLeaseToOwnStatus(tenant);
   const securityViolations = TenantSecurityContextManager.getSecurityViolations().filter(v => v.sourceTenantId === tenant.id || v.targetTenantId === tenant.id);
-
-  const handleSimulateWebhookResponse = (invoiceId: string, targetStatus: 'paid' | 'pending' | 'failed', responseCode: string, psp: 'Paystack' | 'OPay') => {
-    const nowIso = new Date().toISOString();
-    const updatedInvoices = invoicesList.map(inv => {
-      if (inv.id === invoiceId) {
-        return {
-          ...inv,
-          status: targetStatus,
-          gatewayResponseCode: responseCode,
-          gatewayTransactionStatus: (targetStatus === 'paid' ? 'success' : targetStatus === 'pending' ? 'pending' : 'failed') as any,
-          pspChannel: psp,
-          lastWebhookTimestamp: nowIso,
-          gatewayLatencyMs: psp === 'OPay' ? 24 : 42,
-          authHeaderSignature: psp === 'OPay' ? 'hmac_sha512_canonical_verified' : 'bearer_secret_verified'
-        };
-      }
-      return inv;
-    });
-
-    setInvoicesList(updatedInvoices);
-    const updatedInvoice = updatedInvoices.find(i => i.id === invoiceId);
-
-    globalAuditLogService.logEvent({
-      actor: `${psp.toLowerCase()}-webhook@curriculumserver.ng`,
-      actorRole: 'PSP Inbound Webhook',
-      tenantId: tenant.id,
-      tenantSchoolName: tenant.schoolName,
-      action: 'payment_received',
-      target: updatedInvoice?.invoiceNumber || invoiceId,
-      result: targetStatus === 'paid' ? 'SUCCESS' : targetStatus === 'pending' ? 'PENDING' : 'FAILED',
-      ipAddress: psp === 'OPay' ? '102.89.44.12 (OPay Gateway)' : '52.214.18.99 (Paystack Relay)',
-      deviceMetadata: `${psp} Payment Webhook Engine`,
-      details: `Received ${psp} webhook for ${updatedInvoice?.invoiceNumber}. Status transitioned to [${targetStatus.toUpperCase()}] with Gateway Response Code: ${responseCode}`
-    });
-
-    setGatewayToast({
-      message: `Updated ${updatedInvoice?.invoiceNumber} to ${targetStatus.toUpperCase()} via ${psp} response code [${responseCode}]`,
-      type: targetStatus === 'paid' ? 'success' : targetStatus === 'pending' ? 'info' : 'failed'
-    });
-    setTimeout(() => setGatewayToast(null), 4500);
-    setActiveSimulatingInvoice(null);
-  };
-
-  const handleVerifyInvoiceOnGateway = (inv: TenantBillingInvoice) => {
-    setVerifyingInvoiceId(inv.id);
-    setTimeout(() => {
-      setVerifyingInvoiceId(null);
-      setGatewayToast({
-        message: `Verified ${inv.invoiceNumber} with ${inv.pspChannel || 'Paystack'} Gateway API. Response: ${inv.gatewayResponseCode || '200_OK'} (${inv.gatewayLatencyMs || 38}ms roundtrip)`,
-        type: inv.status === 'paid' ? 'success' : 'info'
-      });
-      setTimeout(() => setGatewayToast(null), 4500);
-    }, 700);
-  };
 
   const handleExportInvoicesCsv = () => {
     if (!tenantInvoices || tenantInvoices.length === 0) {
@@ -254,7 +192,7 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
       inv.totalAmount,
       `"${inv.status.toUpperCase()}"`,
       `"${inv.gatewayResponseCode || (inv.status === 'paid' ? '200_OK' : '01_PROCESSING')}"`,
-      `"${inv.pspChannel || 'Paystack'}"`,
+      `"${inv.pspChannel || ''}"`,
       `"${inv.dueDate || ''}"`,
       `"${inv.paidAt || (inv.status === 'paid' ? inv.dueDate : '')}"`,
       `"${inv.transactionReference || inv.invoiceNumber}"`,
@@ -804,10 +742,10 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
               <div>
                 <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
                   <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-                  <span>Dynamic Invoice Ledger & Gateway Response Status</span>
+                  <span>Invoice Ledger & Gateway Response Status</span>
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Visual indicators update dynamically based on live PSP response codes (e.g. Paid, Pending, Failed) from OPay & Paystack.
+                  Displays invoice data supplied by the billing backend. Provider verification is not available in this client.
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -835,12 +773,10 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
                     <th className="p-3">Visual Status Indicator</th>
                     <th className="p-3">Gateway Code</th>
                     <th className="p-3">Channel / Auth</th>
-                    <th className="p-3 text-right">Actions & Simulation</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 text-slate-300">
                   {tenantInvoices.map(inv => {
-                    const isVerifying = verifyingInvoiceId === inv.id;
                     const isPaid = inv.status === 'paid';
                     const isPending = inv.status === 'pending';
                     const isFailed = inv.status === 'failed' || inv.status === 'overdue';
@@ -888,7 +824,7 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
                               isPending ? 'bg-amber-950 text-amber-300 border border-amber-800' :
                               'bg-rose-950 text-rose-300 border border-rose-800'
                             }`}>
-                              {inv.gatewayResponseCode || (isPaid ? '200_OK' : isPending ? '01_PROCESSING' : '51_INSUFFICIENT')}
+                              {inv.gatewayResponseCode || '—'}
                             </span>
                             {inv.gatewayLatencyMs && (
                               <span className="text-[10px] text-slate-500 block font-mono">
@@ -906,42 +842,8 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
                                 ? 'bg-emerald-500/20 text-emerald-400' 
                                 : 'bg-cyan-500/20 text-cyan-400'
                             }`}>
-                              {inv.pspChannel || 'Paystack'}
+                              {inv.pspChannel || 'Not recorded'}
                             </span>
-                            <span className="text-[10px] text-slate-500 font-mono">
-                              {inv.pspChannel === 'OPay' ? 'HMAC' : 'Bearer'}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Actions */}
-                        <td className="p-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* Verify Button */}
-                            <button 
-                              onClick={() => handleVerifyInvoiceOnGateway(inv)}
-                              disabled={isVerifying}
-                              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
-                              title="Verify transaction status with Gateway API"
-                            >
-                              <RotateCw className={`w-3 h-3 ${isVerifying ? 'animate-spin text-emerald-400' : ''}`} />
-                              <span className="hidden sm:inline">Verify</span>
-                            </button>
-
-                            {/* Simulate Webhook Button */}
-                            <button
-                              onClick={() => setActiveSimulatingInvoice(inv)}
-                              className="px-2 py-1 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 rounded text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
-                              title="Simulate dynamic gateway response"
-                            >
-                              <Zap className="w-3 h-3 text-emerald-400" />
-                              <span className="hidden sm:inline">Simulate</span>
-                            </button>
-
-                            {/* PDF Button */}
-                            <button className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded transition-colors cursor-pointer" title="Download PDF">
-                              <Download className="w-3 h-3" />
-                            </button>
                           </div>
                         </td>
                       </tr>
@@ -951,65 +853,6 @@ export const TenantControlCenter: React.FC<TenantControlCenterProps> = ({
               </table>
             </div>
           </div>
-
-          {/* Webhook Response Simulation Modal */}
-          {activeSimulatingInvoice && (
-            <div className="p-5 bg-slate-950 border border-emerald-600/50 rounded-2xl space-y-4 animate-fadeIn shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-emerald-400" />
-                  <h4 className="text-xs font-bold text-slate-100">
-                    Simulate Gateway Webhook for <span className="font-mono text-emerald-400">{activeSimulatingInvoice.invoiceNumber}</span>
-                  </h4>
-                </div>
-                <button 
-                  onClick={() => setActiveSimulatingInvoice(null)}
-                  className="text-slate-400 hover:text-slate-200 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <p className="text-xs text-slate-400">
-                Trigger a simulated signed inbound HTTP POST webhook from either OPay or Paystack to observe live status indicator transitions and ledger reconciliation:
-              </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                <button
-                  onClick={() => handleSimulateWebhookResponse(activeSimulatingInvoice.id, 'paid', '00_APPROVED', 'OPay')}
-                  className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-800/80 hover:bg-emerald-900 text-left space-y-1 transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-300">OPay: Success</span>
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-800 text-white">00</span>
-                  </div>
-                  <p className="text-[10px] text-slate-400">HMAC-SHA512 valid • Instant settlement</p>
-                </button>
-
-                <button
-                  onClick={() => handleSimulateWebhookResponse(activeSimulatingInvoice.id, 'paid', '200_OK', 'Paystack')}
-                  className="p-3 rounded-xl bg-cyan-950/60 border border-cyan-800/80 hover:bg-cyan-900 text-left space-y-1 transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-cyan-300">Paystack: Paid</span>
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-800 text-white">200</span>
-                  </div>
-                  <p className="text-[10px] text-slate-400">Bearer verified • Charge success event</p>
-                </button>
-
-                <button
-                  onClick={() => handleSimulateWebhookResponse(activeSimulatingInvoice.id, 'failed', '51_INSUFFICIENT_FUNDS', 'Paystack')}
-                  className="p-3 rounded-xl bg-rose-950/60 border border-rose-800/80 hover:bg-rose-900 text-left space-y-1 transition-all cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-rose-300">Failure: Code 51</span>
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-rose-800 text-white">51</span>
-                  </div>
-                  <p className="text-[10px] text-slate-400">Declined • Triggers fallback to OPay</p>
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
 

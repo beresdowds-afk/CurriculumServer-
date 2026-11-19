@@ -266,10 +266,10 @@ export const UniversalCustomerOnboardingWizard: React.FC<UniversalCustomerOnboar
         paymentProvider,
         amountToPay
       );
-      if (res.verified) {
+      if (res.status === 'settled') {
         setPaymentVerified(true);
       } else {
-        setPaymentError('Payment verification returned no verified provider evidence.');
+        setPaymentError(`Payment is ${res.status}; provisioning remains blocked until provider settlement is verified.`);
       }
     } catch (error) {
       setPaymentError(getErrorMessage(error));

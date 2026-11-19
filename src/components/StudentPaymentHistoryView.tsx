@@ -11,9 +11,8 @@ import {
   ClassGrade,
   PaymentNotification
 } from '../types';
-import { 
-  numberToWordsNaira, 
-  generateVirtualNuban,
+import {
+  numberToWordsNaira,
   DEFAULT_INSTALLMENT_POLICY
 } from '../data/bursaryAccountsData';
 import { INITIAL_STUDENTS } from '../data/schoolManagementData';
@@ -243,14 +242,6 @@ export const StudentPaymentHistoryView: React.FC<StudentPaymentHistoryViewProps>
   const currentAccountSummary = useMemo(() => {
     return studentAccounts.find(a => a.studentId === currentStudent.id || a.admissionNumber === currentStudent.admissionNumber);
   }, [studentAccounts, currentStudent]);
-
-  // Virtual NUBAN Account
-  const studentVirtualNuban = useMemo(() => {
-    if (currentAccountSummary?.virtualNubanAccount) {
-      return currentAccountSummary.virtualNubanAccount;
-    }
-    return generateVirtualNuban(currentStudent.admissionNumber);
-  }, [currentAccountSummary, currentStudent]);
 
   // Student's Invoices
   const studentInvoices = useMemo(() => {
@@ -632,7 +623,7 @@ export const StudentPaymentHistoryView: React.FC<StudentPaymentHistoryViewProps>
       recipientName: currentStudent.parentName,
       studentName: `${currentStudent.name} (${currentStudent.classGrade})`,
       title: 'Official Statement of Account Dispatched',
-      message: customMessage || `Dear ${currentStudent.parentName}, the updated financial ledger for ${currentStudent.name} (${currentStudent.admissionNumber}) has been generated. Total Paid: ₦${totalPaidLifetime.toLocaleString()}, Outstanding Balance: ₦${currentOutstandingBalance.toLocaleString()}. Dedicated NUBAN: ${studentVirtualNuban.accountNumber} (${studentVirtualNuban.bankName}). Thank you.`,
+      message: customMessage || `Dear ${currentStudent.parentName}, the updated financial ledger for ${currentStudent.name} (${currentStudent.admissionNumber}) has been generated. Total Paid: ₦${totalPaidLifetime.toLocaleString()}, Outstanding Balance: ₦${currentOutstandingBalance.toLocaleString()}. Please contact the school for approved payment instructions.`,
       timestamp: new Date().toISOString(),
       status: 'delivered',
       channelIcon: sendChannel === 'sms' ? 'MessageSquare' : 'Mail'
@@ -909,40 +900,8 @@ export const StudentPaymentHistoryView: React.FC<StudentPaymentHistoryViewProps>
             </div>
           </div>
 
-          {/* Dedicated Virtual NUBAN Account Card */}
-          <div className="bg-gradient-to-r from-emerald-950/90 via-slate-900 to-indigo-950/90 rounded-2xl p-4 border border-emerald-700/50 space-y-2 relative">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1.5">
-                <Smartphone className="w-3.5 h-3.5" />
-                <span>Dedicated Virtual Ingress NUBAN</span>
-              </span>
-              <span className="text-[9px] px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/50 font-semibold">
-                Auto-Credit Reconciled
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between pt-1">
-              <div>
-                <div className="font-mono font-black text-lg text-white tracking-widest">
-                  {studentVirtualNuban.accountNumber}
-                </div>
-                <div className="text-[11px] text-slate-300 mt-0.5">
-                  {studentVirtualNuban.bankName} • <span className="font-medium text-emerald-300">{studentVirtualNuban.accountName}</span>
-                </div>
-              </div>
-
-              <button
-                onClick={() => handleCopy(studentVirtualNuban.accountNumber, 'Virtual NUBAN Account')}
-                className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-emerald-500/30 transition-all cursor-pointer"
-                title="Copy Account Number"
-              >
-                {copiedRef === studentVirtualNuban.accountNumber ? (
-                  <Check className="w-4 h-4 text-emerald-400" />
-                ) : (
-                  <Copy className="w-4 h-4" />
-                )}
-              </button>
-            </div>
+          <div className="rounded-2xl border border-amber-700/50 bg-amber-950/30 p-4 text-xs text-amber-200">
+            No approved payment account is configured. Contact the school for verified payment instructions.
           </div>
 
           {/* Active Installment Policy Status */}
@@ -2064,7 +2023,7 @@ export const StudentPaymentHistoryView: React.FC<StudentPaymentHistoryViewProps>
                   rows={4}
                   value={customMessage}
                   onChange={(e) => setCustomMessage(e.target.value)}
-                  placeholder={`Dear ${currentStudent.parentName}, please find the updated fee ledger for ${currentStudent.name}. Total Paid: ₦${totalPaidLifetime.toLocaleString()}, Outstanding Balance: ₦${currentOutstandingBalance.toLocaleString()}. Dedicated NUBAN: ${studentVirtualNuban.accountNumber} (${studentVirtualNuban.bankName}). Thank you.`}
+                  placeholder={`Dear ${currentStudent.parentName}, please find the updated fee ledger for ${currentStudent.name}. Total Paid: ₦${totalPaidLifetime.toLocaleString()}, Outstanding Balance: ₦${currentOutstandingBalance.toLocaleString()}. Please contact the school for approved payment instructions.`}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
               </div>
