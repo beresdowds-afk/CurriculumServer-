@@ -17,6 +17,7 @@ class AuthorizationTestPool implements DatabasePool {
   readonly rolePermissions: string[];
   readonly currentPermissions: string[];
   readonly activeAssignmentInsertRowCount: number;
+  readonly membershipTransitionRowCount: number;
   readonly client: DatabaseClient = {
     query: async <R extends QueryResultRow>(text: string, values?: unknown[]) => {
       this.statements.push(text);
@@ -30,7 +31,8 @@ class AuthorizationTestPool implements DatabasePool {
         return result<R>([{ permissions: values?.[0] === 'tenant_admin'
           ? [PERMISSIONS.studentsManage] : this.rolePermissions }]);
       }
-      if (text.includes('FROM production.memberships') && text.includes('FOR UPDATE')) {
+      if (text.includes('FROM production.memberships') && text.includes('FOR UPDATE') &&
+          !text.includes('JOIN production.users')) {
         return result<R>([{ user_subject: 'target-subject' }]);
       }
       if (text.includes('INSERT INTO production.membership_role_assignments')) {
@@ -38,6 +40,12 @@ class AuthorizationTestPool implements DatabasePool {
       }
       if (text.includes('UPDATE production.membership_role_assignments')) {
         return result<R>([{ id: 'assignment-id', role_code: 'staff' }]);
+      }
+      if (text.includes('UPDATE production.memberships') && text.includes('RETURNING user_subject')) {
+        return {
+          ...result<R>(this.membershipTransitionRowCount ? [{ user_subject: 'target-subject' }] : []),
+          rowCount: this.membershipTransitionRowCount
+        };
       }
       if (text.includes('INSERT INTO production.audit_events')) {
         this.actions.push(text);
@@ -65,10 +73,12 @@ class AuthorizationTestPool implements DatabasePool {
     rolePermissions?: string[];
     currentPermissions?: string[];
     activeAssignmentInsertRowCount?: number;
+    membershipTransitionRowCount?: number;
   } = {}) {
     this.rolePermissions = options.rolePermissions ?? [];
     this.currentPermissions = options.currentPermissions ?? [PERMISSIONS.membershipRolesAssign];
     this.activeAssignmentInsertRowCount = options.activeAssignmentInsertRowCount ?? 1;
+    this.membershipTransitionRowCount = options.membershipTransitionRowCount ?? 1;
   }
 }
 
@@ -180,4 +190,57 @@ test('role revocation records an audit event and cannot silently revoke a missin
     new AuthorizationRepository(missingAssignmentPool).revokeRole(actor, userId, 'staff', 'test'),
     /ROLE_ASSIGNMENT_NOT_FOUND/
   );
+});
+
+test('membership suspension invalidates tenant sessions and reactivation is limited to suspended memberships', async () => {
+  const tenantId = '11111111-1111-4111-8111-111111111111';
+  const userId = '22222222-2222-4222-8222-222222222222';
+  const actor = createAuthorizedPrincipal({
+    tenant: principal(tenantId),
+    userId,
+    sessionId: '33333333-3333-4333-8333-333333333333',
+    grants: [{
+      roleCode: 'tenant_admin',
+      permissions: [PERMISSIONS.membershipRolesAssign],
+      scopes: []
+    }]
+  });
+  const pool = new AuthorizationTestPool();
+  const repository = new AuthorizationRepository(pool);
+
+  await repository.suspendMembership(actor, userId, 'temporary suspension');
+  await repository.reactivateMembership(actor, userId, 'review completed');
+
+  assert.ok(pool.statements.some(statement =>
+    statement.includes("SET status = 'suspended'") &&
+    statement.includes("status = 'active' AND revoked_at IS NULL")));
+  assert.ok(pool.statements.some(statement =>
+    statement.includes('UPDATE production.user_sessions') &&
+    statement.includes('tenant_id = $1 AND user_id = $2')));
+  assert.ok(pool.statements.some(statement => statement.includes("SET status = 'active'") &&
+    statement.includes("status = 'suspended' AND revoked_at IS NULL")));
+  assert.ok(pool.actions.some(action => action.includes("'membership_suspended'")));
+  assert.ok(pool.actions.some(action => action.includes("'membership_reactivated'")));
+
+  const invalidTransitionPool = new AuthorizationTestPool({ membershipTransitionRowCount: 0 });
+  await assert.rejects(
+    new AuthorizationRepository(invalidTransitionPool).reactivateMembership(actor, userId, 'not suspended'),
+    /INVALID_MEMBERSHIP_TRANSITION/
+  );
+});
+
+test('session creation requires an active membership and tenant', async () => {
+  const tenantId = '11111111-1111-4111-8111-111111111111';
+  const userId = '22222222-2222-4222-8222-222222222222';
+  const pool = new AuthorizationTestPool();
+
+  await assert.rejects(
+    new AuthorizationRepository(pool).createSession(principal(tenantId), userId, 3600),
+    /MEMBERSHIP_INACTIVE/
+  );
+  assert.ok(pool.statements.some(statement =>
+    statement.includes('FROM production.memberships membership') &&
+    statement.includes("membership.status = 'active'")));
+  assert.equal(pool.statements.some(statement =>
+    statement.includes('INSERT INTO production.user_sessions')), false);
 });

@@ -119,6 +119,20 @@ export class AuthorizationRepository implements AuthorizationSource {
     ttlSeconds: number
   ): Promise<{ sessionId: string; expiresAt: Date }> {
     return withTenantTransaction(this.pool, tenant, async client => {
+      const membership = await client.query(
+        `SELECT 1
+         FROM production.memberships membership
+         JOIN production.users user_record ON user_record.id = membership.user_id
+         JOIN production.tenants tenant_record ON tenant_record.id = membership.tenant_id
+         WHERE membership.tenant_id = $1 AND membership.user_id = $2
+           AND membership.status = 'active' AND membership.revoked_at IS NULL
+           AND user_record.account_status = 'active'
+           AND tenant_record.status = 'approved'
+         FOR UPDATE OF membership`,
+        [tenant.tenantId, userId]
+      );
+      if (membership.rowCount !== 1) throw new Error('MEMBERSHIP_INACTIVE');
+
       const result = await client.query<{ id: string; expires_at: Date }>(
         `INSERT INTO production.user_sessions (tenant_id, user_id, expires_at)
          VALUES ($1, $2, now() + make_interval(secs => $3))
@@ -126,6 +140,54 @@ export class AuthorizationRepository implements AuthorizationSource {
         [tenant.tenantId, userId, ttlSeconds]
       );
       return { sessionId: result.rows[0].id, expiresAt: result.rows[0].expires_at };
+    });
+  }
+
+  async suspendMembership(actor: AuthorizedPrincipal, userId: string, reason: string): Promise<void> {
+    if (!reason.trim()) throw new Error('INVALID_MEMBERSHIP_SUSPENSION');
+    assertAuthorized(actor, PERMISSIONS.membershipRolesAssign);
+    await withTenantTransaction(this.pool, actor.tenant, async client => {
+      await this.assertCurrentPrincipal(client, actor, PERMISSIONS.membershipRolesAssign);
+      const membership = await client.query(
+        `UPDATE production.memberships
+         SET status = 'suspended', status_changed_at = now()
+         WHERE tenant_id = $1 AND user_id = $2 AND status = 'active' AND revoked_at IS NULL
+         RETURNING user_subject`,
+        [actor.tenantId, userId]
+      );
+      if (membership.rowCount !== 1) throw new Error('INVALID_MEMBERSHIP_TRANSITION');
+
+      await client.query(
+        `UPDATE production.user_sessions SET revoked_at = now(), revoked_reason = $3
+         WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL`,
+        [actor.tenantId, userId, reason]
+      );
+      await client.query(
+        `INSERT INTO production.audit_events (tenant_id, actor_subject, action, details)
+         VALUES ($1, $2, 'membership_suspended', $3::jsonb)`,
+        [actor.tenantId, actor.userId, JSON.stringify({ userId, reason })]
+      );
+    });
+  }
+
+  async reactivateMembership(actor: AuthorizedPrincipal, userId: string, reason: string): Promise<void> {
+    if (!reason.trim()) throw new Error('INVALID_MEMBERSHIP_REACTIVATION');
+    assertAuthorized(actor, PERMISSIONS.membershipRolesAssign);
+    await withTenantTransaction(this.pool, actor.tenant, async client => {
+      await this.assertCurrentPrincipal(client, actor, PERMISSIONS.membershipRolesAssign);
+      const membership = await client.query(
+        `UPDATE production.memberships
+         SET status = 'active', status_changed_at = now()
+         WHERE tenant_id = $1 AND user_id = $2 AND status = 'suspended' AND revoked_at IS NULL
+         RETURNING user_subject`,
+        [actor.tenantId, userId]
+      );
+      if (membership.rowCount !== 1) throw new Error('INVALID_MEMBERSHIP_TRANSITION');
+      await client.query(
+        `INSERT INTO production.audit_events (tenant_id, actor_subject, action, details)
+         VALUES ($1, $2, 'membership_reactivated', $3::jsonb)`,
+        [actor.tenantId, actor.userId, JSON.stringify({ userId, reason })]
+      );
     });
   }
 

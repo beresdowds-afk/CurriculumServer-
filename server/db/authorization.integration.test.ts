@@ -228,29 +228,33 @@ test('PostgreSQL authorization, lifecycle separation and invitation durability',
       /TENANT_ROLE_INVALID/
     );
 
-    await withControlPlaneTransaction(pool, admin, client =>
-      client.query(
-        `UPDATE production.memberships SET status = 'suspended', status_changed_at = now()
-         WHERE tenant_id = $1 AND user_id = $2`,
-        [a.record.tenantId, staffUserId]
+    await authz.suspendMembership(adminPrincipal, staffUserId, 'temporary suspension');
+    assert.deepEqual(
+      await authz.authorize(tenantA, staffUserId, staffSession.sessionId),
+      { ok: false, reason: 'SESSION_REVOKED' }
+    );
+    await assert.rejects(authz.createSession(tenantA, staffUserId, 3600), /MEMBERSHIP_INACTIVE/);
+    await authz.reactivateMembership(adminPrincipal, staffUserId, 'suspension reviewed');
+    const resumedSession = await authz.createSession(tenantA, staffUserId, 3600);
+
+    // Session revocation takes effect immediately.
+    await authz.revokeSession(adminPrincipal, resumedSession.sessionId, 'test');
+    assert.deepEqual(await authz.authorize(tenantA, staffUserId, resumedSession.sessionId),
+      { ok: false, reason: 'SESSION_REVOKED' });
+
+    const membershipLifecycleAudits = await withControlPlaneTransaction(pool, admin, client =>
+      client.query<{ action: string }>(
+        `SELECT action FROM production.audit_events
+         WHERE tenant_id = $1 AND actor_subject = $2
+           AND action IN ('membership_suspended', 'membership_reactivated')
+           AND details->>'userId' = $3`,
+        [a.record.tenantId, activeA.account.userId, staffUserId]
       )
     );
     assert.deepEqual(
-      await authz.authorize(tenantA, staffUserId, staffSession.sessionId),
-      { ok: false, reason: 'MEMBERSHIP_INACTIVE' }
+      membershipLifecycleAudits.rows.map(row => row.action).sort(),
+      ['membership_reactivated', 'membership_suspended']
     );
-    await withControlPlaneTransaction(pool, admin, client =>
-      client.query(
-        `UPDATE production.memberships SET status = 'active', status_changed_at = now()
-         WHERE tenant_id = $1 AND user_id = $2`,
-        [a.record.tenantId, staffUserId]
-      )
-    );
-
-    // Session revocation takes effect immediately.
-    await authz.revokeSession(adminPrincipal, staffSession.sessionId, 'test');
-    assert.deepEqual(await authz.authorize(tenantA, staffUserId, staffSession.sessionId),
-      { ok: false, reason: 'SESSION_REVOKED' });
 
     const roleLifecycleSession = await authz.createSession(tenantA, staffUserId, 3600);
     await authz.assignRole(adminPrincipal, staffUserId, 'read_only');

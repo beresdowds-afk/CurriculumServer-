@@ -1,4 +1,4 @@
--- Central AI execution hardening: least-privilege school roles and exactly one
+-- Version 019: central AI execution hardening, least-privilege school roles, and one
 -- durable usage row per accepted request.
 
 INSERT INTO production.roles (code, description)
