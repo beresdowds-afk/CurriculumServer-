@@ -499,6 +499,13 @@ const authLoginRateLimiter = createSlidingWindowRateLimiter({
   serviceLabel: 'school-auth-login'
 });
 
+const billingPaymentsRateLimiter = createSlidingWindowRateLimiter({
+  windowMs: 60_000,
+  maxRequests: Math.max(10, Number(process.env.BILLING_PAYMENTS_RATE_LIMIT_MAX || 120)),
+  serviceLabel: 'billing-payments',
+  keyGenerator: req => req.ip || 'anonymous'
+});
+
 function requireSharedServiceAccess(
   serviceId: CentralSharedServiceId,
   operation: SharedServiceOperation,
@@ -5198,6 +5205,8 @@ app.post('/api/v1/server/onboarding/requests/:id/review', requireSuperAdmin, (re
 });
 
 // Platform application billing is proxied to the internal billing-payments service.
+app.use('/api/v1/server/payments', billingPaymentsRateLimiter);
+app.use('/api/v1/cloud-billing', billingPaymentsRateLimiter);
 app.post(
   '/api/v1/server/payments/initialize',
   authorizationMiddleware.requirePermission('billing.payments.create'),
