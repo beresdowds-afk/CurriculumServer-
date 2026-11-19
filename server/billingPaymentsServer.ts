@@ -20,6 +20,7 @@ import {
   type BillingPaymentProvider,
   type VerifiedProviderPayment
 } from './billingPaymentsProviders';
+import { createSlidingWindowRateLimiter } from './sharedServices/rateLimiter';
 
 const PROVIDERS = new Set<BillingPaymentProvider>([
   'paystack', 'flutterwave', 'opay', 'interswitch', 'bank_transfer'
@@ -303,6 +304,20 @@ async function googleMetadataAccessToken(): Promise<string> {
 export function createBillingPaymentsApp() {
   const app = express();
   const pool = postgresRuntime.getPool();
+  const billingPaymentsRateLimiter = createSlidingWindowRateLimiter({
+    windowMs: 60_000,
+    maxRequests: Math.max(10, Number(process.env.BILLING_PAYMENTS_RATE_LIMIT_MAX || 120)),
+    serviceLabel: 'billing-payments',
+    keyGenerator: req => req.ip || 'anonymous'
+  });
+  const protectedBillingRateLimiter = createSlidingWindowRateLimiter({
+    windowMs: 60_000,
+    maxRequests: Math.max(10, Number(process.env.BILLING_PAYMENTS_RATE_LIMIT_MAX || 120)),
+    serviceLabel: 'protected-billing-operations',
+    keyGenerator: req => req.ip || 'anonymous'
+  });
+  app.use('/api/v1/server/payments', billingPaymentsRateLimiter);
+  app.use('/api/v1/cloud-billing', billingPaymentsRateLimiter);
   app.use((req, res, next) => {
     const rawWebhook = /^\/api\/v1\/server\/payments\/webhook\/[^/]+$/.test(req.path);
     const parser = rawWebhook
@@ -335,9 +350,12 @@ export function createBillingPaymentsApp() {
         const provider = providerFrom(req.body?.provider);
         const obligationId = typeof req.body?.obligationId === 'string' ? req.body.obligationId : '';
         const email = typeof req.body?.customerEmail === 'string' ? req.body.customerEmail.trim() : '';
+        const emailAtIndex = email.indexOf('@');
+        const emailLastDot = email.lastIndexOf('.');
         const idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
         if (!provider || provider === 'bank_transfer' || !UUID.test(obligationId) ||
-            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+            email.length > 254 || emailAtIndex <= 0 || emailAtIndex !== email.lastIndexOf('@') ||
+            emailLastDot <= emailAtIndex + 1 || emailLastDot >= email.length - 1 || /\s/.test(email) ||
             idempotencyKey.length < 8 || idempotencyKey.length > 200) {
           res.status(400).json({ success: false, code: 'VALIDATION_FAILED', error: 'A supported provider, open obligation, customer email, and Idempotency-Key are required.' });
           return;
@@ -478,6 +496,7 @@ export function createBillingPaymentsApp() {
 
   app.post(
     '/api/v1/server/payments/verify',
+    protectedBillingRateLimiter,
     authorization.requirePermission('billing.payments.read'),
     async (req: TenantRequest, res: Response) => {
       try {
@@ -521,7 +540,7 @@ export function createBillingPaymentsApp() {
     }
   );
 
-  app.post('/api/v1/server/payments/webhook/:provider', async (req, res) => {
+  app.post('/api/v1/server/payments/webhook/:provider', protectedBillingRateLimiter, async (req, res) => {
     try {
       const provider = providerFrom(req.params.provider);
       if (!provider || !Buffer.isBuffer(req.body) ||
@@ -849,6 +868,7 @@ export function createBillingPaymentsApp() {
 
   app.get(
     '/api/v1/cloud-billing/projects/:projectId/billing-info',
+    protectedBillingRateLimiter,
     requirePlatformAdministrator,
     async (req, res) => {
       try {

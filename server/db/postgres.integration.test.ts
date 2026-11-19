@@ -15,6 +15,12 @@ import {
 import { AuthorizationRepository } from '../authorization/authorizationRepository';
 import { acceptanceTestOptions, buildSchoolRequest, databaseUrl, principal } from './testSupport';
 import { buildApplicationInstanceConfiguration } from '../../src/data/applicationInstanceConfiguration';
+import {
+  PostgresProvisioningRepository,
+  signTenantProvisioningContract,
+  verifyTenantProvisioningContract,
+  type TenantProvisioningContract
+} from '../tenantDatabaseProvisioner';
 
 test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS', acceptanceTestOptions, async () => {
   const runtime = new PostgresRuntime({
@@ -89,6 +95,42 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
       'SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user'
     );
     assert.equal(role.rows[0]?.rolbypassrls, false, 'runtime identity must not have BYPASSRLS');
+    const provisioningTableSecurity = await pool.query<{
+      relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean;
+    }>(
+      `SELECT relation.relname, relation.relrowsecurity, relation.relforcerowsecurity
+       FROM pg_class relation
+       JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+       WHERE namespace.nspname = 'production'
+         AND relation.relname = ANY($1::text[])`,
+      [[
+        'tenant_provisioning_approvals',
+        'tenant_provisioning_operations',
+        'tenant_database_resources',
+        'tenant_storage_configurations',
+        'tenant_provisioning_attempts',
+        'tenant_provisioning_verification_evidence'
+      ]]
+    );
+    assert.equal(provisioningTableSecurity.rowCount, 6);
+    assert.ok(provisioningTableSecurity.rows.every(row => row.relrowsecurity && row.relforcerowsecurity));
+    const provisioningTableOwnership = await pool.query<{ owned_count: string }>(
+      `SELECT count(*)::text AS owned_count
+       FROM pg_class relation
+       JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+       WHERE namespace.nspname = 'production'
+         AND relation.relname = ANY($1::text[])
+         AND pg_get_userbyid(relation.relowner) = current_user`,
+      [[
+        'tenant_provisioning_approvals',
+        'tenant_provisioning_operations',
+        'tenant_database_resources',
+        'tenant_storage_configurations',
+        'tenant_provisioning_attempts',
+        'tenant_provisioning_verification_evidence'
+      ]]
+    );
+    assert.equal(provisioningTableOwnership.rows[0]?.owned_count, '0', 'the application runtime cannot own provisioning tables');
 
     const tenantAPrincipal = principal(tenantA);
     const tenantBPrincipal = principal(tenantB);
@@ -329,6 +371,100 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
     );
     schoolOperationIds.push(recordB.operationId);
     schoolTenantB = recordB.tenantId;
+    let approvalA = '';
+    await withControlPlaneTransaction(pool, admin, async client => {
+      for (const record of [recordA, recordB]) {
+        const approval = await client.query<{ id: string }>(
+          `INSERT INTO production.tenant_provisioning_approvals
+             (tenant_id, application_instance_id, approval_subject, decision,
+              database_strategy, storage_strategy, approved_region, approved_at)
+           VALUES ($1, $2, 'cipa@test.invalid', 'approved',
+                   'shared_schema_isolated', 'hybrid', 'europe-west1', now())
+           RETURNING id`,
+          [record.tenantId, record.instanceId]
+        );
+        if (record.tenantId === recordA.tenantId) approvalA = approval.rows[0].id;
+      }
+    });
+    const visibleProvisioningApprovals = await withTenantTransaction(pool, schoolAPrincipal, client =>
+      client.query<{ tenant_id: string }>(
+        'SELECT tenant_id FROM production.tenant_provisioning_approvals ORDER BY tenant_id'
+      )
+    );
+    assert.deepEqual(
+      visibleProvisioningApprovals.rows.map(row => row.tenant_id),
+      [recordA.tenantId],
+      'tenant-scoped provisioning reads exclude other tenants'
+    );
+    await assert.rejects(withTenantTransaction(pool, schoolAPrincipal, client =>
+      client.query(
+        `INSERT INTO production.tenant_provisioning_approvals
+           (tenant_id, application_instance_id, approval_subject, decision,
+            database_strategy, storage_strategy, approved_region, approved_at)
+         VALUES ($1, $2, 'forged', 'approved',
+                 'shared_schema_isolated', 'hybrid', 'europe-west1', now())`,
+        [recordA.tenantId, recordA.instanceId]
+      )
+    ), /row-level security policy/);
+    const changedApproval = await withTenantTransaction(pool, schoolAPrincipal, client =>
+      client.query(
+        `UPDATE production.tenant_provisioning_approvals SET decision = 'rejected'
+         WHERE tenant_id = $1 RETURNING id`,
+        [recordA.tenantId]
+      )
+    );
+    assert.equal(changedApproval.rowCount, 0, 'a tenant cannot change its own provisioning approval');
+    const signingKey = 'test-only-contract-signing-key-at-least-32-characters';
+    const payload: TenantProvisioningContract = {
+      version: 1,
+      contractId: randomUUID(),
+      approvalId: approvalA,
+      tenantId: recordA.tenantId,
+      applicationInstanceId: recordA.instanceId,
+      issuer: 'cipa@test.invalid',
+      audience: 'curriculum-tenant-database-provisioner',
+      issuedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      databaseStrategy: 'shared_schema_isolated',
+      storageStrategy: 'hybrid',
+      region: 'europe-west1'
+    };
+    const verifiedContract = verifyTenantProvisioningContract(
+      { payload, signature: signTenantProvisioningContract(payload, signingKey) },
+      { signingKey, expectedIssuer: 'cipa@test.invalid' }
+    );
+    const provisioningRepository = new PostgresProvisioningRepository(pool);
+    assert.equal((await provisioningRepository.findApprovedDecision(verifiedContract))?.approvalId, approvalA);
+    const claimHash = 'a'.repeat(64);
+    const claims = await Promise.all([
+      provisioningRepository.begin(verifiedContract, claimHash),
+      provisioningRepository.begin(verifiedContract, claimHash)
+    ]);
+    assert.equal(claims.filter(claim => claim.claimed).length, 1, 'only one concurrent worker can claim an operation');
+    const claimed = claims.find(claim => claim.claimed)!;
+    await provisioningRepository.fail(verifiedContract, claimed.operationId, 'TEST_RETRYABLE', true);
+    await assert.rejects(
+      provisioningRepository.begin(verifiedContract, 'b'.repeat(64)),
+      /idempotency key was already used/
+    );
+    const retried = await provisioningRepository.begin(verifiedContract, claimHash);
+    assert.equal(retried.claimed, true);
+    assert.equal(retried.attemptNumber, 2, 'conflicting requests must not mutate retry state');
+    await withControlPlaneTransaction(pool, admin, client =>
+      client.query(
+        `INSERT INTO production.tenant_provisioning_approvals
+           (tenant_id, application_instance_id, approval_subject, decision,
+            database_strategy, storage_strategy, approved_region, approved_at)
+         VALUES ($1, $2, 'cipa@test.invalid', 'rejected',
+                 'shared_schema_isolated', 'hybrid', 'europe-west1', now())`,
+        [recordA.tenantId, recordA.instanceId]
+      )
+    );
+    assert.equal(
+      (await provisioningRepository.findApprovedDecision(verifiedContract))?.decision,
+      'rejected',
+      'a newer rejection supersedes an earlier approval'
+    );
     const crossTenantSchoolRead = await withTenantTransaction(pool, schoolAPrincipal, client =>
       client.query(
         'SELECT id FROM production.schools WHERE tenant_id = $1 AND id = $2',
