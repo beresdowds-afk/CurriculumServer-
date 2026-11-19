@@ -481,6 +481,52 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     acceptanceTests: ['server/questionBank/instanceQuestionBank.test.ts'],
     readinessEvidence: ['tenant_isolated_instance_question_bank', 'instance_assessment_persistence'],
     state: 'ready'
+  },
+  {
+    id: 'teacher_academic_progress_authority',
+    description: 'Authenticated teacher assignments, lesson note separation, 6-stage teaching delivery workflow, NERDC resolution, progress reporting, verified taught evidence, teacher-only scope authorizations, and provenance.',
+    routes: [
+      { method: 'GET', path: exact(
+        '/teaching/assignments',
+        '/teaching/lesson-notes',
+        '/teaching/deliveries',
+        '/teaching/progress',
+        '/teaching/evidence',
+        '/assessments/scope-authorizations',
+        '/assessments/provenance'
+      ) },
+      { method: 'GET', path: /^\/teaching\/assignments\/[0-9a-f-]+\/curriculum-topics$/i },
+      { method: 'GET', path: /^\/teaching\/deliveries\/[0-9a-f-]+\/audit-history$/i },
+      { method: 'POST', path: exact(
+        '/teaching/assignments',
+        '/teaching/lesson-notes',
+        '/teaching/deliveries',
+        '/assessments/scope-authorizations',
+        '/assessments/taught-generate'
+      ) },
+      { method: 'POST', path: /^\/teaching\/assignments\/[0-9a-f-]+\/revoke$/i },
+      { method: 'POST', path: /^\/teaching\/deliveries\/[0-9a-f-]+\/(?:transition|complete|correct|map-curriculum|admin-verify)$/i },
+      { method: 'POST', path: /^\/assessments\/scope-authorizations\/[0-9a-f-]+\/revoke$/i }
+    ],
+    requiredRepositories: ['TeachingEvidenceRepository', 'InstanceQuestionBankRepository'],
+    requiredMigrations: [18],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'database_permission_and_assignment_ownership',
+      permissions: [
+        'teaching.assignments.manage',
+        'teaching.delivery.read',
+        'teaching.delivery.manage',
+        'teaching.evidence.read',
+        'assessments.scope.authorize',
+        'assessments.read',
+        'ai.assessments.generate'
+      ]
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: ['server/teachingEvidence/teachingEvidence.test.ts'],
+    readinessEvidence: ['postgresql_teaching_evidence_ledger', 'teacher_only_scope_authorization_enforcement'],
+    state: 'ready'
   }
 ];
 

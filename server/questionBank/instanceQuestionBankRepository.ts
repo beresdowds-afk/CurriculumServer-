@@ -96,6 +96,12 @@ function mapBlueprint(row: any): InstanceAssessmentBlueprint {
     allowAiPracticeQuestions: Boolean(row.allow_ai_practice_questions),
     completedTopicsOnly: Boolean(row.completed_topics_only),
     selectedTopicIds: row.selected_topic_ids || [],
+    ...(row.scope_authorization_id !== undefined ? { scopeAuthorizationId: row.scope_authorization_id || null } : {}),
+    ...(row.selected_objective_ids !== undefined ? { selectedObjectiveIds: row.selected_objective_ids || [] } : {}),
+    ...(row.source_delivery_ids !== undefined ? { sourceDeliveryIds: row.source_delivery_ids || [] } : {}),
+    ...(row.authorized_teacher_user_id !== undefined ? { authorizedTeacherUserId: row.authorized_teacher_user_id || null } : {}),
+    ...(row.academic_session !== undefined ? { academicSession: row.academic_session || null } : {}),
+    ...(row.section !== undefined ? { section: row.section || 'General' } : {}),
     status: row.status,
     createdBy: row.created_by,
     createdAt: toIso(row.created_at),
@@ -446,38 +452,88 @@ export class InstanceQuestionBankRepository {
       allowAiPracticeQuestions?: boolean;
       completedTopicsOnly?: boolean;
       selectedTopicIds?: string[];
+      scopeAuthorizationId?: string | null;
+      selectedObjectiveIds?: string[];
+      sourceDeliveryIds?: string[];
+      authorizedTeacherUserId?: string | null;
+      academicSession?: string | null;
+      section?: string;
     }
   ): Promise<InstanceAssessmentBlueprint> {
     this.assertValidScope(tenant, applicationInstanceId);
     const actor = tenant.email || tenant.userId || 'school_examiner';
+    const hasPhaseAProvenance = Boolean(
+      input.scopeAuthorizationId ||
+      (input.selectedObjectiveIds && input.selectedObjectiveIds.length > 0) ||
+      (input.sourceDeliveryIds && input.sourceDeliveryIds.length > 0) ||
+      input.authorizedTeacherUserId ||
+      input.academicSession ||
+      input.section
+    );
     return withTenantTransaction(this.pool, tenant, async client => {
       const res = await client.query(
-        `INSERT INTO production.instance_assessment_blueprints
-           (tenant_id, application_instance_id, title, subject_reference_id, class_grade_name, term,
-            curriculum_version_id, assessment_type, question_formats_count, total_marks, difficulty_mix,
-            time_allowance_minutes, allow_verified_past_questions, allow_ai_practice_questions,
-            completed_topics_only, selected_topic_ids, status, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb, $12, $13, $14, $15, $16::jsonb, 'draft', $17)
-         RETURNING *`,
-        [
-          tenant.tenantId,
-          applicationInstanceId,
-          input.title,
-          input.subjectReferenceId,
-          input.classGradeName,
-          input.term,
-          input.curriculumVersionId,
-          input.assessmentType,
-          JSON.stringify(input.questionFormatsCount || {}),
-          input.totalMarks,
-          JSON.stringify(input.difficultyMix || {}),
-          input.timeAllowanceMinutes ?? 60,
-          input.allowVerifiedPastQuestions ?? true,
-          input.allowAiPracticeQuestions ?? true,
-          input.completedTopicsOnly ?? false,
-          JSON.stringify(input.selectedTopicIds || []),
-          actor
-        ]
+        hasPhaseAProvenance
+          ? `INSERT INTO production.instance_assessment_blueprints
+               (tenant_id, application_instance_id, title, subject_reference_id, class_grade_name, term,
+                curriculum_version_id, assessment_type, question_formats_count, total_marks, difficulty_mix,
+                time_allowance_minutes, allow_verified_past_questions, allow_ai_practice_questions,
+                completed_topics_only, selected_topic_ids, scope_authorization_id, selected_objective_ids,
+                source_delivery_ids, authorized_teacher_user_id, academic_session, section, status, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb, $12, $13, $14, $15, $16::jsonb,
+                     $17, $18::jsonb, $19::jsonb, $20, $21, $22, 'draft', $23)
+             RETURNING *`
+          : `INSERT INTO production.instance_assessment_blueprints
+               (tenant_id, application_instance_id, title, subject_reference_id, class_grade_name, term,
+                curriculum_version_id, assessment_type, question_formats_count, total_marks, difficulty_mix,
+                time_allowance_minutes, allow_verified_past_questions, allow_ai_practice_questions,
+                completed_topics_only, selected_topic_ids, status, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb, $12, $13, $14, $15, $16::jsonb, 'draft', $17)
+             RETURNING *`,
+        hasPhaseAProvenance
+          ? [
+              tenant.tenantId,
+              applicationInstanceId,
+              input.title,
+              input.subjectReferenceId,
+              input.classGradeName,
+              input.term,
+              input.curriculumVersionId,
+              input.assessmentType,
+              JSON.stringify(input.questionFormatsCount || {}),
+              input.totalMarks,
+              JSON.stringify(input.difficultyMix || {}),
+              input.timeAllowanceMinutes ?? 60,
+              input.allowVerifiedPastQuestions ?? true,
+              input.allowAiPracticeQuestions ?? true,
+              input.completedTopicsOnly ?? false,
+              JSON.stringify(input.selectedTopicIds || []),
+              input.scopeAuthorizationId || null,
+              JSON.stringify(input.selectedObjectiveIds || []),
+              JSON.stringify(input.sourceDeliveryIds || []),
+              input.authorizedTeacherUserId || null,
+              input.academicSession || null,
+              input.section || 'General',
+              actor
+            ]
+          : [
+              tenant.tenantId,
+              applicationInstanceId,
+              input.title,
+              input.subjectReferenceId,
+              input.classGradeName,
+              input.term,
+              input.curriculumVersionId,
+              input.assessmentType,
+              JSON.stringify(input.questionFormatsCount || {}),
+              input.totalMarks,
+              JSON.stringify(input.difficultyMix || {}),
+              input.timeAllowanceMinutes ?? 60,
+              input.allowVerifiedPastQuestions ?? true,
+              input.allowAiPracticeQuestions ?? true,
+              input.completedTopicsOnly ?? false,
+              JSON.stringify(input.selectedTopicIds || []),
+              actor
+            ]
       );
       return mapBlueprint(res.rows[0]);
     });

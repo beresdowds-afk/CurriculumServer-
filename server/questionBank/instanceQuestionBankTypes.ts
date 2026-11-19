@@ -70,6 +70,12 @@ export interface InstanceAssessmentBlueprint {
   allowAiPracticeQuestions: boolean;
   completedTopicsOnly: boolean;
   selectedTopicIds: string[];
+  scopeAuthorizationId?: string | null;
+  selectedObjectiveIds?: string[];
+  sourceDeliveryIds?: string[];
+  authorizedTeacherUserId?: string | null;
+  academicSession?: string | null;
+  section?: string;
   status: 'draft' | 'approved' | 'active' | 'archived';
   createdBy: string;
   createdAt: string;

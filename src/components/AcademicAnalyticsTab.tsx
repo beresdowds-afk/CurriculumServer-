@@ -46,7 +46,11 @@ import {
   SUBJECT_PERFORMANCE_TRENDS, 
   SubjectPerformanceTrend 
 } from '../data/academicRecordsData';
-import { MOCK_USERS, MOCK_KPIS, MOCK_STUDENT_PROFILES } from '../data/curriculumFlowData';
+import { unifiedApiClient } from '../services/unifiedApiClient';
+import {
+  teachingEvidenceApiClient,
+  type SubjectProgressSummaryDto
+} from '../services/teachingEvidenceApiClient';
 
 interface AcademicAnalyticsTabProps {
   currentUser?: UserProfile;
@@ -56,11 +60,45 @@ interface AcademicAnalyticsTabProps {
 }
 
 export const AcademicAnalyticsTab: React.FC<AcademicAnalyticsTabProps> = ({
-  currentUser = MOCK_USERS[0],
-  kpis = MOCK_KPIS,
-  studentProfiles = MOCK_STUDENT_PROFILES as any[],
+  currentUser,
+  kpis,
+  studentProfiles = [],
   onGeneratePersonalizedWorksheet = (_id: string) => {}
 }) => {
+  const isAuthenticated = unifiedApiClient.isAuthenticated('school_flow');
+  const [liveProgress, setLiveProgress] = useState<SubjectProgressSummaryDto[]>([]);
+  const [isLoadingProgress, setIsLoadingProgress] = useState<boolean>(false);
+  const [progressError, setProgressError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isAuthenticated) return;
+    let active = true;
+    setIsLoadingProgress(true);
+    setProgressError(null);
+    teachingEvidenceApiClient
+      .getSubjectProgress()
+      .then((rows) => {
+        if (active) setLiveProgress(rows);
+      })
+      .catch((err: any) => {
+        if (active) setProgressError(err?.error || err?.message || 'Failed to load live subject progress.');
+      })
+      .finally(() => {
+        if (active) setIsLoadingProgress(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated]);
+
+  const liveOverallCoverage = useMemo(() => {
+    if (liveProgress.length > 0) {
+      const avg = liveProgress.reduce((acc, row) => acc + row.coveragePercentage, 0) / liveProgress.length;
+      return Math.round(avg * 10) / 10;
+    }
+    return kpis?.overallCurriculumCoverage ?? null;
+  }, [liveProgress, kpis]);
+
   const [selectedStudentId, setSelectedStudentId] = useState<string>(studentProfiles[0]?.studentId || '');
   const [activeAnalyticsSubTab, setActiveAnalyticsSubTab] = useState<'coverage' | 'teachers' | 'subject_trends' | 'class_trends' | 'students'>('coverage');
 
@@ -81,7 +119,7 @@ export const AcademicAnalyticsTab: React.FC<AcademicAnalyticsTabProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const activeStudent = studentProfiles.find(s => s.studentId === selectedStudentId) || studentProfiles[0] || { studentId: 'stu-001', studentName: 'Chinedu Eze', overallMasteryPercentage: 76 };
+  const activeStudent = studentProfiles.find(s => s.studentId === selectedStudentId) || studentProfiles[0] || null;
 
   // Filtered Subject Trends
   const filteredSubjectTrends = useMemo(() => {
@@ -202,7 +240,7 @@ export const AcademicAnalyticsTab: React.FC<AcademicAnalyticsTabProps> = ({
 
           <div className="flex items-center gap-2">
             <span className="text-xs px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 font-mono font-medium">
-              School Coverage: {kpis.overallCurriculumCoverage}%
+              School Coverage: {liveOverallCoverage !== null ? `${liveOverallCoverage}%` : 'Awaiting Live Evidence'}
             </span>
           </div>
         </div>
@@ -639,81 +677,127 @@ export const AcademicAnalyticsTab: React.FC<AcademicAnalyticsTabProps> = ({
         </div>
       )}
 
-      {/* Sub-Tab 1: Curriculum Coverage Matrix */}
+      {/* Sub-Tab 1: Live Authoritative Curriculum Coverage Matrix */}
       {activeAnalyticsSubTab === 'coverage' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
-              <span className="text-xs text-slate-400 font-medium">Term Planned Lessons</span>
-              <div className="text-2xl font-black text-white mt-1">240 Periods</div>
-              <span className="text-[11px] text-slate-500">12-Week Scheme Allocation</span>
+              <span className="text-xs text-slate-400 font-medium">Curriculum Topics Scope</span>
+              <div className="text-2xl font-black text-white mt-1">
+                {liveProgress.reduce((sum, r) => sum + (r.topicsInCurriculum || 0), 0)} Topics
+              </div>
+              <span className="text-[11px] text-slate-500">
+                Across {liveProgress.length} active assignment(s)
+              </span>
             </div>
 
             <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
-              <span className="text-xs text-slate-400 font-medium">Delivered & Verified</span>
-              <div className="text-2xl font-black text-emerald-400 mt-1">202 Periods (84.1%)</div>
-              <span className="text-[11px] text-emerald-400 font-semibold">+2.4% vs projected pace</span>
+              <span className="text-xs text-slate-400 font-medium">Verified Taught Topics</span>
+              <div className="text-2xl font-black text-emerald-400 mt-1">
+                {liveProgress.reduce((sum, r) => sum + r.verifiedTaughtTopicsCount, 0)} Verified
+              </div>
+              <span className="text-[11px] text-emerald-400 font-semibold">
+                {liveOverallCoverage !== null ? `${liveOverallCoverage}% average coverage` : 'Live DB calculation'}
+              </span>
             </div>
 
             <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
-              <span className="text-xs text-slate-400 font-medium">Outstanding / Delayed</span>
-              <div className="text-2xl font-black text-amber-400 mt-1">17 Periods</div>
-              <span className="text-[11px] text-amber-400/80">3 subjects requiring attention</span>
+              <span className="text-xs text-slate-400 font-medium">Unresolved Topic Strings</span>
+              <div className="text-2xl font-black text-amber-400 mt-1">
+                {liveProgress.reduce((sum, r) => sum + r.unresolvedTopicsCount, 0)} Unmapped
+              </div>
+              <span className="text-[11px] text-amber-400/80">Excluded from verified progress</span>
+            </div>
+
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
+              <span className="text-xs text-slate-400 font-medium">Remediation Flagged</span>
+              <div className="text-2xl font-black text-rose-400 mt-1">
+                {liveProgress.reduce((sum, r) => sum + r.remediationRequiredCount, 0)} Topics
+              </div>
+              <span className="text-[11px] text-slate-400">From post-lesson teacher feedback</span>
             </div>
           </div>
 
-          {/* Subject Breakdown Table */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 overflow-hidden">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">
-              Subject-by-Subject Syllabus Coverage Status
-            </h3>
-
-            <div className="overflow-x-auto custom-scrollbar">
-              <table className="w-full text-left text-xs text-slate-300">
-                <thead className="bg-slate-850 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-800">
-                  <tr>
-                    <th className="p-3.5">Subject & Level</th>
-                    <th className="p-3.5">Planned Units</th>
-                    <th className="p-3.5">Delivered</th>
-                    <th className="p-3.5">Coverage Pace</th>
-                    <th className="p-3.5">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 font-medium">
-                  {[
-                    { subject: 'General Mathematics (SS 2)', planned: 36, delivered: 32, rate: 89, status: 'On Track' },
-                    { subject: 'English Language (SS 2)', planned: 36, delivered: 33, rate: 92, status: 'Ahead of Pace' },
-                    { subject: 'Physics (SS 2)', planned: 36, delivered: 28, rate: 78, status: 'Slight Delay' },
-                    { subject: 'Chemistry (SS 2)', planned: 36, delivered: 31, rate: 86, status: 'On Track' },
-                    { subject: 'Biology (SS 2)', planned: 36, delivered: 30, rate: 83, status: 'On Track' },
-                    { subject: 'Basic Science & Tech (JSS 2)', planned: 36, delivered: 34, rate: 94, status: 'On Track' },
-                  ].map((row, idx) => (
-                    <tr key={idx} className="hover:bg-slate-850/50">
-                      <td className="p-3.5 font-bold text-white">{row.subject}</td>
-                      <td className="p-3.5">{row.planned} Weeks</td>
-                      <td className="p-3.5">{row.delivered} Units</td>
-                      <td className="p-3.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-24 bg-slate-800 h-2 rounded-full overflow-hidden">
-                            <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${row.rate}%` }}></div>
-                          </div>
-                          <span className="font-mono text-[11px] font-bold">{row.rate}%</span>
-                        </div>
-                      </td>
-                      <td className="p-3.5">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          row.status === 'Ahead of Pace' || row.status === 'On Track'
-                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                            : 'bg-amber-950 text-amber-300 border border-amber-800'
-                        }`}>
-                          {row.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Authoritative Subject Breakdown Table */}
+          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 overflow-hidden space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                Authoritative Subject-by-Subject Syllabus Coverage
+              </h3>
+              <span className="text-[11px] font-mono text-slate-400">
+                Source: GET /api/v1/teaching/progress
+              </span>
             </div>
+
+            {!isAuthenticated ? (
+              <div className="p-6 rounded-2xl bg-amber-950/30 border border-amber-800/50 text-amber-200 text-xs">
+                Sign in to your school workspace to inspect live PostgreSQL-backed subject coverage and teacher verification status.
+              </div>
+            ) : progressError ? (
+              <div className="p-6 rounded-2xl bg-rose-950/40 border border-rose-800/50 text-rose-200 text-xs">
+                {progressError}
+              </div>
+            ) : isLoadingProgress ? (
+              <div className="p-6 text-center text-xs text-slate-400">
+                Computing live curriculum coverage from verified teaching evidence...
+              </div>
+            ) : liveProgress.length === 0 ? (
+              <div className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 text-slate-400 text-xs text-center">
+                No active teacher subject assignments or verified delivery evidence recorded yet.
+              </div>
+            ) : (
+              <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-slate-850 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-800">
+                    <tr>
+                      <th className="p-3.5">Subject, Class & Section</th>
+                      <th className="p-3.5">Curriculum Topics</th>
+                      <th className="p-3.5">Verified Taught</th>
+                      <th className="p-3.5">Coverage %</th>
+                      <th className="p-3.5">Unresolved / Partial</th>
+                      <th className="p-3.5">Verification Basis</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-medium">
+                    {liveProgress.map((row) => (
+                      <tr key={row.assignmentId} className="hover:bg-slate-850/50">
+                        <td className="p-3.5">
+                          <div className="font-bold text-white">
+                            {row.subjectName} ({row.classGradeName} {row.section})
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            {row.academicSession} • {row.term} • v:{row.curriculumVersionId}
+                          </div>
+                        </td>
+                        <td className="p-3.5">{row.topicsInCurriculum} Topics</td>
+                        <td className="p-3.5">
+                          {row.verifiedTaughtTopicsCount} Confirmed ({row.completedCount} completed, {row.taughtCount} taught)
+                        </td>
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 bg-slate-800 h-2 rounded-full overflow-hidden">
+                              <div
+                                className="bg-emerald-500 h-full rounded-full"
+                                style={{ width: `${Math.min(100, row.coveragePercentage)}%` }}
+                              />
+                            </div>
+                            <span className="font-mono text-[11px] font-bold">{row.coveragePercentage}%</span>
+                          </div>
+                        </td>
+                        <td className="p-3.5 text-[11px]">
+                          {row.unresolvedTopicsCount} unresolved • {row.partiallyCoveredCount} partial
+                        </td>
+                        <td className="p-3.5">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                            {row.verificationBasis}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

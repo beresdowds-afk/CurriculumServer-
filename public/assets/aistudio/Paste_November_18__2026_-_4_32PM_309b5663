@@ -1,0 +1,797 @@
+GOOGLE AI STUDIO IMPLEMENTATION PROMPT
+
+PHASE A — TEACHER ACADEMIC PROGRESS AUTHORITY AND EVIDENCE INTEGRATION
+
+1. PROJECT CONTEXT
+
+You are working on the existing Curriculum Server platform and its Curriculum Flow application.
+
+Repository:
+"beresdowds-afk/CurriculumServer-"
+
+The platform is a multi-tenant, multi-school-instance education SaaS built around an existing unified backend, PostgreSQL persistence, authenticated users, curriculum services, Curriculum Flow teaching workflows, and an established examination and question-bank management system.
+
+Your task is to implement:
+
+PHASE A: TEACHER ACADEMIC PROGRESS AUTHORITY AND EVIDENCE INTEGRATION.
+
+This phase establishes the authoritative, secure and persistent academic evidence system that determines what has actually been taught to each class, in each subject, by each assigned teacher.
+
+That evidence will become the trusted foundation for AI-generated mid-term assessments.
+
+Do not treat this as a greenfield implementation. Inspect the existing repository, database migrations, services, authentication architecture, curriculum structures, and examination workflows before modifying anything.
+
+2. PRIMARY OBJECTIVE
+
+Replace all mock-driven teacher delivery and subject coverage reporting with authenticated, tenant-isolated, persistent academic records.
+
+Implement a complete evidence chain:
+
+1. A teacher is assigned to a specific school, class, section and subject.
+2. The teacher receives the applicable curriculum and lesson assignments.
+3. The teacher records the lesson actually delivered.
+4. The teacher identifies the topics and learning objectives covered.
+5. The teacher records completion status and feedback.
+6. The backend verifies the teacher's assignment and the applicable curriculum version.
+7. The backend exposes verified taught-topic evidence to authorized services.
+8. The teacher explicitly authorizes the scope of a mid-term assessment.
+9. The existing AI assessment generator receives only the verified evidence and teacher-authorized scope.
+10. Generated assessments remain subject to the existing question-bank, review, approval and examination-management processes.
+
+The system must distinguish clearly between:
+
+- Curriculum availability: What NERDC prescribes for a class and subject.
+- Teaching progress: What has actually been taught to a particular class by an authorized teacher.
+- Assessment authorization: Which verified topics and learning objectives the teacher permits the AI to assess.
+
+These are three different concepts. Do not combine them into one completion flag or infer one from another.
+
+3. MANDATORY REPOSITORY INSPECTION BEFORE IMPLEMENTATION
+
+Inspect the current implementation and identify the exact files, functions, database tables and API endpoints involved.
+
+At minimum, inspect:
+
+- "src/components/TeacherDeliveryTrackerTab.tsx"
+- "src/data/curriculumFlowData.ts"
+- "src/components/LessonPlanModal.tsx"
+- "src/components/TaughtAssessmentTab.tsx"
+- "src/types.ts"
+- "server.ts"
+- "server/questionBank/instanceQuestionBankService.ts"
+- "apps/curriculum-flow/src/App.tsx"
+- Existing authentication and authorization middleware.
+- Existing school-instance/tenant resolution.
+- Existing teacher, class, section, subject and teacher-assignment models.
+- Existing curriculum and NERDC data models.
+- Existing database migrations and assessment-related tables.
+
+Search the entire repository for:
+
+- "MOCK_DELIVERIES"
+- "INITIAL_SUBJECT_COVERAGES"
+- "AssignedLessonDelivery"
+- "TeacherFeedback"
+- "SubjectCoverageBreakdown"
+- "completedTopics"
+- "taught-assessment"
+- "assessmentBlueprint"
+- "curriculumVersionId"
+- Existing teacher-subject assignments.
+- Existing lesson delivery persistence.
+- Existing question-bank and examination approval workflows.
+
+Do not assume the names above describe the entire database architecture.
+
+Produce an internal implementation map before coding. Reuse existing models, migrations, services and tables wherever appropriate. Do not create duplicate tables or duplicate assessment-management services.
+
+If an existing structure is incomplete, extend it using a migration compatible with the existing database and deployment architecture.
+
+4. AUTHENTICATED TEACHER-TO-CLASS-TO-SUBJECT AUTHORITY
+
+Implement strict assignment-based authorization.
+
+A teacher may record teaching progress or authorize an assessment only when the authenticated identity has a valid assignment to the specific:
+
+- School tenant and provisioned school instance.
+- Academic session and applicable term.
+- Class and class section.
+- Subject.
+- Curriculum version applicable to that class and session.
+
+The backend must derive the authenticated user identity from the verified authentication context.
+
+Never trust browser-supplied values as proof of:
+
+- "tenantId"
+- "schoolId"
+- "teacherId"
+- "classId"
+- "sectionId"
+- "subjectId"
+- Academic assignment.
+- Curriculum entitlement.
+- Topic completion.
+- Assessment authorization.
+
+The client may submit requested identifiers, but the backend must validate each against authenticated identity, tenant membership, assignment records and authoritative database records.
+
+Implement explicit authorization checks for:
+
+1. Viewing assigned subjects and classes.
+2. Viewing delivery records.
+3. Creating a teaching delivery record.
+4. Updating or correcting a delivery record.
+5. Submitting teacher feedback.
+6. Viewing subject coverage.
+7. Retrieving verified taught-topic evidence.
+8. Authorizing an assessment scope.
+9. Generating an assessment.
+
+A teacher must not be able to record teaching progress for another teacher's class or subject merely by changing request parameters.
+
+A teacher must not be able to authorize an assessment for another teacher's assignment.
+
+Administrative access must follow existing platform roles and permissions. Administrative oversight must not silently substitute for the assigned subject teacher's academic authorization.
+
+5. PERSISTENT TEACHING DELIVERY AND FEEDBACK
+
+Replace mock delivery data and no-op callbacks with real authenticated backend integration.
+
+Implement a persistent teaching-delivery workflow using the existing data model where possible.
+
+The workflow must support the existing delivery lifecycle:
+
+1. Assigned.
+2. Received.
+3. Opened.
+4. Acknowledged.
+5. Taught.
+6. Completed with teacher feedback.
+
+Preserve the distinction between lesson-note delivery and actual teaching completion.
+
+Opening or acknowledging a lesson note must never automatically mark it as taught.
+
+A teacher must explicitly record actual teaching completion.
+
+Each delivery record should capture, where applicable:
+
+- Unique delivery record ID.
+- Tenant and school-instance identifiers.
+- Academic session and term.
+- Class and section.
+- Subject.
+- Assigned teacher.
+- Lesson-note reference.
+- Curriculum version.
+- Topic and subtopic identifiers.
+- Learning objectives covered.
+- Teaching date.
+- Actual completion date and timestamp.
+- Delivery status.
+- Teaching duration, where available.
+- Completion confirmation.
+- Teacher feedback.
+- Student understanding level.
+- Student engagement rating.
+- Uncovered learning objectives.
+- Suggested remedial topics.
+- Requests for additional lessons.
+- Supporting remarks or evidence, where supported.
+- Created-by and updated-by audit identities.
+- Created-at and updated-at timestamps.
+
+Preserve existing "TeacherFeedback" capabilities, including:
+
+- Student understanding.
+- Engagement rating.
+- Teacher comments.
+- Uncovered objectives.
+- Remedial recommendations.
+- Requests for additional lessons.
+
+Add validation to prevent invalid lifecycle transitions.
+
+For example:
+
+- A lesson cannot be marked completed merely because it was opened.
+- A completed delivery must have an authenticated teacher confirmation.
+- Feedback must be associated with the correct delivery record.
+- The teacher must own or be authorized for the assignment.
+
+Use transactions where multiple related records must be created or updated together.
+
+Prevent duplicate completion submissions and preserve an audit trail.
+
+Corrections to previously submitted teaching records must be versioned or otherwise auditable. Do not silently rewrite evidence that has already been used to authorize or generate an examination.
+
+6. NERDC CURRICULUM VERSION AND LEARNING-OBJECTIVE RESOLUTION
+
+Implement authoritative curriculum resolution for every recorded taught topic.
+
+The platform must not assume that there is one timeless NERDC curriculum.
+
+Support the applicable curriculum version based on:
+
+- Education stage.
+- Class level.
+- Subject.
+- Academic session.
+- Effective date or implementation cohort.
+- Applicable curriculum release/version.
+
+A taught topic must resolve to an actual topic record in the applicable curriculum version.
+
+A taught topic must also resolve to the relevant learning objectives or learning outcomes associated with that topic.
+
+Use existing NERDC curriculum data and identifiers wherever available.
+
+Do not create invented curriculum identifiers or silently map a teacher's free-text topic to an unrelated official topic.
+
+If the teacher enters a topic that cannot be reliably resolved:
+
+1. Mark the topic as unresolved.
+2. Explain the problem to the teacher.
+3. Provide an authorized correction or mapping workflow.
+4. Prevent unresolved topics from becoming verified assessment evidence until resolved.
+
+Store the exact curriculum version and topic/objective references used at the time of teaching.
+
+Where the curriculum changes later, previously recorded teaching evidence must retain its original curriculum reference.
+
+Do not silently remap historical teaching records to a newer curriculum version.
+
+The user interface should display the resolved curriculum topic and objectives so the teacher can verify that the correct material has been recorded.
+
+7. AUTHORITATIVE SUBJECT PROGRESS REPORTING
+
+Replace sample subject coverage figures in "curriculumFlowData.ts" with live data obtained through authenticated backend services.
+
+The subject coverage dashboard must calculate its figures from persistent teaching evidence, not hard-coded percentages or browser-selected completed topics.
+
+Provide progress visibility by:
+
+- School.
+- Academic session.
+- Term.
+- Class.
+- Section.
+- Subject.
+- Assigned teacher.
+- Curriculum version.
+- Theme.
+- Topic.
+- Learning objective.
+
+Where possible, distinguish:
+
+- Topics in the applicable curriculum.
+- Topics assigned for teaching.
+- Topics received by the teacher.
+- Topics acknowledged.
+- Topics actually taught.
+- Topics completed with feedback.
+- Topics partially covered.
+- Topics not yet taught.
+- Uncovered learning objectives.
+- Topics requiring remediation.
+
+Do not calculate a topic as taught simply because it appears in a teacher's lesson plan or because the teacher selected it in the frontend.
+
+A completed teaching record must be supported by the authenticated delivery workflow.
+
+The dashboard must clearly distinguish reported progress from independently verified or administratively reviewed information. Do not claim classroom learning outcomes have been independently verified merely because a teacher submitted a completion record.
+
+Implement loading, empty, error and unauthorized states.
+
+Remove mock defaults and no-op callbacks from production paths.
+
+If demo fixtures are still needed for development, isolate them explicitly behind a development-only mechanism. They must never silently appear as live school data.
+
+8. SECURE VERIFIED TAUGHT-TOPIC EVIDENCE SERVICE
+
+Create or extend a secure backend service that returns the authoritative taught-topic evidence available for a specific teacher, class, section, subject, session and term.
+
+This must be a server-authoritative service.
+
+The service must:
+
+1. Authenticate the caller.
+2. Resolve tenant and school-instance context.
+3. Verify teacher identity and assignment.
+4. Verify class, section and subject assignment.
+5. Resolve the correct academic session and term.
+6. Resolve the applicable NERDC curriculum version.
+7. Retrieve persistent teaching-delivery records.
+8. Exclude records that are incomplete, invalid, unresolved or unauthorized.
+9. Return only verified, eligible taught-topic and learning-objective evidence.
+10. Record access and relevant audit events.
+
+A client must not be able to obtain additional evidence by submitting a different teacher ID, tenant ID, school ID, class ID or subject ID.
+
+The evidence service should return structured information, including:
+
+- Authorized teacher and assignment context.
+- Class, section and subject.
+- Academic session and term.
+- Curriculum version.
+- Verified topic identifiers and titles.
+- Verified learning-objective identifiers and descriptions.
+- Delivery record references.
+- Teaching dates and completion dates.
+- Relevant teacher feedback.
+- Uncovered objectives and remediation flags.
+- Evidence status.
+- Evidence timestamps and provenance.
+
+Apply tenant isolation and least privilege.
+
+The service must never return teaching records from another school instance or another teacher's assignment without an explicitly authorized administrative purpose.
+
+Do not expose sensitive student-level data to the AI assessment generator when aggregate teaching feedback is sufficient.
+
+9. TEACHER-ONLY ASSESSMENT-SCOPE AUTHORIZATION
+
+The assigned subject teacher must have complete control over the academic scope of the AI-generated assessment.
+
+Implement a persistent assessment-scope authorization workflow.
+
+Before generation, the assigned teacher must be able to:
+
+1. Select the assessment type.
+2. View the verified topics actually taught.
+3. View the learning objectives associated with those topics.
+4. Select which eligible topics to assess.
+5. Select which eligible learning objectives to assess.
+6. Choose the number and types of questions.
+7. Choose the objective/theory balance.
+8. Set the total marks.
+9. Select the difficulty distribution.
+10. Set the examination duration and relevant instructions.
+11. Review the final assessment scope.
+12. Explicitly authorize the scope before AI generation.
+
+Assessment authorization must be recorded persistently.
+
+It must include:
+
+- Authorized teacher identity.
+- Tenant and school instance.
+- Class and section.
+- Subject.
+- Academic session and term.
+- Curriculum version.
+- Selected verified topic IDs.
+- Selected learning-objective IDs.
+- Source teaching-delivery evidence references.
+- Assessment type.
+- Marks and question configuration.
+- Difficulty mix.
+- Authorization timestamp.
+- Authorization status.
+- Scope version.
+- Audit information.
+
+Only the assigned teacher may authorize the academic scope.
+
+A principal, administrator, AI model or system process must not silently broaden the authorized scope.
+
+Where an administrator has a legitimate override capability under existing school policy, it must be an explicit, separately permissioned and fully audited workflow. It must not be represented as the teacher's authorization.
+
+If the teacher changes the authorized scope after generation, create a new authorization version and preserve the previous version for audit purposes.
+
+10. CONNECT THE EXISTING MID-TERM GENERATOR TO VERIFIED EVIDENCE
+
+Inspect and extend the existing:
+
+- "src/components/TaughtAssessmentTab.tsx"
+- "POST /api/ai/taught-assessment" endpoint in "server.ts"
+- Existing assessment blueprint and question-bank services.
+
+Do not create a second mid-term examination generator.
+
+Remove the current trust assumption that frontend-submitted "completedTopics" proves actual teaching completion.
+
+The current pattern of deriving all curriculum topics in the frontend and submitting teacher-selected topics with an assumed 100% completion status must be replaced.
+
+The backend must independently retrieve verified taught-topic evidence and validate the teacher's persisted assessment-scope authorization.
+
+The AI generator must receive only:
+
+- Verified taught-topic evidence.
+- Teacher-authorized topic IDs.
+- Teacher-authorized learning-objective IDs.
+- Applicable NERDC curriculum version.
+- Authorized assessment configuration.
+
+The browser must not be able to inject untaught topics or manipulate completion percentages to influence generation.
+
+The AI prompt must explicitly prohibit:
+
+- Introducing topics outside the authorized scope.
+- Introducing future syllabus topics.
+- Introducing learning objectives not covered by the selected verified evidence.
+- Adding topics simply to satisfy a requested question count.
+- Treating curriculum availability as proof of teaching.
+- Inventing NERDC objectives or curriculum references.
+
+If the selected evidence is insufficient to generate the requested number or variety of questions, return a clear insufficiency response.
+
+Explain which additional teaching evidence or scope adjustment is required.
+
+Do not silently expand the scope.
+
+Every generated assessment must retain a provenance record linking it to:
+
+- Assessment-scope authorization.
+- Authorized teacher.
+- Class and subject assignment.
+- Curriculum version.
+- Selected topics and learning objectives.
+- Source delivery records.
+- Assessment-generation request.
+- Model/provider information where available.
+- Generation timestamp.
+- Generated assessment or question-bank records.
+
+11. PRESERVE EXISTING QUESTION-BANK AND EXAMINATION MANAGEMENT
+
+This requirement is mandatory.
+
+Do not replace, disable, simplify or bypass the existing examination and question-bank management architecture.
+
+Inspect and preserve the existing service:
+
+"server/questionBank/instanceQuestionBankService.ts"
+
+Preserve existing capabilities, including where implemented:
+
+- Tenant-isolated question banks.
+- Question categories.
+- Question creation and editing.
+- Question review and approval.
+- Assessment blueprints.
+- Curriculum-version references.
+- Selected-topic references.
+- Difficulty distributions.
+- Question-format configuration.
+- Examination configurations.
+- Selected question IDs.
+- Marks and duration.
+- Examination instructions.
+- Exam locking.
+- Principal authorization.
+- Assessment records and submissions.
+
+Extend the existing assessment blueprint to support authoritative teaching evidence and teacher authorization.
+
+Reuse existing fields such as:
+
+- "curriculumVersionId"
+- "assessmentType"
+- "completedTopicsOnly"
+- "selectedTopicIds"
+- "questionFormatsCount"
+- "difficultyMix"
+- "totalMarks"
+
+Where existing fields are insufficient, add backward-compatible fields or related records through migrations.
+
+Do not remove existing examination approval controls.
+
+Do not allow the new AI workflow to bypass the existing review, approval, exam configuration or publishing lifecycle.
+
+Ensure the system preserves the distinction between:
+
+- Teacher academic-scope authorization.
+- Question-bank review or approval.
+- Principal or examination-administrator authorization.
+- Final examination publication.
+
+These are separate authorization stages.
+
+12. MULTI-TENANT SECURITY AND DATA INTEGRITY
+
+All new or extended records must be scoped to the correct school tenant and provisioned school instance.
+
+Enforce authorization at the backend and database layers wherever the existing architecture supports it.
+
+Implement protections against:
+
+- Cross-tenant data access.
+- Teacher impersonation.
+- Class or subject assignment manipulation.
+- Unauthorized delivery completion.
+- Unauthorized feedback modification.
+- Forged curriculum references.
+- Forged taught-topic evidence.
+- Assessment-scope manipulation.
+- Unauthorized assessment generation.
+- Reuse of stale or revoked assignments.
+- Duplicate submissions.
+- Unauthorized access to another teacher's evidence.
+- Inconsistent curriculum-version references.
+
+Use existing authentication and authorization middleware rather than introducing a parallel authentication system.
+
+Validate all request payloads with the project's established validation library and conventions.
+
+Use parameterized database queries and transaction boundaries.
+
+Do not expose secrets, AI API keys, database credentials or privileged service credentials in frontend code.
+
+Do not trust frontend role labels or UI visibility as security controls.
+
+13. DATABASE MIGRATIONS AND BACKWARD COMPATIBILITY
+
+Inspect the existing schema before creating migrations.
+
+Reuse existing teacher, class, subject, assignment, curriculum, lesson and assessment tables.
+
+Only add new structures where necessary.
+
+Possible logical record groups include:
+
+- Teaching delivery and completion records.
+- Teacher feedback and progress reports.
+- Taught-topic and learning-objective evidence.
+- Assessment-scope authorizations.
+- Assessment-generation provenance.
+
+These are conceptual requirements, not instructions to create five duplicate tables.
+
+Use the existing database naming conventions.
+
+Every migration must be:
+
+- Versioned.
+- Safe to apply.
+- Tenant-aware.
+- Compatible with existing data.
+- Reversible where practical.
+- Accompanied by appropriate indexes and constraints.
+- Tested against the existing schema.
+
+Do not delete existing assessment data or replace existing question-bank tables.
+
+Do not seed fabricated teaching completion records or fabricated coverage percentages.
+
+If legacy mock data is needed for development, keep it isolated from production and clearly label it.
+
+14. FRONTEND IMPLEMENTATION
+
+Update Curriculum Flow so that the teacher can manage actual teaching progress.
+
+The teacher interface should provide:
+
+A. Assigned teaching
+
+- View assigned classes and subjects.
+- View assigned lesson notes.
+- See the applicable curriculum version.
+- See the expected topics and learning objectives.
+
+B. Teaching completion
+
+- Confirm actual teaching.
+- Record the topics and objectives covered.
+- Record partially covered or uncovered objectives.
+- Submit teaching feedback.
+- Save and confirm completion.
+
+C. Subject progress
+
+- View calculated coverage based on persistent records.
+- Filter by session, term, class, section and subject.
+- See completed, partial, pending and remedial topics.
+
+D. Mid-term assessment preparation
+
+- View only verified taught topics.
+- Select eligible topics and learning objectives.
+- Configure assessment parameters.
+- Review and authorize the scope.
+- Generate the assessment.
+- Review generated questions before passing them into the existing question-bank and examination workflow.
+
+Ensure that lesson-note generation remains available and that the new delivery workflow can reference the actual lesson note used.
+
+Preserve the existing design system, routing, responsive behavior and user experience conventions.
+
+15. LESSON-NOTE INTEGRATION
+
+Preserve the existing lesson-note generator in:
+
+"src/components/LessonPlanModal.tsx"
+
+Do not rebuild it unnecessarily.
+
+Ensure generated lesson notes can be associated with:
+
+- The assigned teacher.
+- The class and section.
+- The subject.
+- The academic session and term.
+- The applicable curriculum version.
+- Official topics and learning objectives.
+
+Where the current implementation does not persist these relationships, extend it safely.
+
+A generated lesson note must not count as evidence that the lesson was taught.
+
+It becomes a source reference for teaching delivery, not proof of completion.
+
+16. TESTING REQUIREMENTS
+
+Create or extend automated tests for the entire evidence chain.
+
+At minimum, test:
+
+Authentication and assignment
+
+1. An assigned teacher can view their own class and subject assignments.
+2. An unassigned teacher cannot record progress for that class.
+3. A teacher cannot submit a different teacher's ID to impersonate them.
+4. A teacher cannot access another tenant's records.
+5. A revoked or expired assignment cannot authorize new delivery or assessment activity.
+
+Teaching delivery
+6. Opening a lesson does not mark it as taught.
+7. A teacher can submit actual teaching completion.
+8. Completion requires valid topic and curriculum resolution.
+9. Feedback is linked to the correct delivery record.
+10. Duplicate completion requests do not create duplicate evidence.
+11. Corrections retain an audit history.
+
+NERDC curriculum
+12. Topics resolve against the correct curriculum version.
+13. Learning objectives resolve to the correct topic.
+14. Unresolved topics are excluded from verified evidence.
+15. Historical records retain their original curriculum version after a curriculum update.
+
+Progress reporting
+16. Subject coverage is calculated from persistent records.
+17. Mock data does not appear in production.
+18. Reports respect tenant, class, section, subject and teacher permissions.
+19. Incomplete or unverified records are not counted as completed teaching.
+
+Assessment authorization
+20. Only the assigned subject teacher can authorize the assessment scope.
+21. The authorization records the exact selected topics and objectives.
+22. Unauthorized or modified scope submissions are rejected.
+23. Scope changes create a new auditable version.
+
+AI assessment generation
+24. The generator retrieves verified evidence server-side.
+25. Client-submitted "completedTopics" cannot override backend evidence.
+26. Untaught topics are excluded.
+27. Future syllabus topics are excluded.
+28. The generator cannot silently expand the teacher-authorized scope.
+29. Insufficient evidence produces a clear error rather than fabricated or out-of-scope questions.
+30. Generated assessments retain evidence and authorization provenance.
+
+Question-bank and examination regression
+31. Existing question-bank tenant-isolation tests continue to pass.
+32. Existing question review and approval workflows continue to work.
+33. Existing examination configuration and publishing workflows continue to work.
+34. Existing assessment blueprint functionality is preserved.
+35. Existing principal/examination-administrator controls remain effective.
+
+Use the project's existing test framework and conventions.
+
+17. IMPLEMENTATION SEQUENCE
+
+Implement this phase in controlled sub-phases:
+
+A1 — Repository and schema mapping
+
+- Inspect existing models, services, migrations and API routes.
+- Identify reusable structures and missing relationships.
+- Report the implementation map.
+
+A2 — Persistent academic delivery
+
+- Implement or extend persistent delivery records.
+- Enforce teacher assignments.
+- Implement completion, feedback and audit history.
+
+A3 — NERDC curriculum evidence resolution
+
+- Resolve each taught topic and objective against the applicable curriculum version.
+- Reject unresolved or invalid evidence.
+
+A4 — Live Curriculum Flow progress reporting
+
+- Remove production mock data.
+- Connect delivery and coverage interfaces to authenticated persistent APIs.
+
+A5 — Verified evidence service
+
+- Implement the secure backend taught-topic evidence service.
+- Enforce tenant and teacher authorization.
+
+A6 — Teacher assessment-scope authorization
+
+- Implement persistent, versioned, teacher-only scope authorization.
+
+A7 — Mid-term AI generator integration
+
+- Replace frontend-trusted completion data.
+- Connect the existing generator to verified evidence and teacher authorization.
+
+A8 — Question-bank and examination integration
+
+- Extend existing blueprints and provenance.
+- Preserve all existing review, approval and publishing workflows.
+
+A9 — Automated testing and verification
+
+- Run migrations in the appropriate test environment.
+- Run authorization, tenant-isolation, academic-evidence and regression tests.
+- Run lint, typecheck, tests and production build using the repository's actual scripts.
+
+Do not skip ahead to AI generation before the evidence service and teacher authorization are working.
+
+18. IMPLEMENTATION BOUNDARIES
+
+This phase concerns application code, database schema and application-level authorization.
+
+Do not:
+
+- Change GCP IAM roles.
+- Change Cloud Run runtime service accounts.
+- Change Cloud Run service configurations.
+- Create new Cloud Run services.
+- Change GitHub Actions or Cloud Build identities.
+- Change production secrets.
+- Expose Gemini credentials in frontend applications.
+- Deploy to production.
+- Delete existing services, tables, records or examination workflows.
+- Replace the existing question-bank architecture.
+- Introduce a second AI assessment service.
+
+Use the existing Unified Backend architecture and existing AI gateway integration where available.
+
+If the central AI gateway is not yet implemented or available in the repository, identify the dependency and implement only the compatible integration boundary. Do not invent a parallel Gemini authentication mechanism.
+
+Do not make production migrations or deployments without explicit approval.
+
+19. REQUIRED COMPLETION REPORT
+
+At the end of implementation, provide a structured report with:
+
+1. Repository files inspected.
+2. Existing structures reused.
+3. Files created.
+4. Files modified.
+5. Database migrations created.
+6. Existing tables extended.
+7. New API endpoints and their authorization rules.
+8. Teacher assignment enforcement implemented.
+9. Teaching completion and feedback workflow implemented.
+10. NERDC curriculum-version and objective resolution implemented.
+11. Progress dashboard mock data removed and replaced.
+12. Verified taught-topic evidence service implemented.
+13. Teacher-only assessment-scope authorization implemented.
+14. Existing mid-term generator integration completed.
+15. Question-bank and examination features preserved.
+16. Automated tests added and their results.
+17. Lint, typecheck and production-build results.
+18. Any incomplete work or outstanding dependencies.
+19. Any security concerns that remain.
+20. Exact next steps required before production deployment.
+
+For each significant modification, identify the actual file path and explain what changed.
+
+Do not report a feature as complete merely because its UI has been created. Completion requires functioning persistence, backend authorization, data validation and relevant automated tests.
+
+If an implementation step cannot be completed, explain the exact blocker and leave the system in a safe, documented state.
+
+20. FINAL ACCEPTANCE CRITERION
+
+Phase A is complete only when the following statement is true:
+
+A teacher can record what they actually taught to an assigned class and subject; the platform persistently verifies the teacher's assignment and resolves the taught topics and learning objectives against the correct NERDC curriculum version; Curriculum Flow reports progress from those records; and the existing mid-term AI generator can generate questions only from verified taught-topic evidence that the assigned teacher has explicitly authorized. All generated assessments remain inside the existing question-bank and examination-management workflow.
+
+No mock data, browser-supplied completion claims, assumed 100% coverage or AI-generated curriculum assumptions may substitute for this evidence chain.

@@ -40,7 +40,12 @@ export const PERMISSIONS = {
   aiCurriculumGenerate: 'ai.curriculum.generate',
   aiAssessmentsGenerate: 'ai.assessments.generate',
   aiCbtGenerate: 'ai.cbt.generate',
-  aiTutorUse: 'ai.tutor.use'
+  aiTutorUse: 'ai.tutor.use',
+  teachingAssignmentsManage: 'teaching.assignments.manage',
+  teachingDeliveryRead: 'teaching.delivery.read',
+  teachingDeliveryManage: 'teaching.delivery.manage',
+  teachingEvidenceRead: 'teaching.evidence.read',
+  assessmentsScopeAuthorize: 'assessments.scope.authorize'
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

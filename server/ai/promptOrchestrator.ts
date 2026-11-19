@@ -512,22 +512,69 @@ export function buildOrchestratedPrompt(
     }
 
     case 'taught_assessment': {
-      const subjectName = sanitizeTextInput(payload.subjectName, 200);
-      const classGrade = sanitizeTextInput(payload.classGrade, 100);
+      const verifiedEvidence =
+        payload.verifiedEvidence && typeof payload.verifiedEvidence === 'object'
+          ? (payload.verifiedEvidence as Record<string, unknown>)
+          : null;
+      const authorizedScope =
+        payload.authorizedScope && typeof payload.authorizedScope === 'object'
+          ? (payload.authorizedScope as Record<string, unknown>)
+          : null;
+
+      const subjectName = sanitizeTextInput(
+        (verifiedEvidence?.subjectName as string) || payload.subjectName,
+        200
+      );
+      const classGrade = sanitizeTextInput(
+        (verifiedEvidence?.classGradeName as string) || payload.classGrade,
+        100
+      );
       if (!subjectName || !classGrade) {
         throw new AiGatewayError('VALIDATION_ERROR', 'subjectName and classGrade are required for taught-only assessment.', 400);
       }
-      const assessmentType = sanitizeTextInput(payload.assessmentType || payload.assessmentTitle, 120) || 'Class Test';
-      const completedTopics = Array.isArray(payload.completedTopics) ? payload.completedTopics : [];
-      if (completedTopics.length === 0) {
-        throw new AiGatewayError('VALIDATION_ERROR', 'completedTopics must contain at least one taught topic.', 400);
+      const assessmentType = sanitizeTextInput(
+        (authorizedScope?.assessmentType as string) || payload.assessmentType || payload.assessmentTitle,
+        120
+      ) || 'Class Test';
+      const verifiedTopics = Array.isArray(verifiedEvidence?.topics) ? verifiedEvidence.topics : [];
+      const fallbackTopics = Array.isArray(payload.completedTopics) ? payload.completedTopics : [];
+      const effectiveTopics = verifiedTopics.length > 0 ? verifiedTopics : fallbackTopics;
+      if (effectiveTopics.length === 0) {
+        throw new AiGatewayError('VALIDATION_ERROR', 'Verified taught topics must contain at least one taught topic.', 400);
       }
-      const totalQuestions = Math.max(1, Math.min(40, Number(payload.totalQuestions || 5)));
-      const questionType = sanitizeTextInput(payload.questionType, 80) || 'mixed';
+
+      const totalQuestions = Math.max(
+        1,
+        Math.min(100, Number(authorizedScope?.questionCount || payload.totalQuestions || 5))
+      );
+      const curriculumVersionId = sanitizeTextInput(
+        (verifiedEvidence?.curriculumVersionId as string) || payload.curriculumVersionId,
+        120
+      ) || 'NERDC-BASELINE';
+      const totalMarks = Math.max(1, Number(authorizedScope?.totalMarks || payload.totalMarks || totalQuestions * 2));
+      const durationMinutes = Math.max(5, Number(authorizedScope?.durationMinutes || payload.durationMinutes || 30));
+      const questionTypesConfig = authorizedScope?.questionTypesConfig || payload.questionTypesConfig || {
+        questionType: sanitizeTextInput(payload.questionType, 80) || 'mixed'
+      };
+      const difficultyMix = authorizedScope?.difficultyMix || payload.difficultyMix || { Easy: 30, Medium: 50, Hard: 20 };
+      const instructions = sanitizeTextInput((authorizedScope?.instructions as string) || payload.instructions, 1000);
+
       return {
         systemInstruction:
-          'You are a School Assessment Specialist. CRITICAL CONSTRAINT: Generate assessment items STRICTLY AND ONLY from the provided completed topics and learning objectives. Never introduce untaught concepts.',
-        contents: `Generate a ${assessmentType}:\n- Subject: ${subjectName}\n- Class: ${classGrade}\n- Total Questions: ${totalQuestions}\n- Question Type: ${questionType}\n- COMPLETED TOPICS ONLY:\n${JSON.stringify(completedTopics)}${groundingContext ? `\n\n${groundingContext}` : ''}`,
+          'You are a School Assessment Specialist. CRITICAL CONSTRAINT: Generate assessment items STRICTLY AND ONLY from the verified taught topics, resolved NERDC topic IDs, and confirmed covered learning objectives provided in this prompt. Never introduce untaught topics, uncovered objectives, or out-of-scope curriculum material. Every question must explicitly reference its source NERDC topicId and learningObjectiveIds.',
+        contents: `Generate a ${assessmentType} strictly bounded to teacher-authorized taught evidence:
+- Curriculum Version: ${curriculumVersionId}
+- Subject: ${subjectName}
+- Class: ${classGrade}${verifiedEvidence?.section ? ` (${sanitizeTextInput(verifiedEvidence.section, 80)})` : ''}
+- Academic Session / Term: ${sanitizeTextInput(verifiedEvidence?.academicSession, 60) || 'Current Session'} / ${sanitizeTextInput(verifiedEvidence?.term, 40) || 'Current Term'}
+- Scope Authorization ID: ${sanitizeTextInput(authorizedScope?.scopeAuthorizationId, 80) || 'in-memory-harness'} (v${Number(authorizedScope?.scopeVersion || 1)})
+- Total Questions: ${totalQuestions}
+- Total Marks: ${totalMarks}
+- Duration Minutes: ${durationMinutes}
+- Question Types Config: ${JSON.stringify(questionTypesConfig)}
+- Difficulty Mix: ${JSON.stringify(difficultyMix)}
+${instructions ? `- Teacher Instructions: ${instructions}\n` : ''}- VERIFIED TAUGHT TOPICS & COVERED OBJECTIVES ONLY:
+${JSON.stringify(effectiveTopics)}${groundingContext ? `\n\n${groundingContext}` : ''}`,
         responseSchema: {
           type: Type.OBJECT,
           properties: {
@@ -557,6 +604,8 @@ export function buildOrchestratedPrompt(
                   },
                   marks: { type: Type.INTEGER },
                   topic: { type: Type.STRING },
+                  topicId: { type: Type.STRING },
+                  learningObjectiveIds: { type: Type.ARRAY, items: { type: Type.STRING } },
                   cognitiveLevel: { type: Type.STRING },
                   difficulty: { type: Type.STRING }
                 },

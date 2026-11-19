@@ -34,16 +34,10 @@ import { SchemeOfWorkModal } from '../../../src/components/SchemeOfWorkModal';
 import { ExamBuilderModal } from '../../../src/components/ExamBuilderModal';
 import { SubjectDetailModal } from '../../../src/components/SubjectDetailModal';
 
-// Mock Data
+// Dev role login presets & non-Phase-A feature placeholders
 import { 
   MOCK_USERS, 
-  MOCK_KPIS, 
-  MOCK_LESSON_NOTES, 
-  MOCK_DELIVERIES, 
   MOCK_REMEDIALS, 
-  MOCK_QUESTION_BANK, 
-  MOCK_SECURE_EXAMS, 
-  MOCK_MARKING_SCHEMES, 
   MOCK_STUDENT_PROFILES 
 } from '../../../src/data/curriculumFlowData';
 import { INITIAL_SCHOOL_BRAND } from '../../../src/data/brandManagementData';
@@ -167,6 +161,10 @@ const handleHash = () => {
     hash === 'bursary'
   ) {
     setActiveTab('account_management');
+  } else if (hash === 'taught_assessment') {
+    setActiveTab('taught_assessment');
+  } else if (hash === 'academic_analytics') {
+    setActiveTab('academic_analytics');
   } else if (hash === 'teacher_dashboard') {
     setActiveTab('teacher_dashboard');
   } else if (hash === 'student_dashboard') {
@@ -239,11 +237,9 @@ const handleHash = () => {
           <div className="max-w-7xl mx-auto space-y-6">
             {activeTab === 'command_center' && (
               <CommandCenterTab
-                onOpenLessonModal={() => setIsLessonModalOpen(true)}
-                onOpenExamBuilder={() => setIsExamBuilderOpen(true)}
-                onOpenSchemeModal={() => setIsSchemeModalOpen(true)}
+                onLaunchLessonModal={() => setIsLessonModalOpen(true)}
+                onLaunchExamModal={() => setIsExamBuilderOpen(true)}
                 onNavigateTab={(tab) => handleSelectTab(tab as any)}
-                kpis={MOCK_KPIS}
                 currentUser={currentUser}
               />
             )}
@@ -289,7 +285,7 @@ const handleHash = () => {
             )}
 
             {activeTab === 'taught_assessment' && (
-              <TaughtAssessmentTab />
+              <TaughtAssessmentTab currentUser={currentUser} />
             )}
 
             {activeTab === 'remedial_hub' && (

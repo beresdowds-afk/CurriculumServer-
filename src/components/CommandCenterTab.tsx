@@ -9,14 +9,11 @@ import {
   SchoolBrandProfile,
   TenantSchoolApp
 } from '../types';
-import { 
-  MOCK_USERS, 
-  MOCK_KPIS, 
-  MOCK_LESSON_NOTES, 
-  MOCK_DELIVERIES, 
-  MOCK_REMEDIALS, 
-  MOCK_SECURE_EXAMS 
-} from '../data/curriculumFlowData';
+import { unifiedApiClient } from '../services/unifiedApiClient';
+import {
+  teachingEvidenceApiClient,
+  type SubjectProgressSummaryDto
+} from '../services/teachingEvidenceApiClient';
 import { 
   Phone,
   Mail,
@@ -84,20 +81,57 @@ interface CommandCenterTabProps {
 }
 
 export const CommandCenterTab: React.FC<CommandCenterTabProps> = ({
-  currentUser = MOCK_USERS[0],
-  kpis = MOCK_KPIS,
-  lessonNotes = MOCK_LESSON_NOTES,
-  deliveries = MOCK_DELIVERIES,
-  remedials = MOCK_REMEDIALS,
-  exams = MOCK_SECURE_EXAMS,
+  currentUser = {
+    id: 'usr-principal',
+    name: 'School Principal',
+    email: 'principal@school.edu.ng',
+    role: 'principal',
+    title: 'Principal',
+    avatar: '',
+    permissions: []
+  },
+  kpis: _kpis,
+  lessonNotes: _lessonNotes = [],
+  deliveries: _deliveries = [],
+  remedials: _remedials = [],
+  exams: _exams = [],
   onNavigateTab = (_tab: MainTabType) => {},
-  onApproveLesson = (_id: string) => {},
+  onApproveLesson: _onApproveLesson = (_id: string) => {},
   onLaunchLessonModal = () => {},
-  onLaunchExamModal = () => {},
+  onLaunchExamModal: _onLaunchExamModal = () => {},
   brandProfile,
   activeTenant,
   onOpenAuthModal = () => {}
 }) => {
+  const isAuthenticated = unifiedApiClient.isAuthenticated('school_flow');
+  const [liveProgress, setLiveProgress] = React.useState<SubjectProgressSummaryDto[]>([]);
+  const [isLoadingProgress, setIsLoadingProgress] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!isAuthenticated) return;
+    let active = true;
+    setIsLoadingProgress(true);
+    teachingEvidenceApiClient
+      .getSubjectProgress()
+      .then((rows) => {
+        if (active) setLiveProgress(rows);
+      })
+      .catch(() => {
+        if (active) setLiveProgress([]);
+      })
+      .finally(() => {
+        if (active) setIsLoadingProgress(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated]);
+
+  const liveCoverageAvg = React.useMemo(() => {
+    if (liveProgress.length === 0) return null;
+    const sum = liveProgress.reduce((acc, r) => acc + r.coveragePercentage, 0);
+    return Math.round((sum / liveProgress.length) * 10) / 10;
+  }, [liveProgress]);
   // Active Sidebar Nav Key
   const [activeSidebarNav, setActiveSidebarNav] = useState<string>('dashboard');
   
@@ -743,6 +777,31 @@ export const CommandCenterTab: React.FC<CommandCenterTabProps> = ({
               <Calendar className="w-4 h-4 text-emerald-600" />
               <span>{currentDateFilter}</span>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+          </div>
+
+          {/* Authoritative Live Curriculum Progress Banner */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+                Authoritative Teaching Evidence & Syllabus Progress
+              </div>
+              <p className="text-xs text-slate-600 mt-0.5">
+                {!isAuthenticated
+                  ? 'Sign in to an authenticated school session to inspect real PostgreSQL-backed subject progress.'
+                  : isLoadingProgress
+                  ? 'Loading verified subject coverage...'
+                  : liveProgress.length === 0
+                  ? 'No verified teaching delivery records yet for active subject assignments.'
+                  : `${liveProgress.length} active assignment(s) tracked • Average verified coverage: ${liveCoverageAvg}% • Total verified taught topics: ${liveProgress.reduce((s, r) => s + r.verifiedTaughtTopicsCount, 0)}`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('delivery_tracker' as any)}
+              className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shrink-0"
+            >
+              Inspect Delivery Evidence →
             </button>
           </div>
 

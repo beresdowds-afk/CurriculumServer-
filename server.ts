@@ -19,6 +19,8 @@ import { GeminiTextbookOperationalAdapter } from './server/textbooks/geminiTextb
 import { CentralTextbookError } from './server/textbooks/centralTextbookRepository';
 import { InstanceQuestionBankService } from './server/questionBank/instanceQuestionBankService';
 import { InstanceQuestionBankError } from './server/questionBank/instanceQuestionBankRepository';
+import { TeachingEvidenceService } from './server/teachingEvidence/teachingEvidenceService';
+import { TeachingEvidenceError } from './server/teachingEvidence/teachingEvidenceTypes';
 import { runSecurityHardeningTestSuite } from './server/securityHardeningTests';
 import { serverBackupService } from './server/serverBackupService';
 import { defaultBackupStorageProvider } from './server/serverBackupStorage';
@@ -479,6 +481,10 @@ function getCentralTextbookService(): CentralTextbookService {
 
 function getInstanceQuestionBankService(): InstanceQuestionBankService {
   return new InstanceQuestionBankService(postgresRuntime.getPool());
+}
+
+function getTeachingEvidenceService(): TeachingEvidenceService {
+  return new TeachingEvidenceService(postgresRuntime.getPool());
 }
 
 const sharedServiceRateLimiter = createSlidingWindowRateLimiter({
@@ -1399,13 +1405,13 @@ app.post('/api/ai/marking-scheme', async (req: Request, res: Response) => {
   });
 });
 
-app.post('/api/ai/taught-assessment', async (req: Request, res: Response) => {
-  await delegateLegacyAiRoute(req, res, {
-    applicationId: 'CURRICULUM_FLOW',
-    capability: 'ASSESSMENT_SUPPORT',
-    taskType: 'taught_assessment'
-  });
-});
+app.post(
+  '/api/ai/taught-assessment',
+  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsScopeAuthorize),
+  async (req: Request, res: Response) => {
+    await executeTaughtAssessmentGeneration(req, res, { legacyShape: true });
+  }
+);
 
 app.post('/api/ai/exam-builder', async (req: Request, res: Response) => {
   await delegateLegacyAiRoute(req, res, {
@@ -2924,6 +2930,723 @@ app.post(
       res.status(201).json({ success: true, record });
     } catch (err) {
       handleInstanceQuestionBankError(req, res, err, 'Failed to persist assessment record');
+    }
+  }
+);
+
+// -------------------------------------------------------------
+// PHASE A: TEACHER ACADEMIC PROGRESS AUTHORITY & EVIDENCE ROUTES
+// -------------------------------------------------------------
+function buildTeachingActorContext(req: Request) {
+  return {
+    tenant: (req as any).trustedTenantContext,
+    applicationInstanceId: resolveApplicationInstanceId(req),
+    authorizedPrincipal: (req as any).authorizedPrincipal as AuthorizedPrincipal | undefined,
+    userId: (req as any).trustedTenantContext?.userId,
+    role: (req as any).trustedTenantContext?.role
+  };
+}
+
+function handleTeachingEvidenceError(req: Request, res: Response, err: unknown, fallbackMessage: string) {
+  if (err instanceof TeachingEvidenceError) {
+    res.status(err.httpStatus).json({
+      success: false,
+      error: err.message,
+      code: err.code,
+      ...(err.details ? { details: err.details } : {}),
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+  if (err instanceof AiGatewayError) {
+    sendAiGatewayError(res, err, (req as any).correlationId);
+    return;
+  }
+  if (err instanceof InstanceQuestionBankError) {
+    handleInstanceQuestionBankError(req, res, err, fallbackMessage);
+    return;
+  }
+  res.status(503).json({
+    success: false,
+    error: err instanceof Error ? err.message : fallbackMessage,
+    code: 'TEACHING_EVIDENCE_UNAVAILABLE',
+    correlationId: (req as any).correlationId,
+    timestamp: new Date().toISOString()
+  });
+}
+
+async function executeTaughtAssessmentGeneration(
+  req: Request,
+  res: Response,
+  options: { legacyShape?: boolean } = {}
+) {
+  const correlationId = (req as any).correlationId as string | undefined;
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+  const scopeAuthorizationId =
+    typeof body.scopeAuthorizationId === 'string' ? body.scopeAuthorizationId.trim() : '';
+
+  if (!scopeAuthorizationId) {
+    res.status(403).json({
+      success: false,
+      error:
+        'A persisted teacher-authorized scopeAuthorizationId grounded in verified PostgreSQL teaching evidence is required. Client-submitted completedTopics are ignored.',
+      code: 'SCOPE_AUTHORIZATION_REQUIRED',
+      correlationId,
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+
+  try {
+    const actorCtx = buildTeachingActorContext(req);
+    const teachingService = getTeachingEvidenceService();
+    const evaluated = await teachingService.resolveAndValidateAuthorizedScopeForGeneration(
+      actorCtx,
+      scopeAuthorizationId,
+      { requireCallerIsAuthorizingTeacher: true }
+    );
+
+    const caller = buildGatewayCallerFromTenantReq(req);
+    const gatewayResult = await centralAiGatewayService.execute<{
+      title: string;
+      subjectName: string;
+      classGrade: string;
+      assessmentType: string;
+      totalMarks: number;
+      coveredTopicsList: string[];
+      guaranteeNote: string;
+      questions: Array<{
+        questionNumber: number;
+        section: string;
+        questionType: string;
+        questionText: string;
+        options?: Array<{ key: string; text: string }>;
+        marks: number;
+        topic: string;
+        topicId?: string;
+        learningObjectiveIds?: string[];
+        cognitiveLevel: string;
+        difficulty: string;
+      }>;
+      markingGuide: Array<{
+        questionNumber: number;
+        section: string;
+        correctAnswer: string;
+        modelAnswer: string;
+        totalMarks: number;
+        stepBreakdown: Array<{ stepDescription: string; marksAwarded: number }>;
+        partialCreditRules: string;
+      }>;
+      scopeAuthorizationId?: string;
+      scopeVersion?: number;
+      scopeHash?: string;
+      curriculumVersionId?: string;
+      reviewStatus?: string;
+      reviewRequired?: boolean;
+    }>({
+      caller,
+      envelope: {
+        applicationId: 'SCHOOL_INSTANCE',
+        capability: 'SCHOOL_ASSESSMENT_GENERATION',
+        taskType: 'taught_assessment',
+        tenantId: caller.tenantId || undefined,
+        applicationInstanceId: actorCtx.applicationInstanceId,
+        payload: {
+          scopeAuthorizationId: evaluated.scopeAuthorization.id,
+          strictVerifiedEvidence: true
+        },
+        correlationId
+      }
+    });
+
+    const qbService = getInstanceQuestionBankService();
+    const guideByNumber = new Map(
+      (gatewayResult.data.markingGuide || []).map(g => [Number(g.questionNumber), g])
+    );
+
+    const createdQuestions = [];
+    for (const q of gatewayResult.data.questions || []) {
+      const guide = guideByNumber.get(Number(q.questionNumber));
+      const rawType = String(q.questionType || 'objective').toLowerCase();
+      const mappedType =
+        rawType.includes('theory') || rawType.includes('essay')
+          ? 'theory'
+          : rawType.includes('practical')
+          ? 'practical'
+          : rawType.includes('calc')
+          ? 'calculation'
+          : 'objective';
+      const difficulty =
+        q.difficulty === 'Easy' || q.difficulty === 'Medium' || q.difficulty === 'Hard'
+          ? q.difficulty
+          : 'Medium';
+
+      const fallbackTopicId = evaluated.scopedTopics[0]?.topicId || evaluated.scopeAuthorization.selectedTopicIds[0];
+      const topicRef =
+        q.topicId && evaluated.scopeAuthorization.selectedTopicIds.includes(q.topicId)
+          ? q.topicId
+          : fallbackTopicId;
+      const objRefs = Array.isArray(q.learningObjectiveIds) && q.learningObjectiveIds.length > 0
+        ? q.learningObjectiveIds.filter(id => evaluated.scopedObjectiveIds.includes(id))
+        : evaluated.scopedObjectiveIds;
+
+      const saved = await qbService.createQuestion(actorCtx.tenant, actorCtx.applicationInstanceId, {
+        subjectReferenceId: evaluated.assignment.subjectId,
+        classGradeName: evaluated.assignment.classGradeName,
+        curriculumVersionId: evaluated.assignment.curriculumVersionId,
+        topicReferenceId: topicRef,
+        learningObjectiveIds: objRefs.length > 0 ? objRefs : evaluated.scopedObjectiveIds,
+        questionType: mappedType,
+        stem: q.questionText,
+        options: Array.isArray(q.options) ? q.options : null,
+        correctAnswer: guide?.correctAnswer || guide?.modelAnswer || 'See official marking guide',
+        explanation: guide?.modelAnswer || '',
+        markingRubric: guide?.stepBreakdown || null,
+        marks: Number(q.marks || 2),
+        difficulty,
+        cognitiveDemand: q.cognitiveLevel || 'Application',
+        sourceType: 'ai_practice',
+        sourceReference: `Central AI Gateway Taught Assessment (Scope v${evaluated.scopeAuthorization.scopeVersion})`,
+        creationMethod: 'ai_assisted',
+        reviewStatus: 'pending_review',
+        metadata: {
+          scopeAuthorizationId: evaluated.scopeAuthorization.id,
+          scopeVersion: evaluated.scopeAuthorization.scopeVersion,
+          aiGatewayRequestId: gatewayResult.requestId,
+          section: evaluated.assignment.section,
+          academicSession: evaluated.assignment.academicSession,
+          term: evaluated.assignment.term
+        }
+      });
+      createdQuestions.push(saved);
+    }
+
+    const mappedAssessmentType =
+      evaluated.scopeAuthorization.assessmentType === 'quiz'
+        ? 'quiz'
+        : evaluated.scopeAuthorization.assessmentType === 'exam' ||
+          evaluated.scopeAuthorization.assessmentType === 'midterm_exam'
+        ? 'exam'
+        : evaluated.scopeAuthorization.assessmentType === 'continuous_assessment'
+        ? 'continuous_assessment'
+        : 'test';
+
+    const blueprint = await qbService.createBlueprint(actorCtx.tenant, actorCtx.applicationInstanceId, {
+      title: gatewayResult.data.title || evaluated.scopeAuthorization.title,
+      subjectReferenceId: evaluated.assignment.subjectId,
+      classGradeName: evaluated.assignment.classGradeName,
+      term: evaluated.assignment.term,
+      curriculumVersionId: evaluated.assignment.curriculumVersionId,
+      assessmentType: mappedAssessmentType,
+      questionFormatsCount: evaluated.scopeAuthorization.questionTypesConfig,
+      totalMarks: evaluated.scopeAuthorization.totalMarks,
+      difficultyMix: evaluated.scopeAuthorization.difficultyMix,
+      timeAllowanceMinutes: evaluated.scopeAuthorization.durationMinutes,
+      allowVerifiedPastQuestions: false,
+      allowAiPracticeQuestions: true,
+      completedTopicsOnly: true,
+      selectedTopicIds: evaluated.scopeAuthorization.selectedTopicIds,
+      scopeAuthorizationId: evaluated.scopeAuthorization.id,
+      selectedObjectiveIds: evaluated.scopeAuthorization.selectedObjectiveIds,
+      sourceDeliveryIds: evaluated.scopeAuthorization.sourceDeliveryIds,
+      authorizedTeacherUserId: evaluated.scopeAuthorization.teacherUserId,
+      academicSession: evaluated.assignment.academicSession,
+      section: evaluated.assignment.section
+    });
+
+    const provenance = await teachingService.recordGenerationProvenance(actorCtx, {
+      scopeAuthorization: evaluated.scopeAuthorization,
+      blueprintId: blueprint.id,
+      generatedQuestionIds: createdQuestions.map(q => q.id),
+      aiGatewayRequestId: gatewayResult.requestId,
+      providerId: gatewayResult.routing.providerId,
+      modelId: gatewayResult.routing.modelId,
+      generationStatus: 'generated'
+    });
+
+    const responsePayload = {
+      ...gatewayResult.data,
+      scopeAuthorizationId: evaluated.scopeAuthorization.id,
+      scopeVersion: evaluated.scopeAuthorization.scopeVersion,
+      curriculumVersionId: evaluated.assignment.curriculumVersionId,
+      blueprint,
+      persistedQuestions: createdQuestions,
+      provenance,
+      reviewRequired: true,
+      reviewStatus: 'pending_review',
+      gatewayRequestId: gatewayResult.requestId,
+      routing: gatewayResult.routing,
+      usage: gatewayResult.usage
+    };
+
+    if (options.legacyShape) {
+      res.json(responsePayload);
+      return;
+    }
+    res.status(201).json({ success: true, assessment: responsePayload });
+  } catch (err) {
+    handleTeachingEvidenceError(req, res, err, 'Taught assessment generation failed');
+  }
+}
+
+app.use('/api/v1/teaching', questionBankRateLimiter);
+
+app.get(
+  '/api/v1/teaching/assignments',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingDeliveryRead),
+  async (req: Request, res: Response) => {
+    try {
+      const assignments = await getTeachingEvidenceService().listAssignments(buildTeachingActorContext(req), {
+        teacherUserId: typeof req.query.teacherUserId === 'string' ? req.query.teacherUserId : undefined,
+        academicSession: typeof req.query.academicSession === 'string' ? req.query.academicSession : undefined,
+        term: typeof req.query.term === 'string' ? req.query.term : undefined,
+        classId: typeof req.query.classId === 'string' ? req.query.classId : undefined,
+        subjectId: typeof req.query.subjectId === 'string' ? req.query.subjectId : undefined,
+        status: typeof req.query.status === 'string' ? req.query.status : undefined
+      });
+      res.json({ success: true, total: assignments.length, assignments });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to list teacher subject assignments');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/teaching/assignments',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingAssignmentsManage),
+  async (req: Request, res: Response) => {
+    try {
+      const body = req.body ?? {};
+      const actorCtx = buildTeachingActorContext(req);
+      const assignment = await getTeachingEvidenceService().createAssignment(actorCtx, {
+        schoolId: body.schoolId,
+        academicSession: String(body.academicSession || ''),
+        term: String(body.term || ''),
+        classId: String(body.classId || ''),
+        section: typeof body.section === 'string' ? body.section : undefined,
+        subjectId: String(body.subjectId || ''),
+        curriculumVersionId: String(body.curriculumVersionId || ''),
+        staffId: typeof body.staffId === 'string' ? body.staffId : undefined,
+        teacherUserId: String(body.teacherUserId || ''),
+        assignedBy: actorCtx.tenant?.email || actorCtx.userId || 'school_admin',
+        effectiveTo: typeof body.effectiveTo === 'string' ? body.effectiveTo : null,
+        metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {}
+      });
+      res.status(201).json({ success: true, assignment });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to create teacher subject assignment');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/teaching/assignments/:id/revoke',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingAssignmentsManage),
+  async (req: Request, res: Response) => {
+    try {
+      const assignment = await getTeachingEvidenceService().revokeAssignment(
+        buildTeachingActorContext(req),
+        req.params.id,
+        String(req.body?.reason || 'Assignment revoked')
+      );
+      res.json({ success: true, assignment });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to revoke teacher assignment');
+    }
+  }
+);
+
+app.get(
+  '/api/v1/teaching/assignments/:id/curriculum-topics',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingDeliveryRead),
+  async (req: Request, res: Response) => {
+    try {
+      const topics = await getTeachingEvidenceService().listCurriculumTopicsForAssignment(
+        buildTeachingActorContext(req),
+        req.params.id
+      );
+      res.json({ success: true, total: topics.length, topics });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to load curriculum topics for assignment');
+    }
+  }
+);
+
+app.get(
+  '/api/v1/teaching/lesson-notes',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingDeliveryRead),
+  async (req: Request, res: Response) => {
+    try {
+      const lessonNotes = await getTeachingEvidenceService().listLessonNotes(
+        buildTeachingActorContext(req),
+        typeof req.query.assignmentId === 'string' ? req.query.assignmentId : undefined
+      );
+      res.json({ success: true, total: lessonNotes.length, lessonNotes });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to list lesson notes');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/teaching/lesson-notes',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingDeliveryManage),
+  async (req: Request, res: Response) => {
+    try {
+      const body = req.body ?? {};
+      const lessonNote = await getTeachingEvidenceService().createLessonNote(buildTeachingActorContext(req), {
+        assignmentId: String(body.assignmentId || ''),
+        topicId: typeof body.topicId === 'string' ? body.topicId : null,
+        topicTitle: String(body.topicTitle || ''),
+        objectiveIds: Array.isArray(body.objectiveIds) ? body.objectiveIds : [],
+        title: String(body.title || body.topicTitle || 'Lesson Note'),
+        noteContent: body.noteContent && typeof body.noteContent === 'object' ? body.noteContent : {},
+        generationSource: body.generationSource || 'teacher_authored',
+        aiGatewayRequestId: typeof body.aiGatewayRequestId === 'string' ? body.aiGatewayRequestId : null
+      });
+      res.status(201).json({
+        success: true,
+        lessonNote,
+        countsAsTaught: false,
+        notice: 'Lesson note persisted cleanly. Lesson note creation does not mark a topic as taught.'
+      });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to persist lesson note');
+    }
+  }
+);
+
+app.get(
+  '/api/v1/teaching/deliveries',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingDeliveryRead),
+  async (req: Request, res: Response) => {
+    try {
+      const deliveries = await getTeachingEvidenceService().listDeliveries(buildTeachingActorContext(req), {
+        assignmentId: typeof req.query.assignmentId === 'string' ? req.query.assignmentId : undefined,
+        teacherUserId: typeof req.query.teacherUserId === 'string' ? req.query.teacherUserId : undefined,
+        academicSession: typeof req.query.academicSession === 'string' ? req.query.academicSession : undefined,
+        term: typeof req.query.term === 'string' ? req.query.term : undefined,
+        classId: typeof req.query.classId === 'string' ? req.query.classId : undefined,
+        subjectId: typeof req.query.subjectId === 'string' ? req.query.subjectId : undefined,
+        status: typeof req.query.status === 'string' ? req.query.status : undefined,
+        resolutionStatus: typeof req.query.resolutionStatus === 'string' ? req.query.resolutionStatus : undefined
+      });
+      res.json({ success: true, total: deliveries.length, deliveries });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to list teaching deliveries');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/teaching/deliveries',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingDeliveryManage),
+  async (req: Request, res: Response) => {
+    try {
+      const body = req.body ?? {};
+      const delivery = await getTeachingEvidenceService().createDeliveryRecord(buildTeachingActorContext(req), {
+        assignmentId: String(body.assignmentId || ''),
+        topicId: typeof body.topicId === 'string' ? body.topicId : null,
+        topicTitle: String(body.topicTitle || ''),
+        lessonNoteId: typeof body.lessonNoteId === 'string' ? body.lessonNoteId : null,
+        weekNumber: body.weekNumber === undefined ? undefined : Number(body.weekNumber),
+        scheduledDate: typeof body.scheduledDate === 'string' ? body.scheduledDate : undefined
+      });
+      res.status(201).json({ success: true, delivery });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to create teaching delivery record');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/teaching/deliveries/:id/transition',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingDeliveryManage),
+  async (req: Request, res: Response) => {
+    try {
+      const targetStatus = req.body?.targetStatus;
+      if (targetStatus !== 'received' && targetStatus !== 'opened' && targetStatus !== 'acknowledged') {
+        res.status(400).json({
+          success: false,
+          code: 'VALIDATION_ERROR',
+          error: "targetStatus must be one of 'received', 'opened', or 'acknowledged'."
+        });
+        return;
+      }
+      const delivery = await getTeachingEvidenceService().transitionDeliveryStage(
+        buildTeachingActorContext(req),
+        req.params.id,
+        targetStatus
+      );
+      res.json({ success: true, delivery });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to transition teaching delivery stage');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/teaching/deliveries/:id/complete',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingDeliveryManage),
+  async (req: Request, res: Response) => {
+    try {
+      const body = req.body ?? {};
+      const targetStatus = body.targetStatus === 'taught' ? 'taught' : 'completed';
+      const result = await getTeachingEvidenceService().confirmTeachingCompletion(
+        buildTeachingActorContext(req),
+        req.params.id,
+        {
+          targetStatus,
+          confirmTaught: Boolean(body.confirmTaught),
+          coverageMode: body.coverageMode || 'full',
+          coveredObjectiveIds: Array.isArray(body.coveredObjectiveIds) ? body.coveredObjectiveIds : undefined,
+          uncoveredObjectiveIds: Array.isArray(body.uncoveredObjectiveIds) ? body.uncoveredObjectiveIds : undefined,
+          understandingLevel: body.understandingLevel,
+          studentEngagement: body.studentEngagement,
+          remedialNeeded: body.remedialNeeded,
+          remedialTopic: body.remedialTopic,
+          teacherComments: body.teacherComments,
+          challengesNoted: body.challengesNoted,
+          idempotencyKey:
+            typeof body.idempotencyKey === 'string'
+              ? body.idempotencyKey
+              : typeof req.headers['idempotency-key'] === 'string'
+              ? req.headers['idempotency-key']
+              : undefined
+        }
+      );
+      res.json({
+        success: true,
+        idempotentReplay: result.idempotentReplay,
+        delivery: result.record
+      });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to confirm teaching completion');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/teaching/deliveries/:id/correct',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingDeliveryManage),
+  async (req: Request, res: Response) => {
+    try {
+      const body = req.body ?? {};
+      const delivery = await getTeachingEvidenceService().correctDeliveryRecord(
+        buildTeachingActorContext(req),
+        req.params.id,
+        {
+          correctionReason: String(body.correctionReason || ''),
+          coverageMode: body.coverageMode,
+          coveredObjectiveIds: Array.isArray(body.coveredObjectiveIds) ? body.coveredObjectiveIds : undefined,
+          uncoveredObjectiveIds: Array.isArray(body.uncoveredObjectiveIds) ? body.uncoveredObjectiveIds : undefined,
+          understandingLevel: body.understandingLevel,
+          studentEngagement: body.studentEngagement,
+          remedialNeeded: body.remedialNeeded,
+          remedialTopic: body.remedialTopic,
+          teacherComments: body.teacherComments,
+          challengesNoted: body.challengesNoted
+        }
+      );
+      res.json({ success: true, delivery });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to correct teaching delivery record');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/teaching/deliveries/:id/map-curriculum',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingDeliveryManage),
+  async (req: Request, res: Response) => {
+    try {
+      const body = req.body ?? {};
+      const delivery = await getTeachingEvidenceService().mapUnresolvedTopic(
+        buildTeachingActorContext(req),
+        req.params.id,
+        {
+          topicId: String(body.topicId || ''),
+          coveredObjectiveIds: Array.isArray(body.coveredObjectiveIds) ? body.coveredObjectiveIds : undefined,
+          reason: String(body.reason || 'Manual curriculum mapping')
+        }
+      );
+      res.json({ success: true, delivery });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to map delivery topic to NERDC curriculum');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/teaching/deliveries/:id/admin-verify',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingAssignmentsManage),
+  async (req: Request, res: Response) => {
+    try {
+      const body = req.body ?? {};
+      const delivery = await getTeachingEvidenceService().adminVerifyDelivery(
+        buildTeachingActorContext(req),
+        req.params.id,
+        {
+          adminVerificationStatus: body.adminVerificationStatus || 'verified',
+          reason: String(body.reason || 'Verified by school academic authority')
+        }
+      );
+      res.json({ success: true, delivery });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to update admin verification status');
+    }
+  }
+);
+
+app.get(
+  '/api/v1/teaching/deliveries/:id/audit-history',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingDeliveryRead),
+  async (req: Request, res: Response) => {
+    try {
+      const history = await getTeachingEvidenceService().getDeliveryAuditHistory(
+        buildTeachingActorContext(req),
+        req.params.id
+      );
+      res.json({ success: true, total: history.length, history });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to load teaching delivery audit history');
+    }
+  }
+);
+
+app.get(
+  '/api/v1/teaching/progress',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingDeliveryRead),
+  async (req: Request, res: Response) => {
+    try {
+      const progress = await getTeachingEvidenceService().getSubjectProgress(buildTeachingActorContext(req), {
+        teacherUserId: typeof req.query.teacherUserId === 'string' ? req.query.teacherUserId : undefined,
+        academicSession: typeof req.query.academicSession === 'string' ? req.query.academicSession : undefined,
+        term: typeof req.query.term === 'string' ? req.query.term : undefined,
+        classId: typeof req.query.classId === 'string' ? req.query.classId : undefined,
+        subjectId: typeof req.query.subjectId === 'string' ? req.query.subjectId : undefined,
+        assignmentId: typeof req.query.assignmentId === 'string' ? req.query.assignmentId : undefined
+      });
+      res.json({ success: true, total: progress.length, progress });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to compute authoritative subject progress');
+    }
+  }
+);
+
+app.get(
+  '/api/v1/teaching/evidence',
+  authorizationMiddleware.requirePermission(PERMISSIONS.teachingEvidenceRead),
+  async (req: Request, res: Response) => {
+    try {
+      const assignmentId = typeof req.query.assignmentId === 'string' ? req.query.assignmentId : '';
+      if (!assignmentId) {
+        res.status(400).json({
+          success: false,
+          code: 'VALIDATION_ERROR',
+          error: 'assignmentId query parameter is required.'
+        });
+        return;
+      }
+      const evidence = await getTeachingEvidenceService().getVerifiedTaughtEvidence(
+        buildTeachingActorContext(req),
+        assignmentId,
+        typeof req.query.purpose === 'string' ? req.query.purpose : undefined
+      );
+      res.json({ success: true, evidence });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to retrieve verified taught evidence');
+    }
+  }
+);
+
+app.get(
+  '/api/v1/assessments/scope-authorizations',
+  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsRead),
+  async (req: Request, res: Response) => {
+    try {
+      const authorizations = await getTeachingEvidenceService().listScopeAuthorizations(
+        buildTeachingActorContext(req),
+        {
+          assignmentId: typeof req.query.assignmentId === 'string' ? req.query.assignmentId : undefined,
+          status: typeof req.query.status === 'string' ? req.query.status : undefined
+        }
+      );
+      res.json({ success: true, total: authorizations.length, authorizations });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to list assessment scope authorizations');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/assessments/scope-authorizations',
+  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsScopeAuthorize),
+  async (req: Request, res: Response) => {
+    try {
+      const body = req.body ?? {};
+      const authorization = await getTeachingEvidenceService().createAssessmentScopeAuthorization(
+        buildTeachingActorContext(req),
+        {
+          assignmentId: String(body.assignmentId || ''),
+          assessmentType: body.assessmentType || 'class_test',
+          title: String(body.title || ''),
+          selectedTopicIds: Array.isArray(body.selectedTopicIds) ? body.selectedTopicIds : [],
+          selectedObjectiveIds: Array.isArray(body.selectedObjectiveIds) ? body.selectedObjectiveIds : [],
+          questionCount: Number(body.questionCount || 0),
+          questionTypesConfig: body.questionTypesConfig,
+          objectiveTheoryBalance: body.objectiveTheoryBalance,
+          totalMarks: Number(body.totalMarks || 0),
+          difficultyMix: body.difficultyMix,
+          durationMinutes: body.durationMinutes === undefined ? undefined : Number(body.durationMinutes),
+          instructions: typeof body.instructions === 'string' ? body.instructions : ''
+        }
+      );
+      res.status(201).json({ success: true, authorization });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to authorize assessment scope');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/assessments/scope-authorizations/:id/revoke',
+  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsScopeAuthorize),
+  async (req: Request, res: Response) => {
+    try {
+      const authorization = await getTeachingEvidenceService().revokeScopeAuthorization(
+        buildTeachingActorContext(req),
+        req.params.id,
+        String(req.body?.reason || 'Revoked by assigned teacher')
+      );
+      res.json({ success: true, authorization });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to revoke assessment scope authorization');
+    }
+  }
+);
+
+app.post(
+  '/api/v1/assessments/taught-generate',
+  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsScopeAuthorize),
+  async (req: Request, res: Response) => {
+    await executeTaughtAssessmentGeneration(req, res, { legacyShape: false });
+  }
+);
+
+app.get(
+  '/api/v1/assessments/provenance',
+  authorizationMiddleware.requirePermission(PERMISSIONS.assessmentsRead),
+  async (req: Request, res: Response) => {
+    try {
+      const provenance = await getTeachingEvidenceService().listGenerationProvenance(
+        buildTeachingActorContext(req),
+        typeof req.query.scopeAuthorizationId === 'string' ? req.query.scopeAuthorizationId : undefined
+      );
+      res.json({ success: true, total: provenance.length, provenance });
+    } catch (err) {
+      handleTeachingEvidenceError(req, res, err, 'Failed to load assessment generation provenance');
     }
   }
 );

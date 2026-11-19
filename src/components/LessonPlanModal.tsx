@@ -2,19 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { SubjectCurriculum, CurriculumTopic, LessonPlanResponse, ClassGrade, Term } from '../types';
 import { NERDC_SUBJECTS_DATABASE } from '../data/nerdcDatabase';
 import { aiGatewayClient } from '../services/aiGatewayClient';
-import { 
-  X, 
-  Sparkles, 
-  Printer, 
-  Copy, 
-  Check, 
-  FileText, 
-  GraduationCap, 
-  Clock, 
-  BookOpen, 
-  Send,
+import { unifiedApiClient } from '../services/unifiedApiClient';
+import {
+  teachingEvidenceApiClient,
+  type TeacherSubjectAssignmentDto,
+  type ResolvedCurriculumTopicDto,
+  type LessonNoteRecordDto
+} from '../services/teachingEvidenceApiClient';
+import {
+  X,
+  Sparkles,
+  Printer,
+  Copy,
+  Check,
+  FileText,
+  GraduationCap,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  BookmarkCheck,
+  Info
 } from 'lucide-react';
 
 interface LessonPlanModalProps {
@@ -22,6 +28,8 @@ interface LessonPlanModalProps {
   onClose: () => void;
   initialSubject?: SubjectCurriculum | null;
   initialTopic?: CurriculumTopic | null;
+  initialAssignmentId?: string;
+  onLessonNoteSaved?: (note: LessonNoteRecordDto) => void;
 }
 
 export const LessonPlanModal: React.FC<LessonPlanModalProps> = ({
@@ -29,9 +37,9 @@ export const LessonPlanModal: React.FC<LessonPlanModalProps> = ({
   onClose,
   initialSubject,
   initialTopic,
+  initialAssignmentId,
+  onLessonNoteSaved
 }) => {
-  if (!isOpen) return null;
-
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>(
     initialSubject?.id || NERDC_SUBJECTS_DATABASE[0].id
   );
@@ -56,9 +64,82 @@ export const LessonPlanModal: React.FC<LessonPlanModalProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [lessonPlan, setLessonPlan] = useState<LessonPlanResponse | null>(null);
+  const [lastGatewayRequestId, setLastGatewayRequestId] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
 
-  // Sync state when initial props change
+  // Authoritative assignment & curriculum resolution context
+  const isAuthenticated = unifiedApiClient.isAuthenticated('school_flow');
+  const [assignments, setAssignments] = useState<TeacherSubjectAssignmentDto[]>([]);
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>(initialAssignmentId || '');
+  const [assignmentTopics, setAssignmentTopics] = useState<ResolvedCurriculumTopicDto[]>([]);
+  const [selectedTopicId, setSelectedTopicId] = useState<string>('');
+  const [selectedObjectiveIds, setSelectedObjectiveIds] = useState<string[]>([]);
+  const [isLoadingAssignments, setIsLoadingAssignments] = useState<boolean>(false);
+  const [isSavingNote, setIsSavingNote] = useState<boolean>(false);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || !isAuthenticated) return;
+    let active = true;
+    setIsLoadingAssignments(true);
+    teachingEvidenceApiClient
+      .listAssignments({ status: 'active' })
+      .then((list) => {
+        if (!active) return;
+        setAssignments(list);
+        if (initialAssignmentId && list.some((a) => a.id === initialAssignmentId)) {
+          setSelectedAssignmentId(initialAssignmentId);
+        } else if (list.length > 0 && !selectedAssignmentId) {
+          setSelectedAssignmentId(list[0].id);
+        }
+      })
+      .catch(() => {
+        if (active) setAssignments([]);
+      })
+      .finally(() => {
+        if (active) setIsLoadingAssignments(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isOpen, isAuthenticated, initialAssignmentId]);
+
+  useEffect(() => {
+    if (!isOpen || !isAuthenticated || !selectedAssignmentId) {
+      setAssignmentTopics([]);
+      return;
+    }
+    let active = true;
+    const activeAssignment = assignments.find((a) => a.id === selectedAssignmentId);
+    if (activeAssignment) {
+      setClassGrade((activeAssignment.classGradeName as ClassGrade) || classGrade);
+      setTerm((activeAssignment.term as Term) || term);
+    }
+
+    teachingEvidenceApiClient
+      .listCurriculumTopicsForAssignment(selectedAssignmentId)
+      .then((topics) => {
+        if (!active) return;
+        setAssignmentTopics(topics);
+        if (topics.length > 0) {
+          setSelectedTopicId(topics[0].topicId);
+          setTopicTitle(topics[0].topicTitle);
+          setSubTopic(topics[0].subtopics.map((s) => s.title).join(', '));
+          setSelectedObjectiveIds(topics[0].objectives.map((o) => o.id));
+        } else {
+          setSelectedTopicId('');
+          setSelectedObjectiveIds([]);
+        }
+      })
+      .catch(() => {
+        if (active) setAssignmentTopics([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isOpen, isAuthenticated, selectedAssignmentId, assignments]);
+
   useEffect(() => {
     if (initialSubject) {
       setSelectedSubjectId(initialSubject.id);
@@ -72,7 +153,11 @@ export const LessonPlanModal: React.FC<LessonPlanModalProps> = ({
     }
   }, [initialSubject, initialTopic]);
 
-  // When subject changes in dropdown, update available topics
+  if (!isOpen) return null;
+
+  const activeAssignment = assignments.find((a) => a.id === selectedAssignmentId) || null;
+  const activeResolvedTopic = assignmentTopics.find((t) => t.topicId === selectedTopicId) || null;
+
   const handleSubjectChange = (newSubjectId: string) => {
     setSelectedSubjectId(newSubjectId);
     const sub = NERDC_SUBJECTS_DATABASE.find((s) => s.id === newSubjectId);
@@ -87,6 +172,16 @@ export const LessonPlanModal: React.FC<LessonPlanModalProps> = ({
     }
   };
 
+  const handleAssignmentTopicChange = (newTopicId: string) => {
+    setSelectedTopicId(newTopicId);
+    const found = assignmentTopics.find((t) => t.topicId === newTopicId);
+    if (found) {
+      setTopicTitle(found.topicTitle);
+      setSubTopic(found.subtopics.map((s) => s.title).join(', '));
+      setSelectedObjectiveIds(found.objectives.map((o) => o.id));
+    }
+  };
+
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!topicTitle.trim()) {
@@ -96,28 +191,61 @@ export const LessonPlanModal: React.FC<LessonPlanModalProps> = ({
 
     setIsLoading(true);
     setError(null);
+    setSavedNotice(null);
+    setSaveError(null);
 
     try {
+      const subjectName = activeAssignment?.subjectName || activeSubject.name;
       const result = await aiGatewayClient.generateCurriculum<LessonPlanResponse>({
         capability: 'LESSON_GENERATION',
         taskType: 'lesson_note',
         payload: {
-          subjectName: activeSubject.name,
-          classGrade,
+          subjectName,
+          classGrade: activeAssignment?.classGradeName || classGrade,
           topicTitle,
           subTopic,
           durationMinutes: duration,
-          term,
+          term: activeAssignment?.term || term,
           contextNotes
         }
       });
 
       setLessonPlan(result.data);
+      setLastGatewayRequestId(result.requestId || null);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'An error occurred while generating the lesson plan.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSaveToAssignment = async () => {
+    if (!lessonPlan || !selectedAssignmentId) return;
+    setIsSavingNote(true);
+    setSaveError(null);
+    setSavedNotice(null);
+    try {
+      const res = await teachingEvidenceApiClient.createLessonNote({
+        assignmentId: selectedAssignmentId,
+        topicId: selectedTopicId || null,
+        topicTitle: lessonPlan.topic || topicTitle,
+        objectiveIds: selectedObjectiveIds,
+        title: `${lessonPlan.subject || activeAssignment?.subjectName || 'Lesson'}: ${lessonPlan.topic || topicTitle}`,
+        noteContent: lessonPlan as unknown as Record<string, unknown>,
+        generationSource: lastGatewayRequestId ? 'ai_gateway' : 'teacher_authored',
+        aiGatewayRequestId: lastGatewayRequestId
+      });
+      setSavedNotice(
+        `${res.notice} (Record ID: ${res.lessonNote.id}, countsAsTaught=${String(res.countsAsTaught)})`
+      );
+      if (onLessonNoteSaved) {
+        onLessonNoteSaved(res.lessonNote);
+      }
+    } catch (err: any) {
+      setSaveError(err?.error || err?.message || 'Failed to save lesson note to assignment.');
+    } finally {
+      setIsSavingNote(false);
     }
   };
 
@@ -168,7 +296,7 @@ ASSIGNMENT / HOMEWORK:
 ${lessonPlan.assignment.map((a, i) => `${i + 1}. ${a}`).join('\n')}
 
 TEACHER'S REMARKS:
-${lessonPlan.teacherRemarks || 'Lesson successfully delivered.'}
+${lessonPlan.teacherRemarks || 'Lesson preparation draft.'}
     `;
 
     navigator.clipboard.writeText(formatted);
@@ -196,11 +324,11 @@ ${lessonPlan.teacherRemarks || 'Lesson successfully delivered.'}
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <span>Official NERDC Lesson Plan Generator</span>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Nigerian Standard
+                  Preparation Artifact Only
                 </span>
               </h2>
               <p className="text-xs text-slate-400">
-                Generates complete, structured Nigerian lesson plans with Behavioral Objectives, Entry Behavior, Steps & Evaluation.
+                Generates structured Nigerian lesson plans. Saving or viewing a lesson note does not mark the topic as taught.
               </p>
             </div>
           </div>
@@ -211,6 +339,14 @@ ${lessonPlan.teacherRemarks || 'Lesson successfully delivered.'}
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Non-Evidence Authority Notice */}
+        <div className="px-6 py-2.5 bg-amber-950/30 border-b border-amber-800/40 text-[11px] text-amber-200 flex items-center gap-2">
+          <Info className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>
+            <strong>Strict Evidence Separation:</strong> Lesson note generation and saving create preparation records with <code className="font-mono text-amber-300">countsAsTaught = false</code>. Teachers must confirm actual classroom teaching in the Delivery Tracker before topics appear in progress or assessments.
+          </span>
         </div>
 
         {/* Modal Content */}
@@ -225,30 +361,91 @@ ${lessonPlan.teacherRemarks || 'Lesson successfully delivered.'}
                 Lesson Parameters
               </h3>
 
-              {/* Subject Selection */}
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Subject</label>
-                <select
-                  value={selectedSubjectId}
-                  onChange={(e) => handleSubjectChange(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500"
-                >
-                  {NERDC_SUBJECTS_DATABASE.map((sub) => (
-                    <option key={sub.id} value={sub.id}>
-                      {sub.name} ({sub.level.toUpperCase()})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Active Teaching Assignment Picker (Authenticated Session) */}
+              {isAuthenticated && (
+                <div className="space-y-1.5 bg-slate-900/70 p-3 rounded-lg border border-slate-700/70">
+                  <label className="block text-[11px] font-semibold text-emerald-300">
+                    Active Teaching Assignment
+                  </label>
+                  {isLoadingAssignments ? (
+                    <div className="text-[11px] text-slate-400">Loading active assignments...</div>
+                  ) : assignments.length > 0 ? (
+                    <select
+                      value={selectedAssignmentId}
+                      onChange={(e) => setSelectedAssignmentId(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-2 text-xs focus:ring-1 focus:ring-emerald-500"
+                    >
+                      {assignments.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.subjectName} — {a.classGradeName} {a.section} ({a.term}, {a.academicSession})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="text-[11px] text-amber-300">
+                      No active teacher subject assignments found. Preview parameters remain editable below.
+                    </div>
+                  )}
+
+                  {activeAssignment && (
+                    <div className="text-[10px] text-slate-400 font-mono pt-1">
+                      Curriculum Version: {activeAssignment.curriculumVersionId}
+                    </div>
+                  )}
+
+                  {assignmentTopics.length > 0 && (
+                    <div className="pt-1.5">
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                        NERDC Topic (Version-Pinned)
+                      </label>
+                      <select
+                        value={selectedTopicId}
+                        onChange={(e) => handleAssignmentTopicChange(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-2 text-xs"
+                      >
+                        {assignmentTopics.map((t) => (
+                          <option key={t.topicId} value={t.topicId}>
+                            Wk {t.week}: {t.topicTitle}
+                          </option>
+                        ))}
+                      </select>
+                      {activeResolvedTopic && activeResolvedTopic.objectives.length > 0 && (
+                        <div className="text-[10px] text-slate-400 mt-1">
+                          {selectedObjectiveIds.length} curriculum learning objectives linked
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Fallback Subject Selection when no active assignment */}
+              {!activeAssignment && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Subject</label>
+                  <select
+                    value={selectedSubjectId}
+                    onChange={(e) => handleSubjectChange(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500"
+                  >
+                    {NERDC_SUBJECTS_DATABASE.map((sub) => (
+                      <option key={sub.id} value={sub.id}>
+                        {sub.name} ({sub.level.toUpperCase()})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Class Grade & Term */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">Class</label>
                   <select
-                    value={classGrade}
-                    onChange={(e) => setClassGrade(e.target.value as any)}
-                    className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500"
+                    value={activeAssignment?.classGradeName || classGrade}
+                    disabled={Boolean(activeAssignment)}
+                    onChange={(e) => setClassGrade(e.target.value as ClassGrade)}
+                    className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500 disabled:opacity-70"
                   >
                     {activeSubject.targetGrades.map((g) => (
                       <option key={g} value={g}>
@@ -261,9 +458,10 @@ ${lessonPlan.teacherRemarks || 'Lesson successfully delivered.'}
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">Term</label>
                   <select
-                    value={term}
-                    onChange={(e) => setTerm(e.target.value as any)}
-                    className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500"
+                    value={activeAssignment?.term || term}
+                    disabled={Boolean(activeAssignment)}
+                    onChange={(e) => setTerm(e.target.value as Term)}
+                    className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500 disabled:opacity-70"
                   >
                     <option value="Term 1">Term 1</option>
                     <option value="Term 2">Term 2</option>
@@ -352,7 +550,7 @@ ${lessonPlan.teacherRemarks || 'Lesson successfully delivered.'}
               {lessonPlan ? (
                 <div className="bg-slate-850 border border-slate-700/80 rounded-xl p-6 space-y-6 text-slate-200 shadow-lg print:text-black print:bg-white">
                   {/* Top Actions */}
-                  <div className="flex items-center justify-between border-b border-slate-700/80 pb-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700/80 pb-3">
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
                       <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
@@ -360,8 +558,25 @@ ${lessonPlan.teacherRemarks || 'Lesson successfully delivered.'}
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {isAuthenticated && selectedAssignmentId && (
+                        <button
+                          type="button"
+                          onClick={handleSaveToAssignment}
+                          disabled={isSavingNote}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 transition-all"
+                        >
+                          {isSavingNote ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <BookmarkCheck className="w-3.5 h-3.5" />
+                          )}
+                          <span>Save Lesson Note (Not Taught)</span>
+                        </button>
+                      )}
+
                       <button
+                        type="button"
                         onClick={handleCopy}
                         className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition-all"
                       >
@@ -370,6 +585,7 @@ ${lessonPlan.teacherRemarks || 'Lesson successfully delivered.'}
                       </button>
 
                       <button
+                        type="button"
                         onClick={handlePrint}
                         className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition-all"
                       >
@@ -378,6 +594,17 @@ ${lessonPlan.teacherRemarks || 'Lesson successfully delivered.'}
                       </button>
                     </div>
                   </div>
+
+                  {savedNotice && (
+                    <div className="p-3 rounded-xl bg-emerald-950/50 border border-emerald-700/60 text-emerald-200 text-xs">
+                      {savedNotice}
+                    </div>
+                  )}
+                  {saveError && (
+                    <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-700/60 text-rose-200 text-xs">
+                      {saveError}
+                    </div>
+                  )}
 
                   {/* Lesson Note Formal Table Header */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-900/90 p-4 rounded-xl border border-slate-800 text-xs">
@@ -527,9 +754,9 @@ ${lessonPlan.teacherRemarks || 'Lesson successfully delivered.'}
                   {/* Remarks */}
                   <div className="pt-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
                     <div>
-                      <strong>Teacher's Remarks:</strong> {lessonPlan.teacherRemarks || 'Lesson taught successfully.'}
+                      <strong>Teacher's Remarks:</strong> {lessonPlan.teacherRemarks || 'Lesson plan drafted for preparation.'}
                     </div>
-                    <div className="font-mono">NERDC Approved Format</div>
+                    <div className="font-mono">countsAsTaught = false</div>
                   </div>
                 </div>
               ) : (
@@ -539,7 +766,7 @@ ${lessonPlan.teacherRemarks || 'Lesson successfully delivered.'}
                     Ready to Generate Official Lesson Note
                   </h4>
                   <p className="text-xs text-slate-400 max-w-md">
-                    Select your subject, class level, and curriculum topic from the left panel, then click <strong>Generate Lesson Plan</strong> to produce a ready-to-teach Nigerian educational lesson note.
+                    Select your active teaching assignment or subject, class level, and curriculum topic from the left panel, then click <strong>Generate Lesson Plan</strong>.
                   </p>
                 </div>
               )}

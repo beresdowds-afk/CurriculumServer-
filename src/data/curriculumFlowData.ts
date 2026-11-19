@@ -1157,7 +1157,12 @@ export const MOCK_STUDENT_PROFILES = [
   }
 ];
 
-// Aliases for seamless imports
+/**
+ * LEGACY DEV-ONLY FIXTURES:
+ * Authoritative curriculum progress, teaching delivery records, and taught-assessment
+ * evidence are served exclusively from PostgreSQL via `/api/v1/teaching/*` and
+ * `/api/v1/assessments/*`. Do NOT use these aliases as production data sources.
+ */
 export const MOCK_USERS = USER_PROFILES;
 export const MOCK_KPIS = INITIAL_SCHOOL_KPIS;
 export const MOCK_LESSON_NOTES = INITIAL_LESSON_NOTES;

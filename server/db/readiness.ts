@@ -104,7 +104,13 @@ const REQUIRED_TABLES = [
   'production.tenant_ai_entitlements',
   'production.ai_gateway_requests',
   'production.ai_gateway_usage_metrics',
-  'production.ai_gateway_audit_events'
+  'production.ai_gateway_audit_events',
+  'production.teacher_subject_assignments',
+  'production.lesson_note_records',
+  'production.teaching_delivery_records',
+  'production.teaching_delivery_audit_history',
+  'production.assessment_scope_authorizations',
+  'production.assessment_generation_provenance'
 ];
 
 export interface CapabilityReadiness {
