@@ -310,6 +310,12 @@ export function createBillingPaymentsApp() {
     serviceLabel: 'billing-payments',
     keyGenerator: req => req.ip || 'anonymous'
   });
+  const protectedBillingRateLimiter = createSlidingWindowRateLimiter({
+    windowMs: 60_000,
+    maxRequests: Math.max(10, Number(process.env.BILLING_PAYMENTS_RATE_LIMIT_MAX || 120)),
+    serviceLabel: 'protected-billing-operations',
+    keyGenerator: req => req.ip || 'anonymous'
+  });
   app.use('/api/v1/server/payments', billingPaymentsRateLimiter);
   app.use('/api/v1/cloud-billing', billingPaymentsRateLimiter);
   app.use((req, res, next) => {
@@ -490,6 +496,7 @@ export function createBillingPaymentsApp() {
 
   app.post(
     '/api/v1/server/payments/verify',
+    protectedBillingRateLimiter,
     authorization.requirePermission('billing.payments.read'),
     async (req: TenantRequest, res: Response) => {
       try {
@@ -533,7 +540,7 @@ export function createBillingPaymentsApp() {
     }
   );
 
-  app.post('/api/v1/server/payments/webhook/:provider', async (req, res) => {
+  app.post('/api/v1/server/payments/webhook/:provider', protectedBillingRateLimiter, async (req, res) => {
     try {
       const provider = providerFrom(req.params.provider);
       if (!provider || !Buffer.isBuffer(req.body) ||
@@ -861,6 +868,7 @@ export function createBillingPaymentsApp() {
 
   app.get(
     '/api/v1/cloud-billing/projects/:projectId/billing-info',
+    protectedBillingRateLimiter,
     requirePlatformAdministrator,
     async (req, res) => {
       try {
