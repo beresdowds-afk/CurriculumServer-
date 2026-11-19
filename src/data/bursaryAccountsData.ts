@@ -576,25 +576,6 @@ export function numberToWordsNaira(num: number): string {
   return (result.trim() + ' Naira Only');
 }
 
-export function generatePaystackReference(): string {
-  return `PSTK_CF_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
-}
-
-export function generateOpayReference(): string {
-  return `OPAY_TX_${Date.now().toString().slice(-8)}${Math.floor(100 + Math.random() * 900)}`;
-}
-
-export function generateVirtualNuban(admissionNo: string): { bankName: string; accountNumber: string; accountName: string } {
-  // Generate deterministic 10-digit virtual NUBAN e.g. 9920XXXXXX
-  const digits = admissionNo.replace(/\D/g, '').padEnd(6, '7');
-  const accountNumber = `9920${digits.slice(0, 6)}`;
-  return {
-    bankName: 'OPay / Wema Bank Virtual Ingress',
-    accountNumber,
-    accountName: `CurriculumFlow / ${admissionNo}`
-  };
-}
-
 // -----------------------------------------------------------------
 // 2. INITIAL STUDENT INVOICES
 // -----------------------------------------------------------------
@@ -845,7 +826,6 @@ export const INITIAL_PAYMENT_TRANSACTIONS: PaymentTransaction[] = [
     netAmount: 162185,
     paymentChannel: 'opay',
     channelDetails: {
-      virtualAccountNumber: '9920240002',
       pspReference: 'OPAY_COLL_998124',
       senderAccountName: 'Alhaji Danladi Bello'
     },
@@ -923,7 +903,6 @@ export const INITIAL_PAYMENT_TRANSACTIONS: PaymentTransaction[] = [
     netAmount: 79600,
     paymentChannel: 'opay',
     channelDetails: {
-      virtualAccountNumber: '9920240006',
       pspReference: 'OPAY_COLL_112938',
       senderAccountName: 'Kenneth Obi'
     },
@@ -931,7 +910,7 @@ export const INITIAL_PAYMENT_TRANSACTIONS: PaymentTransaction[] = [
     status: 'successful',
     verifiedBy: 'System Webhook (OPay Business)',
     verifiedAt: '2026-04-23T11:15:22.000Z',
-    notes: 'First installment via OPay instant virtual NUBAN transfer.'
+    notes: 'First installment via bank transfer.'
   }
 ];
 
@@ -1627,7 +1606,6 @@ export function compileStudentAccountSummaries(
 
   invoices.forEach(inv => {
     if (!map.has(inv.studentId)) {
-      const nuban = generateVirtualNuban(inv.admissionNumber);
       map.set(inv.studentId, {
         studentId: inv.studentId,
         studentName: inv.studentName,
@@ -1645,7 +1623,6 @@ export function compileStudentAccountSummaries(
         invoicesCount: 0,
         receiptsCount: 0,
         lastPaymentDate: undefined,
-        virtualNubanAccount: nuban,
         activeInstallmentPlan: undefined
       });
     }

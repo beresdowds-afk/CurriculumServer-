@@ -46,7 +46,7 @@ import { instanceLifecycleManager } from './server/instanceLifecycleManager';
 import { costGovernanceManager } from './server/costGovernanceManager';
 import { productionHardeningEngine } from './server/productionHardeningEngine';
 import { homepageEngineManager } from './server/homepageEngineManager';
-import { serverPaymentEngine } from './server/serverPaymentEngine';
+import { proxyBillingPaymentsRequest } from './server/billingPaymentsProxy';
 import type { SchoolProvisioningConfirmation, SchoolProvisioningRequest } from './packages/shared-types/src/apiContracts';
 import { postgresRuntime, DatabaseFailure } from './server/db/postgres';
 import { ControlPlaneRepository } from './server/db/controlPlaneRepository';
@@ -165,7 +165,13 @@ async function deliverSchoolInvitation(
   return await repository.getProvisioningStatus(record.instanceId, principal) || record;
 }
 
-app.use(express.json());
+app.use((req, res, next) => {
+  const paymentWebhook = /^\/api\/v1\/server\/payments\/webhook\/[^/]+$/.test(req.path);
+  const parser = paymentWebhook
+    ? express.raw({ type: 'application/json', limit: '256kb' })
+    : express.json();
+  parser(req, res, next);
+});
 
 function productionPersistenceUnavailable(req: Request, res: Response, capabilityId?: string): void {
   res.status(503).json({
@@ -5191,90 +5197,87 @@ app.post('/api/v1/server/onboarding/requests/:id/review', requireSuperAdmin, (re
   res.json({ success: true, data: updated });
 });
 
-// =============================================================================
-// CURRICULUM SERVER PLATFORM PAYMENT FLOW (PRODUCTION HARDENED)
-// =============================================================================
-
-// Payment initialization remains unavailable until a trusted provider adapter is configured.
-app.post('/api/v1/server/payments/initialize', (req: Request, res: Response) => {
-  res.status(503).json({
+// Platform application billing is proxied to the internal billing-payments service.
+app.post(
+  '/api/v1/server/payments/initialize',
+  authorizationMiddleware.requirePermission('billing.payments.create'),
+  (req: Request, res: Response) => void proxyBillingPaymentsRequest(req, res, '/api/v1/server/payments/initialize')
+);
+app.post(
+  '/api/v1/server/payments/verify',
+  authorizationMiddleware.requirePermission('billing.payments.read'),
+  (req: Request, res: Response) => void proxyBillingPaymentsRequest(req, res, '/api/v1/server/payments/verify')
+);
+app.post(
+  '/api/v1/server/payments/webhook/:provider',
+  (req: Request, res: Response) => {
+    if (!/^(paystack|flutterwave|opay|interswitch|bank_transfer)$/.test(req.params.provider) ||
+        !Buffer.isBuffer(req.body)) {
+      res.status(400).json({ success: false, code: 'INVALID_WEBHOOK', error: 'Invalid payment provider callback.' });
+      return;
+    }
+    void proxyBillingPaymentsRequest(
+      req,
+      res,
+      `/api/v1/server/payments/webhook/${req.params.provider}`,
+      req.body
+    );
+  }
+);
+app.post(
+  '/api/v1/server/payments/refunds',
+  authorizationMiddleware.requirePermission('billing.payments.refund'),
+  (req: Request, res: Response) => void proxyBillingPaymentsRequest(req, res, '/api/v1/server/payments/refunds')
+);
+app.get(
+  '/api/v1/server/payments/transactions',
+  authorizationMiddleware.requirePermission('billing.payments.read'),
+  (req: Request, res: Response) => void proxyBillingPaymentsRequest(req, res, '/api/v1/server/payments/transactions')
+);
+app.get(
+  '/api/v1/server/payments/reconciliation',
+  authorizationMiddleware.requirePermission('billing.payments.read'),
+  (req: Request, res: Response) => void proxyBillingPaymentsRequest(req, res, '/api/v1/server/payments/reconciliation')
+);
+app.get(
+  '/api/v1/server/payments/invoices/:invoiceNumber',
+  authorizationMiddleware.requirePermission('billing.payments.read'),
+  (req: Request, res: Response) => void proxyBillingPaymentsRequest(
+    req, res, `/api/v1/server/payments/invoices/${encodeURIComponent(req.params.invoiceNumber)}`
+  )
+);
+app.get(
+  '/api/v1/server/payments/receipts/:receiptNumber',
+  authorizationMiddleware.requirePermission('billing.payments.read'),
+  (req: Request, res: Response) => void proxyBillingPaymentsRequest(
+    req, res, `/api/v1/server/payments/receipts/${encodeURIComponent(req.params.receiptNumber)}`
+  )
+);
+app.get(
+  '/api/v1/cloud-billing/projects/:projectId/billing-info',
+  requireSuperAdmin,
+  (req: Request, res: Response) => void proxyBillingPaymentsRequest(
+    req, res, `/api/v1/cloud-billing/projects/${encodeURIComponent(req.params.projectId)}/billing-info`
+  )
+);
+app.get(
+  '/api/v1/cloud-billing/usage-reports/:projectId',
+  authorizationMiddleware.requirePermission('cloud_billing.costs.read'),
+  (req: Request, res: Response) => void proxyBillingPaymentsRequest(
+    req, res, `/api/v1/cloud-billing/usage-reports/${encodeURIComponent(req.params.projectId)}`
+  )
+);
+app.post(
+  '/api/v1/cloud-billing/project-association-requests',
+  authorizationMiddleware.requirePermission('cloud_billing.association.request'),
+  (req: Request, res: Response) => void proxyBillingPaymentsRequest(req, res, '/api/v1/cloud-billing/project-association-requests')
+);
+app.post('/api/v1/cloud-billing/projects/:projectId/associate', (_req: Request, res: Response) => {
+  res.status(403).json({
     success: false,
-    code: 'PAYMENT_INITIALIZATION_UNAVAILABLE',
-    error: 'Payment checkout is unavailable until a trusted provider integration is configured.',
-    correlationId: (req as any).correlationId
+    code: 'CLOUD_BILLING_OPERATOR_REQUIRED',
+    error: 'Project billing association requires an independently authorized cloud-billing-operator operation.'
   });
-});
-
-// Payment Verification through official backend verification flow
-app.post('/api/v1/server/payments/verify', (req: Request, res: Response) => {
-  res.status(503).json({
-    success: false,
-    code: 'PAYMENT_VERIFICATION_UNAVAILABLE',
-    error: 'Payment verification is unavailable until a trusted provider verification adapter is configured.',
-    correlationId: (req as any).correlationId
-  });
-});
-
-// Platform Automated Webhook Endpoint with Cryptographic Signature Enforcement
-app.post('/api/v1/server/payments/webhook/:provider', (req: Request, res: Response) => {
-  const provider = req.params.provider as any;
-  const payload = req.body;
-  const rawBody = JSON.stringify(payload);
-
-  let verifiedSignature = false;
-
-  if (provider === 'paystack') {
-    const sig = req.headers['x-paystack-signature'] as string;
-    verifiedSignature = serverPaymentEngine.verifyPaystackSignature(rawBody, sig);
-  } else if (provider === 'flutterwave') {
-    const sig = req.headers['verif-hash'] as string;
-    verifiedSignature = serverPaymentEngine.verifyFlutterwaveSignature(sig);
-  } else if (provider === 'opay') {
-    const authHeader = req.headers['authorization'] as string;
-    verifiedSignature = serverPaymentEngine.verifyOPaySignature(payload, authHeader);
-  } else {
-    // Bank wire or standard test rail
-    verifiedSignature = true;
-  }
-
-  if (!verifiedSignature) {
-    res.status(401).json({ success: false, error: 'Invalid or forged PSP webhook cryptographic signature' });
-    return;
-  }
-
-  const reference = payload.data?.reference || payload.reference || `wh_${Date.now()}`;
-  const amountNGN = payload.data?.amount ? payload.data.amount / 100 : Number(payload.amount) || 250000;
-  const instanceId = payload.data?.metadata?.instanceId || payload.metadata?.instanceId;
-
-  const result = serverPaymentEngine.verifyPlatformPayment(
-    reference,
-    provider,
-    amountNGN,
-    instanceId,
-    `Verified via ${provider.toUpperCase()} Webhook Dispatch`
-  );
-
-  res.status(200).json({ received: true, reference, processed: result.success });
-});
-
-// Official Platform Tax Invoice Lookup
-app.get('/api/v1/server/payments/invoices/:invoiceNumber', (req: Request, res: Response) => {
-  const invoice = serverPaymentEngine.getPlatformInvoice(req.params.invoiceNumber);
-  if (!invoice) {
-    res.status(404).json({ success: false, error: 'Official platform invoice not found' });
-    return;
-  }
-  res.json({ success: true, data: invoice });
-});
-
-// Official Platform Electronic Receipt Lookup with QR Security Code
-app.get('/api/v1/server/payments/receipts/:receiptNumber', (req: Request, res: Response) => {
-  const receipt = serverPaymentEngine.getPlatformReceipt(req.params.receiptNumber);
-  if (!receipt) {
-    res.status(404).json({ success: false, error: 'Official platform receipt not found' });
-    return;
-  }
-  res.json({ success: true, data: receipt });
 });
 
 // Payment Production Readiness Compliance Audit Report
@@ -5297,127 +5300,21 @@ app.post('/api/v1/server/payments/run-tests', async (req: Request, res: Response
   });
 });
 
-// =============================================================================
-// PROVISIONED INSTANCE PAYMENT FLOW GENERATION & EXECUTION
-// =============================================================================
-
-// Get or Generate Instance Payment Configuration Profile
-app.get('/api/v1/instances/:instanceId/payments/profile', (req: Request, res: Response) => {
-  const profile = serverPaymentEngine.getInstancePaymentProfile(req.params.instanceId);
-  res.json({ success: true, data: profile });
-});
-
-// Initialize Instance Payment (Tuition, Admissions Application Fee, CBT Exam Pass, Levies)
-app.post('/api/v1/instances/:instanceId/payments/initialize', (req: Request, res: Response) => {
-  const { feeCategory, amountNGN, payerEmail, payerName, payerPhone, studentId, studentName, admissionNumber, applicantId, targetClass, cbtExamCode, provider, term, notes } = req.body;
-  if (!feeCategory || !amountNGN || !payerEmail || !payerName) {
-    res.status(400).json({ success: false, error: 'Missing required parameters (feeCategory, amountNGN, payerEmail, payerName)' });
-    return;
-  }
-
-  const result = serverPaymentEngine.initializeInstancePayment(req.params.instanceId, {
-    feeCategory,
-    amountNGN: Number(amountNGN),
-    payerEmail,
-    payerName,
-    payerPhone,
-    studentId,
-    studentName,
-    admissionNumber,
-    applicantId,
-    targetClass,
-    cbtExamCode,
-    provider: (provider || 'paystack') as any,
-    term,
-    notes
+// School student-fee collection is a separate financial domain and is not handled by
+// the platform subscription billing service.
+app.all('/api/v1/instances/:instanceId/payments/*', (_req: Request, res: Response) => {
+  res.status(410).json({
+    success: false,
+    code: 'STUDENT_FEES_NOT_PLATFORM_BILLING',
+    error: 'This endpoint no longer generates or verifies school fee payments.'
   });
-
-  res.json({ success: true, data: result });
 });
-
-// Verify Instance Payment
-app.post('/api/v1/instances/:instanceId/payments/verify', (req: Request, res: Response) => {
-  const { reference, provider, amountNGN, feeCategory, payerName, payerEmail, studentName, admissionNumber, applicantId, targetClass, cbtExamCode } = req.body;
-  if (!reference || !provider || !amountNGN) {
-    res.status(400).json({ success: false, error: 'reference, provider, and amountNGN are required' });
-    return;
-  }
-
-  const result = serverPaymentEngine.verifyInstancePayment(
-    req.params.instanceId,
-    reference,
-    provider as any,
-    Number(amountNGN),
-    {
-      feeCategory,
-      payerName,
-      payerEmail,
-      studentName,
-      admissionNumber,
-      applicantId,
-      targetClass,
-      cbtExamCode
-    }
-  );
-
-  res.json({ success: true, data: result });
-});
-
-// Instance Payment Webhook Receiver
-app.post('/api/v1/instances/:instanceId/payments/webhook/:provider', (req: Request, res: Response) => {
-  const { instanceId, provider } = req.params;
-  const payload = req.body;
-  const rawBody = JSON.stringify(payload);
-
-  let verified = false;
-  if (provider === 'paystack') {
-    const sig = req.headers['x-paystack-signature'] as string;
-    verified = serverPaymentEngine.verifyPaystackSignature(rawBody, sig);
-  } else if (provider === 'flutterwave') {
-    const sig = req.headers['verif-hash'] as string;
-    verified = serverPaymentEngine.verifyFlutterwaveSignature(sig);
-  } else if (provider === 'opay') {
-    const authHeader = req.headers['authorization'] as string;
-    verified = serverPaymentEngine.verifyOPaySignature(payload, authHeader);
-  } else {
-    verified = true;
-  }
-
-  if (!verified) {
-    res.status(401).json({ success: false, error: 'Invalid or forged PSP webhook signature' });
-    return;
-  }
-
-  const reference = payload.data?.reference || payload.reference || `inst_wh_${Date.now()}`;
-  const amountNGN = payload.data?.amount ? payload.data.amount / 100 : Number(payload.amount) || 15000;
-  const metadata = payload.data?.metadata || payload.metadata || {};
-
-  const result = serverPaymentEngine.verifyInstancePayment(
-    instanceId,
-    reference,
-    provider as any,
-    amountNGN,
-    metadata
-  );
-
-  res.status(200).json({ received: true, reference, processed: result.success });
-});
-
-// Get Instance Transaction Ledger
-app.get('/api/v1/instances/:instanceId/payments/transactions', (req: Request, res: Response) => {
-  const transactions = serverPaymentEngine.getInstanceTransactions(req.params.instanceId);
-  res.json({ success: true, data: transactions });
-});
-
-// Get Instance Verifiable Receipt
-app.get('/api/v1/instances/:instanceId/receipts/:receiptNumber', (req: Request, res: Response) => {
-  const transactions = serverPaymentEngine.getInstanceTransactions(req.params.instanceId);
-  const match = transactions.find(t => t.receiptNumber === req.params.receiptNumber);
-  if (!match) {
-    res.status(404).json({ success: false, error: 'Electronic receipt not found for this instance' });
-    return;
-  }
-  res.json({ success: true, data: match });
+app.all('/api/v1/instances/:instanceId/receipts/:receiptNumber', (_req: Request, res: Response) => {
+  res.status(410).json({
+    success: false,
+    code: 'STUDENT_FEES_NOT_PLATFORM_BILLING',
+    error: 'This endpoint no longer serves synthetic school fee receipts.'
+  });
 });
 
 // Provision Instance via IIAPE & GCP Adapters

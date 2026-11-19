@@ -1679,11 +1679,6 @@ export interface StudentAccountSummary {
   invoicesCount: number;
   receiptsCount: number;
   lastPaymentDate?: string;
-  virtualNubanAccount: {
-    bankName: string;
-    accountNumber: string;
-    accountName: string;
-  };
   activeInstallmentPlan?: {
     planName: string;
     completedTranches: number;

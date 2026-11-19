@@ -15,6 +15,7 @@
 # curriculum-flow               -> cf-frontend-runtime
 # unified-backend               -> backend-runtime
 # curriculum-provisioning-agent -> provisioning-agent-runtime
+# curriculum-billing-payments   -> billing-payments-runtime
 #
 # provisioning-controller remains a separate identity.
 #
@@ -34,6 +35,9 @@ WIF_PROVIDER_ID="${WIF_PROVIDER_ID:-github-actions-provider}"
 ARTIFACT_REPOSITORY="${ARTIFACT_REPOSITORY:-curriculum-registry}"
 BACKEND_SERVICE="unified-backend"
 BACKEND_RUNTIME_SA="backend-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
+BILLING_PAYMENTS_SERVICE="curriculum-billing-payments"
+BILLING_PAYMENTS_RUNTIME_SA="billing-payments-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
+CLOUD_BILLING_OPERATOR_SA="cloud-billing-operator@${PROJECT_ID}.iam.gserviceaccount.com"
 LOGISTICS_TOPICS=(
   curriculum-bus-telemetry
   curriculum-geofence-events
@@ -142,6 +146,7 @@ REQUIRED_APIS=(
   pubsub.googleapis.com
   cloudtasks.googleapis.com
   secretmanager.googleapis.com
+  cloudbilling.googleapis.com
   sts.googleapis.com
   serviceusage.googleapis.com
 )
@@ -172,6 +177,8 @@ SERVICE_ACCOUNTS=(
   "vertex-express:Curriculum Server frontend runtime"
   "cf-frontend-runtime:Curriculum Flow frontend runtime"
   "backend-runtime:Unified backend runtime"
+  "billing-payments-runtime:Curriculum Server billing and payments runtime"
+  "cloud-billing-operator:Separately authorized Cloud Billing operator"
   "provisioning-agent-runtime:Provisioning agent Cloud Run runtime"
   "project-factory:Customer GCP project factory execution identity"
   "infrastructure-deployer:Infrastructure deployment execution identity"
@@ -793,6 +800,16 @@ fi
 for secret in "${LOGISTICS_SECRETS[@]}"; do
   ensure_secret "$secret"
 done
+
+log "Reconcile read-only Cloud Billing visibility"
+
+ensure_project_binding \
+  "roles/billing.viewer" \
+  "serviceAccount:${BILLING_PAYMENTS_RUNTIME_SA}"
+
+echo "  [BOUNDARY] ${BILLING_PAYMENTS_RUNTIME_SA} receives billing.viewer only."
+echo "  [BOUNDARY] ${CLOUD_BILLING_OPERATOR_SA} receives no billing role from this script."
+echo "  [BOUNDARY] No billing.admin role is granted to the payments runtime."
 
 ensure_cloud_tasks_queue "$LOGISTICS_QUEUE"
 
