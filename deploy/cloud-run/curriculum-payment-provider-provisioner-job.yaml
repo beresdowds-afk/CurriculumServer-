@@ -1,0 +1,27 @@
+apiVersion: run.googleapis.com/v2
+kind: Job
+metadata:
+  name: curriculum-payment-provider-provisioner
+  labels:
+    app: curriculum-server
+    component: payment-provider-provisioner
+spec:
+  template:
+    template:
+      serviceAccount: payment-provider-provisioner-runtime@PROJECT_ID.iam.gserviceaccount.com
+      maxRetries: 2
+      timeout: 900s
+      containers:
+        - image: REGION-docker.pkg.dev/PROJECT_ID/curriculum/payment-provider-provisioner:IMAGE_TAG
+          env:
+            - name: GCP_PROJECT_ID
+              value: PROJECT_ID
+            - name: BILLING_PAYMENTS_BASE_URL
+              value: https://curriculum-billing-payments.example
+            - name: BILLING_PAYMENTS_AUDIENCE
+              value: https://curriculum-billing-payments.example
+            - name: PAYMENT_PROVIDER_CONTRACT_SIGNING_KEY
+              valueSource:
+                secretKeyRef:
+                  secret: curriculum-payment-provider-contract-key
+                  version: latest
