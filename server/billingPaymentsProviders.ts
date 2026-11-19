@@ -71,13 +71,11 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-function requirePaymentsEnabled(): void {
-  if (process.env.BILLING_PAYMENTS_ENABLED !== 'true') {
-    throw new ProviderIntegrationError(
-      'Live payment initialization and refunds are disabled until staging verification is approved.',
-      'PROVIDER_NOT_CONFIGURED'
-    );
-  }
+export function requirePaymentsEnabled(): void {
+  throw new ProviderIntegrationError(
+    'Payment initialization and refunds are disabled until provider and financial acceptance tests pass.',
+    'PROVIDER_NOT_CONFIGURED'
+  );
 }
 
 function webhookUrl(provider: BillingPaymentProvider): string {
@@ -209,8 +207,8 @@ export function normalizeProviderWebhook(
   const providerTransactionId = String(
     data.id || data.transactionId || data.paymentId || data.orderNo || reference
   );
-  const currency = String(data.currency || data.currencyCode || 'NGN').toUpperCase();
-  const rawAmount = data.amount ?? (isRecord(data.amount) ? data.amount.total : undefined);
+  const currency = String(data.currency || data.currencyCode || '').toUpperCase();
+  const rawAmount = isRecord(data.amount) ? data.amount.total : data.amount;
   const amount = Number(rawAmount);
   const amountInMinor = provider === 'flutterwave'
     ? amountMinor(Math.round(amount * 100), provider)
@@ -372,6 +370,9 @@ export async function verifyProviderPayment(
       provider
     );
     const data = isRecord(body.data) ? body.data : {};
+    if (body.status !== true) {
+      throw new ProviderIntegrationError('Paystack could not verify the transaction.', 'PROVIDER_REJECTED');
+    }
     return {
       reference: String(data.reference || ''),
       providerTransactionId: String(data.id || ''),
@@ -392,6 +393,9 @@ export async function verifyProviderPayment(
       provider
     );
     const data = isRecord(body.data) ? body.data : {};
+    if (body.status !== 'success') {
+      throw new ProviderIntegrationError('Flutterwave could not verify the transaction.', 'PROVIDER_REJECTED');
+    }
     return {
       reference: String(data.tx_ref || ''),
       providerTransactionId: String(data.id || ''),

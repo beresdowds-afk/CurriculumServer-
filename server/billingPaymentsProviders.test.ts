@@ -5,6 +5,8 @@ import {
   initializeProviderPayment,
   normalizeProviderWebhook,
   ProviderIntegrationError,
+  refundProviderPayment,
+  verifyProviderPayment,
   verifyProviderWebhookSignature
 } from './billingPaymentsProviders';
 
@@ -80,14 +82,14 @@ test('provider callback amount units are normalized without inventing defaults',
   assert.equal(flutterwave.amountMinor, 12500);
   assert.equal(paystack.status, 'settled');
   assert.equal(normalizeProviderWebhook('paystack', {
-    data: { reference: 'cs_3', amount: 12500, status: 'failed' }
+    data: { reference: 'cs_3', amount: 12500, currency: 'NGN', status: 'failed' }
   }).status, 'failed');
   assert.throws(() => normalizeProviderWebhook('paystack', {
     data: { reference: 'cs_3', amount: 'not-money', status: 'success' }
   }), ProviderIntegrationError);
 });
 
-test('Paystack initialization calls the provider API and returns its real checkout URL', async () => {
+test('payment initialization and refunds remain disabled even if the environment flag is set', async () => {
   const previousFetch = globalThis.fetch;
   const fetchMock = mock.method(globalThis, 'fetch', async (input, init) => {
     assert.equal(String(input), 'https://api.paystack.co/transaction/initialize');
@@ -106,7 +108,7 @@ test('Paystack initialization calls the provider API and returns its real checko
       BILLING_PAYMENTS_PUBLIC_WEBHOOK_BASE_URL: 'https://api.example.test',
       PAYSTACK_SECRET_KEY: 'paystack-test-secret'
     }, async () => {
-      const checkout = await initializeProviderPayment('paystack', {
+      await assert.rejects(initializeProviderPayment('paystack', {
         reference: 'cs_ref_123',
         amountMinor: 12500,
         currency: 'NGN',
@@ -115,9 +117,9 @@ test('Paystack initialization calls the provider API and returns its real checko
         tenantId: 'tenant-uuid',
         invoiceNumber: 'INV-1',
         callbackUrl: 'https://app.example.test/payment-return'
-      });
-      assert.equal(checkout.authorizationUrl, 'https://checkout.paystack.com/provider-response');
-      assert.equal(fetchMock.mock.callCount(), 1);
+      }), ProviderIntegrationError);
+      await assert.rejects(refundProviderPayment('paystack', '123', 12500, 'NGN', 'test refund'), ProviderIntegrationError);
+      assert.equal(fetchMock.mock.callCount(), 0);
     });
   } finally {
     fetchMock.mock.restore();
@@ -145,4 +147,22 @@ test('payment initialization remains disabled until staging approval is explicit
       error => error instanceof ProviderIntegrationError && error.code === 'PROVIDER_NOT_CONFIGURED'
     );
   });
+});
+
+test('Paystack verification rejects provider-declared failure and classifies outages', async () => {
+  const fetchMock = mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({
+    status: false,
+    data: { reference: 'cs_ref', id: 1, amount: 12500, currency: 'NGN', status: 'success' }
+  }), { status: 200 }));
+  try {
+    await withEnv({ PAYSTACK_SECRET_KEY: 'paystack-test-secret' }, async () => {
+      await assert.rejects(verifyProviderPayment('paystack', 'cs_ref', 12500),
+        error => error instanceof ProviderIntegrationError && error.code === 'PROVIDER_REJECTED');
+      fetchMock.mock.mockImplementation(async () => { throw new Error('network unavailable'); });
+      await assert.rejects(verifyProviderPayment('paystack', 'cs_ref', 12500),
+        error => error instanceof ProviderIntegrationError && error.code === 'PROVIDER_UNAVAILABLE');
+    });
+  } finally {
+    fetchMock.mock.restore();
+  }
 });

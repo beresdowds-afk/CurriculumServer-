@@ -55,7 +55,7 @@ export async function proxyBillingPaymentsRequest(
     const identity = await serviceIdentityToken(base.origin);
     const headers: Record<string, string> = {
       'X-Serverless-Authorization': `Bearer ${identity}`,
-      'X-Correlation-ID': String(req.headers['x-correlation-id'] || (req as any).correlationId || ''),
+      'X-Correlation-ID': String((req as any).correlationId || ''),
       Accept: 'application/json'
     };
     if (typeof req.headers.authorization === 'string') {
@@ -63,6 +63,12 @@ export async function proxyBillingPaymentsRequest(
     }
     if (typeof req.headers['idempotency-key'] === 'string') {
       headers['Idempotency-Key'] = req.headers['idempotency-key'];
+    }
+    if (/^\/api\/v1\/server\/payments\/webhook\/(paystack|flutterwave|opay|interswitch|bank_transfer)$/.test(targetPath)) {
+      for (const name of ['x-paystack-signature', 'verif-hash', 'sha512', 'x-interswitch-signature', 'x-bank-transfer-signature']) {
+        const value = req.headers[name];
+        if (typeof value === 'string') headers[name] = value;
+      }
     }
     const contentType = req.headers['content-type'];
     if (typeof contentType === 'string') headers['Content-Type'] = contentType;
@@ -77,6 +83,7 @@ export async function proxyBillingPaymentsRequest(
       method: req.method,
       headers,
       body,
+      redirect: 'error',
       signal: AbortSignal.timeout(15_000)
     });
     const responseBody = await response.text();
