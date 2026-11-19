@@ -1,0 +1,342 @@
+name: PIAM Human-in-the-Loop Governance
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Provisioning request UUID or existing CIPA request identifier
+        required: true
+        type: string
+      tenant_id:
+        description: Tenant/school UUID
+        required: true
+        type: string
+      operation:
+        description: Requested operation
+        required: true
+        type: choice
+        options:
+          - verify_only
+          - repository_remediation
+          - provision_database
+          - provision_storage
+          - create_customer_project
+          - deploy_application
+      target_environment:
+        description: Requested target environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      remediation_mode:
+        description: Repository checks or infrastructure request (infrastructure remains disabled)
+        required: true
+        type: choice
+        options:
+          - repository
+          - infrastructure
+      target_project_id:
+        description: GCP project ID for infrastructure requests; never used to make changes
+        required: false
+        type: string
+      reference:
+        description: Existing same-repository issue (#123) or pull request URL
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: piam-governance-${{ inputs.request_id }}
+  cancel-in-progress: false
+
+jobs:
+  register:
+    name: Register and validate request
+    runs-on: ubuntu-latest
+    outputs:
+      request_id: ${{ steps.validate.outputs.request_id }}
+      tenant_id: ${{ steps.validate.outputs.tenant_id }}
+      operation: ${{ steps.validate.outputs.operation }}
+      target_environment: ${{ steps.validate.outputs.target_environment }}
+      remediation_mode: ${{ steps.validate.outputs.remediation_mode }}
+      target_project_id: ${{ steps.validate.outputs.target_project_id }}
+      requested_at: ${{ steps.validate.outputs.requested_at }}
+    steps:
+      - name: Check out governance policy
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Validate controlled request inputs
+        id: validate
+        env:
+          REQUEST_ID: ${{ inputs.request_id }}
+          TENANT_ID: ${{ inputs.tenant_id }}
+          REQUESTED_OPERATION: ${{ inputs.operation }}
+          TARGET_ENVIRONMENT: ${{ inputs.target_environment }}
+          REMEDIATION_MODE: ${{ inputs.remediation_mode }}
+          TARGET_PROJECT_ID: ${{ inputs.target_project_id }}
+          REQUEST_REFERENCE: ${{ inputs.reference }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/piam-governance/cli.mjs validate-request
+
+  preflight:
+    name: Repository, policy, and technical validation
+    needs: register
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: curriculum_platform
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d curriculum_platform"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    outputs:
+      status: ${{ steps.policy.outputs.status }}
+      reference_status: ${{ steps.reference.outputs.status }}
+    steps:
+      - name: Check out protected-branch revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Verify branch, repository state, and request policy
+        id: policy
+        env:
+          REQUEST_ID: ${{ needs.register.outputs.request_id }}
+          TENANT_ID: ${{ needs.register.outputs.tenant_id }}
+          REQUESTED_OPERATION: ${{ needs.register.outputs.operation }}
+          TARGET_ENVIRONMENT: ${{ needs.register.outputs.target_environment }}
+          REMEDIATION_MODE: ${{ needs.register.outputs.remediation_mode }}
+          TARGET_PROJECT_ID: ${{ needs.register.outputs.target_project_id }}
+          REQUEST_REFERENCE: ${{ inputs.reference }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_REF_PROTECTED: ${{ github.ref_protected }}
+        run: node scripts/piam-governance/cli.mjs verify-preflight
+      - name: Verify GitHub Environment protection rules
+        env:
+          REQUEST_ID: ${{ needs.register.outputs.request_id }}
+          TENANT_ID: ${{ needs.register.outputs.tenant_id }}
+          REQUESTED_OPERATION: ${{ needs.register.outputs.operation }}
+          TARGET_ENVIRONMENT: ${{ needs.register.outputs.target_environment }}
+          REMEDIATION_MODE: ${{ needs.register.outputs.remediation_mode }}
+          TARGET_PROJECT_ID: ${{ needs.register.outputs.target_project_id }}
+          REQUEST_REFERENCE: ${{ inputs.reference }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/piam-governance/cli.mjs verify-environments
+      - name: Verify same-repository issue or pull request reference
+        id: reference
+        env:
+          REQUEST_ID: ${{ needs.register.outputs.request_id }}
+          TENANT_ID: ${{ needs.register.outputs.tenant_id }}
+          REQUESTED_OPERATION: ${{ needs.register.outputs.operation }}
+          TARGET_ENVIRONMENT: ${{ needs.register.outputs.target_environment }}
+          REMEDIATION_MODE: ${{ needs.register.outputs.remediation_mode }}
+          TARGET_PROJECT_ID: ${{ needs.register.outputs.target_project_id }}
+          REQUEST_REFERENCE: ${{ inputs.reference }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/piam-governance/cli.mjs verify-reference
+      - name: Install repository dependencies
+        run: npm install --no-package-lock --no-audit --no-fund
+      - name: Apply migrations to disposable PostgreSQL
+        env:
+          MIGRATION_DATABASE_URL: postgres://postgres:postgres@localhost:5432/curriculum_platform?sslmode=disable
+          CONTROL_PLANE_SECRET: governance-test-control-plane-secret-32-characters
+          NODE_ENV: test
+        run: npm run db:migrate
+      - name: Create non-owner PostgreSQL runtime role
+        run: |
+          psql postgres://postgres:postgres@localhost:5432/curriculum_platform \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE curriculum_runtime LOGIN PASSWORD 'runtime-test'; \
+                GRANT USAGE ON SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks TO curriculum_runtime; \
+                GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks TO curriculum_runtime; \
+                REVOKE ALL ON control_plane.authorization_context_keys FROM curriculum_runtime; \
+                GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks TO curriculum_runtime;"
+      - name: TypeScript validation
+        run: npm run lint
+      - name: PIAM boundary and repository unit tests
+        env:
+          TEST_DATABASE_URL: postgres://curriculum_runtime:runtime-test@localhost:5432/curriculum_platform
+          TEST_DATABASE_SSLMODE: disable
+          DATABASE_TEST_DISPOSABLE: '1'
+          POSTGRES_ACCEPTANCE_REQUIRED: '1'
+          CONTROL_PLANE_SECRET: governance-test-control-plane-secret-32-characters
+        run: |
+          node --test scripts/piam-governance/*.test.mjs
+          npm test
+      - name: Mandatory PostgreSQL acceptance tests
+        env:
+          MIGRATION_DATABASE_URL: postgres://postgres:postgres@localhost:5432/curriculum_platform?sslmode=disable
+          TEST_DATABASE_URL: postgres://curriculum_runtime:runtime-test@localhost:5432/curriculum_platform
+          TEST_DATABASE_SSLMODE: disable
+          DATABASE_TEST_DISPOSABLE: '1'
+          POSTGRES_ACCEPTANCE: '1'
+          CONTROL_PLANE_SECRET: governance-test-control-plane-secret-32-characters
+          NODE_ENV: test
+        run: npm run test:postgres:acceptance
+      - name: Production build validation
+        run: npm run build:all
+
+  piam-verification:
+    name: Independent PIAM verification
+    needs: [register, preflight]
+    if: needs.preflight.result == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.verify.outputs.status }}
+    steps:
+      - name: Check out governance policy
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify through configured PIAM adapter
+        id: verify
+        run: node scripts/piam-governance/cli.mjs piam-status
+
+  human-review:
+    name: Human review (does not grant PIAM approval)
+    needs: [register, preflight, piam-verification]
+    if: needs.preflight.result == 'success' && needs.piam-verification.result == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: piam-review
+    permissions:
+      contents: read
+    steps:
+      - name: Record GitHub Environment review completion
+        env:
+          REQUEST_ID: ${{ needs.register.outputs.request_id }}
+          PIAM_STATUS: ${{ needs.piam-verification.outputs.status }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          printf 'GitHub Environment review completed for request %s by an authorized environment reviewer.\n' "$REQUEST_ID"
+          printf 'PIAM remains %s; this review is not an approval to provision infrastructure.\n' "$PIAM_STATUS"
+
+  repository-remediation:
+    name: Repository-only validation after human review
+    needs: [register, human-review]
+    if: needs.human-review.result == 'success' && needs.register.outputs.remediation_mode == 'repository'
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.validation.outputs.status }}
+    steps:
+      - name: Check out reviewed revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Install repository dependencies
+        run: npm install --no-package-lock --no-audit --no-fund
+      - name: Re-run provisioning and PIAM governance tests
+        id: validation
+        env:
+          REQUEST_ID: ${{ needs.register.outputs.request_id }}
+        run: |
+          npm run lint
+          npm run test:tenant-provisioner
+          node --test scripts/piam-governance/*.test.mjs
+          echo "status=success" >> "$GITHUB_OUTPUT"
+
+  infrastructure-authorization:
+    name: Infrastructure authorization (execution disabled)
+    needs: [register, human-review, piam-verification]
+    if: >-
+      needs.human-review.result == 'success' &&
+      needs.piam-verification.outputs.status == 'PIAM_VERIFIED' &&
+      needs.register.outputs.remediation_mode == 'infrastructure'
+    runs-on: ubuntu-latest
+    environment:
+      name: provisioning-${{ needs.register.outputs.target_environment }}
+    permissions:
+      contents: read
+    steps:
+      - name: Keep provisioning disabled until separately implemented
+        run: |
+          echo "No infrastructure adapter is enabled in this workflow."
+          echo "Database, storage, IAM, project, and Cloud Run changes are prohibited."
+          exit 1
+
+  audit-report:
+    name: Publish auditable execution report
+    needs:
+      - register
+      - preflight
+      - piam-verification
+      - human-review
+      - repository-remediation
+      - infrastructure-authorization
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out report generator
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        if: always()
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Generate sanitized execution report
+        if: always()
+        env:
+          REQUEST_ID: ${{ needs.register.outputs.request_id || inputs.request_id }}
+          TENANT_ID: ${{ needs.register.outputs.tenant_id || inputs.tenant_id }}
+          REQUESTED_OPERATION: ${{ needs.register.outputs.operation || inputs.operation }}
+          TARGET_ENVIRONMENT: ${{ needs.register.outputs.target_environment || inputs.target_environment }}
+          REMEDIATION_MODE: ${{ needs.register.outputs.remediation_mode || inputs.remediation_mode }}
+          TARGET_PROJECT_ID: ${{ needs.register.outputs.target_project_id || inputs.target_project_id }}
+          REQUEST_REFERENCE: ${{ inputs.reference }}
+          REFERENCE_VERIFICATION: ${{ needs.preflight.outputs.reference_status }}
+          REQUESTED_AT: ${{ needs.register.outputs.requested_at }}
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+          HUMAN_REVIEW_RESULT: ${{ needs.human-review.result }}
+          REPOSITORY_REMEDIATION_RESULT: ${{ needs.repository-remediation.result }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: node scripts/piam-governance/cli.mjs write-report
+      - name: Upload restricted governance report
+        if: always() && hashFiles('piam-governance-report.json') != ''
+        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18d3 # v4.4.3
+        with:
+          name: piam-governance-${{ github.run_id }}
+          path: piam-governance-report.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Fail blocked or incomplete requests explicitly
+        if: always()
+        env:
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+          HUMAN_REVIEW_RESULT: ${{ needs.human-review.result }}
+          REPOSITORY_REMEDIATION_RESULT: ${{ needs.repository-remediation.result }}
+          REMEDIATION_MODE: ${{ inputs.remediation_mode }}
+        run: node scripts/piam-governance/cli.mjs assert-final
