@@ -1,6 +1,14 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { DatabasePool } from './db/postgres';
 import { withControlPlaneTransaction, createVerifiedTenantPrincipal } from './db/tenantContext';
+import {
+  assertPiamApprovalMatchesContract,
+  hashProvisioningContract,
+  PIAM_VERIFICATION_STATUSES,
+  UnavailablePiamVerificationAdapter,
+  type PiamVerificationAdapter,
+  type PiamVerificationResult
+} from './piamVerificationAdapter';
 
 export type ApprovedDatabaseIsolationStrategy =
   | 'shared_schema_isolated'
@@ -65,6 +73,19 @@ export interface StorageResource {
 
 export interface ProvisioningRepository {
   findApprovedDecision(contract: VerifiedTenantProvisioningContract): Promise<ApprovedProvisioningDecision | undefined>;
+  recordPiamVerification(input: {
+    contract: VerifiedTenantProvisioningContract;
+    contractHash: string;
+    status: 'verified' | 'unavailable' | 'pending' | 'rejected' | 'expired' | 'revoked' | 'reused' | 'invalid';
+    verifier: string;
+    evidenceReference?: string;
+    evidenceHash?: string;
+    approverIdentity?: string;
+    authenticationAssurance?: 'mfa_verified';
+    requesterApproverSeparated?: boolean;
+    consumed?: boolean;
+    reason?: string;
+  }): Promise<void>;
   begin(contract: VerifiedTenantProvisioningContract, requestHash: string): Promise<{
     operationId: string;
     attemptNumber: number;
@@ -151,7 +172,7 @@ const DATABASE_CHECKS = [
 ] as const;
 const PLATFORM_STORAGE_CHECKS = [
   'bucketAccessible', 'regionApproved', 'private', 'uniformBucketLevelAccess',
-  'publicAccessPrevention', 'encryption', 'retention'
+  'publicAccessPrevention', 'encryption', 'retention', 'runtimePermissions'
 ] as const;
 const DELEGATED_STORAGE_CHECKS = ['delegatedAuthorization', 'providerAccessible'] as const;
 
@@ -229,7 +250,8 @@ export class TenantDatabaseProvisioningService {
   constructor(
     private readonly repository: ProvisioningRepository,
     private readonly providers: TenantProvisioningProviders,
-    private readonly contractOptions: { signingKey: string; expectedIssuer: string }
+    private readonly contractOptions: { signingKey: string; expectedIssuer: string },
+    private readonly piam: PiamVerificationAdapter = new UnavailablePiamVerificationAdapter()
   ) {}
 
   async execute(envelope: SignedTenantProvisioningContract): Promise<{
@@ -250,6 +272,64 @@ export class TenantDatabaseProvisioningService {
         decision.customerProjectId !== (contract.customerProjectId ?? null)) {
       throw new TenantProvisioningError('APPROVAL_NOT_VERIFIED', 'A matching server-verified provisioning approval is required.');
     }
+    const contractHash = hashProvisioningContract(contract);
+    let piamResult: PiamVerificationResult;
+    try {
+      piamResult = await this.piam.verifyAndConsume({
+        approvalId: contract.approvalId,
+        contractHash,
+        contract,
+        operation: 'tenant_database_storage_provisioning'
+      });
+    } catch {
+      await this.repository.recordPiamVerification({
+        contract, contractHash, status: 'unavailable',
+        verifier: this.piam.constructor.name || 'configured-adapter',
+        reason: 'verification_unavailable'
+      });
+      throw new TenantProvisioningError(
+        'PIAM_UNAVAILABLE',
+        'Independent PIAM approval verification is unavailable or invalid.'
+      );
+    }
+    try {
+      assertPiamApprovalMatchesContract({
+        approvalId: contract.approvalId,
+        contractHash,
+        contract,
+        operation: 'tenant_database_storage_provisioning'
+      }, piamResult);
+    } catch (error) {
+      const responseStatus = piamResult && PIAM_VERIFICATION_STATUSES.includes(piamResult.status)
+        ? piamResult.status
+        : 'invalid';
+      const code = responseStatus === 'verified'
+        ? 'invalid'
+        : responseStatus === 'unavailable'
+          ? 'unavailable'
+          : responseStatus;
+      await this.repository.recordPiamVerification({
+        contract, contractHash, status: code,
+        verifier: this.piam.constructor.name || 'configured-adapter',
+        evidenceReference: piamResult?.evidenceReference,
+        evidenceHash: piamResult?.evidenceHash,
+        reason: 'approval_verification_failed'
+      });
+      throw new TenantProvisioningError(
+        code === 'unavailable' ? 'PIAM_UNAVAILABLE' : `PIAM_APPROVAL_${code.toUpperCase()}`,
+        'Independent PIAM approval verification is unavailable or invalid.'
+      );
+    }
+    await this.repository.recordPiamVerification({
+      contract, contractHash, status: 'verified',
+      verifier: this.piam.constructor.name || 'configured-adapter',
+      evidenceReference: piamResult.evidenceReference,
+      evidenceHash: piamResult.evidenceHash,
+      approverIdentity: piamResult.approverIdentity,
+      authenticationAssurance: piamResult.authenticationAssurance,
+      requesterApproverSeparated: piamResult.requesterApproverSeparated,
+      consumed: piamResult.consumed
+    });
 
     const requestHash = operationRequestHash(contract);
     const operation = await this.repository.begin(contract, requestHash);
@@ -309,7 +389,7 @@ export class TenantDatabaseProvisioningService {
       await this.repository.recordAttempt({
         contract, operationId: operation.operationId,
         attemptNumber: operation.attemptNumber, stage: activeStage, status: 'succeeded',
-        evidence: { migrationVersions: migration.migrationVersions, ...migration.evidence }
+        evidence: { ...migration.evidence, migrationVersions: migration.migrationVersions }
       });
 
       activeStage = 'verification';
@@ -321,7 +401,7 @@ export class TenantDatabaseProvisioningService {
         this.providers.verifyDatabase({ contract, resource: database }),
         this.providers.verifyStorage({ contract, resource: storage })
       ]);
-      if (!databaseEvidence.providerResourceId || !databaseEvidence.verifier ||
+      if (databaseEvidence.providerResourceId !== database.providerResourceId || !databaseEvidence.verifier ||
           !storageEvidence.providerResourceId || !storageEvidence.verifier ||
           !allChecksPassed(databaseEvidence.checks, DATABASE_CHECKS) ||
           !allChecksPassed(storageEvidence.checks, [
@@ -349,7 +429,7 @@ export class TenantDatabaseProvisioningService {
     } catch (error) {
       const failure = error instanceof TenantProvisioningError
         ? error
-        : new TenantProvisioningError('PROVIDER_OPERATION_FAILED', 'A tenant provisioning provider operation failed.', true);
+        : new TenantProvisioningError('PROVIDER_OPERATION_FAILED', 'A tenant provisioning provider operation failed; operator reconciliation is required.');
       await this.repository.recordAttempt({
         contract, operationId: operation.operationId,
         attemptNumber: operation.attemptNumber, stage: activeStage,
@@ -387,6 +467,40 @@ export class PostgresProvisioningRepository implements ProvisioningRepository {
         [contract.tenantId, contract.applicationInstanceId]
       );
       return result.rows[0];
+    });
+  }
+
+  async recordPiamVerification(input: {
+    contract: VerifiedTenantProvisioningContract;
+    contractHash: string;
+    status: 'verified' | 'unavailable' | 'pending' | 'rejected' | 'expired' | 'revoked' | 'reused' | 'invalid';
+    verifier: string;
+    evidenceReference?: string;
+    evidenceHash?: string;
+    approverIdentity?: string;
+    authenticationAssurance?: 'mfa_verified';
+    requesterApproverSeparated?: boolean;
+    consumed?: boolean;
+    reason?: string;
+  }): Promise<void> {
+    await withControlPlaneTransaction(this.pool, createProvisioningControlPlanePrincipal(input.contract), async client => {
+      await client.query(
+        `INSERT INTO production.tenant_provisioning_authorization_checks
+           (tenant_id, application_instance_id, approval_id, contract_id, contract_version,
+            contract_hash, operation, target_project_id, database_strategy, storage_strategy,
+            approved_region, verification_status, verifier, evidence_reference, evidence_hash,
+            approver_identity, authentication_assurance, requester_approver_separated,
+            consumed, safe_reason)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                 $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+        [input.contract.tenantId, input.contract.applicationInstanceId, input.contract.approvalId,
+          input.contract.contractId, input.contract.version, input.contractHash,
+          'tenant_database_storage_provisioning', input.contract.customerProjectId ?? null,
+          input.contract.databaseStrategy, input.contract.storageStrategy, input.contract.region,
+          input.status, input.verifier, input.evidenceReference ?? null, input.evidenceHash ?? null,
+          input.approverIdentity ?? null, input.authenticationAssurance ?? null,
+          input.requesterApproverSeparated ?? null, input.consumed ?? null, input.reason ?? null]
+      );
     });
   }
 

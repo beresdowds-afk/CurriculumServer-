@@ -109,10 +109,11 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
         'tenant_database_resources',
         'tenant_storage_configurations',
         'tenant_provisioning_attempts',
-        'tenant_provisioning_verification_evidence'
+        'tenant_provisioning_verification_evidence',
+        'tenant_provisioning_authorization_checks'
       ]]
     );
-    assert.equal(provisioningTableSecurity.rowCount, 6);
+    assert.equal(provisioningTableSecurity.rowCount, 7);
     assert.ok(provisioningTableSecurity.rows.every(row => row.relrowsecurity && row.relforcerowsecurity));
     const provisioningTableOwnership = await pool.query<{ owned_count: string }>(
       `SELECT count(*)::text AS owned_count
@@ -127,7 +128,8 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
         'tenant_database_resources',
         'tenant_storage_configurations',
         'tenant_provisioning_attempts',
-        'tenant_provisioning_verification_evidence'
+        'tenant_provisioning_verification_evidence',
+        'tenant_provisioning_authorization_checks'
       ]]
     );
     assert.equal(provisioningTableOwnership.rows[0]?.owned_count, '0', 'the application runtime cannot own provisioning tables');
@@ -435,6 +437,23 @@ test('disposable PostgreSQL persists lifecycle records and enforces tenant RLS',
     );
     const provisioningRepository = new PostgresProvisioningRepository(pool);
     assert.equal((await provisioningRepository.findApprovedDecision(verifiedContract))?.approvalId, approvalA);
+    await provisioningRepository.recordPiamVerification({
+      contract: verifiedContract,
+      contractHash: 'a'.repeat(64),
+      status: 'unavailable',
+      verifier: 'UnavailablePiamVerificationAdapter',
+      reason: 'verification_unavailable'
+    });
+    const piamChecks = await withTenantTransaction(pool, schoolAPrincipal, client =>
+      client.query<{ verification_status: string; contract_hash: string }>(
+        `SELECT verification_status, contract_hash
+         FROM production.tenant_provisioning_authorization_checks`
+      )
+    );
+    assert.deepEqual(piamChecks.rows, [{
+      verification_status: 'unavailable',
+      contract_hash: 'a'.repeat(64)
+    }]);
     const claimHash = 'a'.repeat(64);
     const claims = await Promise.all([
       provisioningRepository.begin(verifiedContract, claimHash),
