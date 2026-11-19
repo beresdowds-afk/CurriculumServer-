@@ -49,8 +49,8 @@ Until an adapter exists and is independently validated, the job rejects that
 provider with `PROVIDER_ADAPTER_UNAVAILABLE`; this is intentional and is not a
 successful provisioning result.
 
-The `curriculum-billing-payments` service and its provider-account endpoint
-are also outside this repository. The client currently targets
+The dedicated `curriculum-billing-payments` service is in this repository,
+but its provider-account synchronization endpoint is not implemented. The client currently targets
 `POST /internal/v1/payment-provider-accounts`; the receiving service must
 implement and authorize this contract, enforce the operation idempotency key,
 and reject payment-success fields before this integration can be enabled.
@@ -59,6 +59,29 @@ The existing `serverPaymentEngine.ts` contains synthetic payment profiles,
 credentials, virtual accounts, and checkout URLs. This new provisioner does
 not call those methods. They must not be used as evidence or as a source of
 production provider configuration.
+
+## Billing service safety status
+
+Payment initialization and refunds are disabled in code, including when
+`BILLING_PAYMENTS_ENABLED=true`; enabling them requires implementation review
+and provider-specific sandbox and financial acceptance evidence. The service
+verifies Paystack and Flutterwave callbacks against their provider APIs before
+posting, but these paths have not been certified with sandbox transactions.
+OPay, Interswitch and bank-transfer verification and settlement are not
+enabled. Provider API mocks are not sandbox evidence.
+
+`/healthz` reports process liveness. `/readyz` checks database connectivity,
+the required billing tables' forced RLS, basic runtime-role restrictions and
+the database signing-key configuration. It does not certify migration
+checksums, effective privileges, provider integrations, or financial readiness.
+Cloud Run IAM must restrict invocation to the backend runtime; the application
+does not independently validate Cloud Run identity tokens.
+
+Before deployment, provision and verify a dedicated restricted database role
+and Secret Manager connection secret, review the shared control-plane signing
+key trust boundary, build a dedicated service image, configure network access,
+and verify Cloud Run IAM, monitoring and readiness in the target project. The
+deployment script alone does not establish those prerequisites.
 
 ## Secret Manager lifecycle
 

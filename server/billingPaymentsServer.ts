@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { AuthorizationRepository } from './authorization/authorizationRepository';
 import { createAuthorizationMiddleware } from './authorization/middleware';
-import { postgresRuntime, type DatabaseClient } from './db/postgres';
+import { classifyDatabaseError, DatabaseFailure, postgresRuntime, type DatabaseClient } from './db/postgres';
 import {
   createVerifiedTenantPrincipal,
   withControlPlaneTransaction,
@@ -14,6 +14,7 @@ import {
   initializeProviderPayment,
   normalizeProviderWebhook,
   ProviderIntegrationError,
+  requirePaymentsEnabled,
   refundProviderPayment,
   verifyProviderPayment,
   verifyProviderWebhookSignature,
@@ -27,6 +28,13 @@ const PROVIDERS = new Set<BillingPaymentProvider>([
 ]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
 const MONEY_MINOR = Number.MAX_SAFE_INTEGER;
+const BILLING_TABLES = [
+  'billing.payment_obligations', 'billing.invoices', 'billing.payment_transactions',
+  'billing.receipts', 'billing.refund_records', 'billing.webhook_events',
+  'billing.settlement_records', 'billing.financial_ledger', 'billing.audit_events',
+  'cloud_billing.project_association_requests', 'cloud_billing.resource_cost_attributions',
+  'cloud_billing.budgets', 'cloud_billing.usage_reports'
+];
 
 interface TenantRequest extends Request {
   trustedTenantContext?: ReturnType<typeof createVerifiedTenantPrincipal>;
@@ -59,6 +67,10 @@ function safeError(error: unknown): { status: number; code: string; message: str
     const status = error.code === 'PROVIDER_NOT_CONFIGURED' ? 503 :
       error.code === 'PROVIDER_UNAVAILABLE' ? 502 : 422;
     return { status, code: error.code, message: error.message };
+  }
+  const databaseKind = error instanceof DatabaseFailure ? error.kind : classifyDatabaseError(error);
+  if (['configuration_missing', 'configuration_malformed', 'unavailable', 'authentication', 'timeout'].includes(databaseKind)) {
+    return { status: 503, code: 'BILLING_DATABASE_UNAVAILABLE', message: 'The billing database is unavailable.' };
   }
   return { status: 500, code: 'BILLING_OPERATION_FAILED', message: 'The billing operation could not be completed.' };
 }
@@ -148,6 +160,7 @@ async function writeAuditEvent(
 }
 
 async function updateFromVerifiedPayment(
+  client: DatabaseClient,
   tenantId: string,
   transactionId: string,
   verified: VerifiedProviderPayment,
@@ -155,26 +168,6 @@ async function updateFromVerifiedPayment(
   correlationId: string,
   actorId?: string
 ): Promise<Record<string, unknown>> {
-  const principal = createVerifiedTenantPrincipal({
-    valid: true,
-    context: {
-      tenantId,
-      appId: 'billing-payments-runtime',
-      schoolName: 'Verified Provider Settlement',
-      subscriptionTier: 'platform',
-      status: 'ACTIVE',
-      databaseName: '',
-      storageNamespace: '',
-      issuer: 'CurriculumServer-ControlPlane',
-      audience: tenantId,
-      role: 'tenant_admin',
-      issuedAt: Math.floor(Date.now() / 1000),
-      expiresAt: Math.floor(Date.now() / 1000) + 60,
-      tokenSignature: '',
-      permissions: ['billing.payments.settle']
-    }
-  });
-  return withTenantTransaction(postgresRuntime.getPool(), principal, async client => {
     const result = await client.query<PaymentRow & { invoice_number: string }>(
       `SELECT t.*, i.invoice_number
        FROM billing.payment_transactions t
@@ -190,7 +183,7 @@ async function updateFromVerifiedPayment(
         payment.currency !== verified.currency) {
       throw new ProviderIntegrationError('Provider settlement does not match the invoice.', 'PROVIDER_REJECTED');
     }
-    if (payment.status === 'settled') {
+    if (['settled', 'partially_refunded', 'refunded'].includes(payment.status)) {
       const receipt = await client.query(
         'SELECT receipt_number, issued_at FROM billing.receipts WHERE tenant_id = $1 AND transaction_id = $2',
         [tenantId, transactionId]
@@ -261,7 +254,6 @@ async function updateFromVerifiedPayment(
         verified.currency, verified.reference, auditReference]
     );
     return { alreadyProcessed: false, status: 'settled', receiptNumber, auditReference };
-  });
 }
 
 function requirePlatformAdministrator(req: TenantRequest, res: Response, next: NextFunction): void {
@@ -303,6 +295,70 @@ async function googleMetadataAccessToken(): Promise<string> {
 
 export function createBillingPaymentsApp() {
   const app = express();
+  app.use((req, res, next) => {
+    const requested = req.headers['x-correlation-id'];
+    const correlationId = typeof requested === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(requested)
+      ? requested : randomUUID();
+    req.headers['x-correlation-id'] = correlationId;
+    res.setHeader('X-Correlation-ID', correlationId);
+    res.on('finish', () => {
+      console.log(JSON.stringify({
+        service: 'curriculum-billing-payments', correlationId,
+        method: req.method, path: req.path, status: res.statusCode
+      }));
+    });
+    next();
+  });
+  app.get('/healthz', (_req, res) => {
+    res.json({ success: true, service: 'curriculum-billing-payments' });
+  });
+  app.get(['/health', '/readyz'], async (_req, res) => {
+    const health = await postgresRuntime.healthCheck();
+    let dependenciesReady = false;
+    if (health.connectionVerified && hasSecureControlPlaneSecret()) {
+      try {
+        const checks = await postgresRuntime.getPool().query<{
+          valid_role: boolean; valid_tables: boolean; signing_key_configured: boolean;
+        }>(
+          `SELECT
+             NOT r.rolsuper AND NOT r.rolbypassrls
+               AND NOT has_schema_privilege(current_user, 'billing', 'CREATE')
+               AND NOT has_schema_privilege(current_user, 'cloud_billing', 'CREATE')
+               AND NOT has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'SELECT')
+               AND NOT has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'INSERT')
+               AND NOT has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'UPDATE')
+               AND NOT has_table_privilege(current_user, 'control_plane.authorization_context_keys', 'DELETE') AS valid_role,
+             (SELECT count(*) = cardinality($1::text[]) AND bool_and(c.relrowsecurity AND c.relforcerowsecurity AND c.relowner <> r.oid)
+              FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname || '.' || c.relname = ANY($1::text[])) AS valid_tables,
+             production.authorization_context_key_configured() AS signing_key_configured
+           FROM pg_roles r WHERE r.rolname = current_user`,
+          [BILLING_TABLES]
+        );
+        dependenciesReady = checks.rows[0]?.valid_role === true &&
+          checks.rows[0]?.valid_tables === true && checks.rows[0]?.signing_key_configured === true;
+      } catch (error) {
+        console.error(JSON.stringify({
+          service: 'curriculum-billing-payments', event: 'readiness_check_failed',
+          databaseError: classifyDatabaseError(error)
+        }));
+        dependenciesReady = false;
+      }
+    }
+    res.status(dependenciesReady ? 200 : 503).json({
+      success: dependenciesReady,
+      service: 'curriculum-billing-payments',
+      database: health.connectionVerified ? 'connected' : 'unavailable',
+      dependencyChecks: dependenciesReady ? 'passed' : 'unavailable',
+      financialReadiness: 'unverified'
+    });
+  });
+  if (!postgresRuntime.configured) {
+    app.use((_req, res) => {
+      res.status(503).json({ success: false, code: 'BILLING_PAYMENTS_UNAVAILABLE', error: 'Billing database is not configured.' });
+    });
+    return app;
+  }
   const pool = postgresRuntime.getPool();
   const billingPaymentsRateLimiter = createSlidingWindowRateLimiter({
     windowMs: 60_000,
@@ -332,21 +388,13 @@ export function createBillingPaymentsApp() {
     platformAdministratorAllowed: isPlatformAdminEmail
   });
 
-  app.get('/health', async (_req, res) => {
-    const health = await postgresRuntime.healthCheck();
-    res.status(health.connectionVerified ? 200 : 503).json({
-      success: health.connectionVerified,
-      service: 'curriculum-billing-payments',
-      database: health.connectionVerified ? 'connected' : 'unavailable'
-    });
-  });
-
   app.post(
     '/api/v1/server/payments/initialize',
     authorization.requirePermission('billing.payments.create'),
     async (req: TenantRequest, res: Response) => {
       try {
         const principal = tenantPrincipal(req);
+        requirePaymentsEnabled();
         const provider = providerFrom(req.body?.provider);
         const obligationId = typeof req.body?.obligationId === 'string' ? req.body.obligationId : '';
         const email = typeof req.body?.customerEmail === 'string' ? req.body.customerEmail.trim() : '';
@@ -507,6 +555,9 @@ export function createBillingPaymentsApp() {
           res.status(400).json({ success: false, code: 'VALIDATION_FAILED', error: 'A provider and transaction reference are required.' });
           return;
         }
+        if (provider !== 'paystack' && provider !== 'flutterwave') {
+          throw new ProviderIntegrationError('Payment verification is not verified for this provider.', 'PROVIDER_NOT_CONFIGURED');
+        }
         const result = await withTenantTransaction(pool, principal, async client => {
           const found = await client.query<PaymentRow>(
             `SELECT * FROM billing.payment_transactions
@@ -525,13 +576,16 @@ export function createBillingPaymentsApp() {
           Number(result.amount_minor),
           typeof req.body?.providerTransactionId === 'string' ? req.body.providerTransactionId : undefined
         );
-        const settled = await updateFromVerifiedPayment(
-          principal.tenantId,
-          result.id,
-          verified,
-          'provider_api',
-          String(req.headers['x-correlation-id'] || randomUUID()),
-          req.tenantContext?.userId
+        const settled = await withTenantTransaction(pool, principal, client =>
+          updateFromVerifiedPayment(
+            client,
+            principal.tenantId,
+            result.id,
+            verified,
+            'provider_api',
+            String(req.headers['x-correlation-id'] || randomUUID()),
+            req.tenantContext?.userId
+          )
         );
         res.json({ success: true, data: settled });
       } catch (error) {
@@ -577,6 +631,17 @@ export function createBillingPaymentsApp() {
         res.status(422).json({ success: false, code: 'PAYMENT_MISMATCH', error: 'Provider callback does not match the recorded payment.' });
         return;
       }
+      if (provider !== 'paystack' && provider !== 'flutterwave') {
+        throw new ProviderIntegrationError('Webhook settlement is not verified for this provider.', 'PROVIDER_NOT_CONFIGURED');
+      }
+      const verified = await verifyProviderPayment(provider, payment.reference, Number(payment.amount_minor), event.providerTransactionId);
+      if (verified.reference !== event.reference || verified.providerTransactionId !== event.providerTransactionId ||
+          verified.amountMinor !== event.amountMinor || verified.currency !== event.currency) {
+        throw new ProviderIntegrationError('Provider verification does not match the callback.', 'PROVIDER_REJECTED');
+      }
+      if (verified.status === 'pending') {
+        throw new ProviderIntegrationError('Provider verification is still pending; retry the callback.', 'PROVIDER_UNAVAILABLE');
+      }
       const principal = createVerifiedTenantPrincipal({
         valid: true,
         context: {
@@ -606,19 +671,31 @@ export function createBillingPaymentsApp() {
           [provider, event.eventId, payment.tenant_id, payment.id,
             createHash('sha256').update(req.body).digest('hex'), payload]
         );
-        if (!inserted.rowCount) return { alreadyProcessed: true };
+        if (!inserted.rowCount) {
+          const previous = await client.query<{ payload_sha256: string; transaction_id: string }>(
+            `SELECT payload_sha256, transaction_id FROM billing.webhook_events
+             WHERE provider = $1 AND provider_event_id = $2`,
+            [provider, event.eventId]
+          );
+          if (!previous.rows[0] || previous.rows[0].transaction_id !== payment.id ||
+              previous.rows[0].payload_sha256 !== createHash('sha256').update(req.body).digest('hex')) {
+            throw new ProviderIntegrationError('Conflicting provider event identifier.', 'PROVIDER_REJECTED');
+          }
+          return { alreadyProcessed: true };
+        }
         const result = await updateFromVerifiedPayment(
+          client,
           payment.tenant_id,
           payment.id,
-          event,
-          'authenticated_webhook',
+          verified,
+          'provider_api',
           String(req.headers['x-correlation-id'] || randomUUID())
         );
         await client.query(
           `UPDATE billing.webhook_events
            SET processed_at = now(), processing_result = $3
            WHERE provider = $1 AND provider_event_id = $2`,
-          [provider, event.eventId, event.status === 'pending' ? 'ignored' : event.status]
+          [provider, event.eventId, verified.status === 'pending' ? 'ignored' : verified.status]
         );
         return result;
       });
@@ -634,6 +711,7 @@ export function createBillingPaymentsApp() {
     async (req: TenantRequest, res: Response) => {
       try {
         const principal = tenantPrincipal(req);
+        requirePaymentsEnabled();
         const reference = typeof req.body?.reference === 'string' ? req.body.reference : '';
         const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
         const requestedMinor = Number(req.body?.amountMinor);
