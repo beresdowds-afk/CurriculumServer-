@@ -52,7 +52,7 @@ CREATE TABLE attendance.device_adapters (
 );
 
 CREATE TABLE attendance.school_capabilities (
-  tenant_id UUID NOT NULL REFERENCES production.tenants(id),
+  tenant_id UUID NOT NULL REFERENCES production.tenants(id) ON DELETE CASCADE,
   school_id UUID NOT NULL,
   application_instance_id UUID NOT NULL,
   status TEXT NOT NULL CHECK (status IN (
