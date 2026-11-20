@@ -275,9 +275,9 @@ run_sql "$TARGET_URL" "
 DO \$\$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${RUNTIME_ROLE}') THEN
-    EXECUTE 'GRANT USAGE ON SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks TO ${RUNTIME_ROLE}';
-    EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks TO ${RUNTIME_ROLE}';
-    EXECUTE 'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks TO ${RUNTIME_ROLE}';
+    EXECUTE 'GRANT USAGE ON SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks, attendance TO ${RUNTIME_ROLE}';
+    EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks, attendance TO ${RUNTIME_ROLE}';
+    EXECUTE 'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks, attendance TO ${RUNTIME_ROLE}';
     EXECUTE 'REVOKE ALL ON TABLE control_plane.authorization_context_keys FROM PUBLIC';
     EXECUTE 'REVOKE ALL ON TABLE control_plane.authorization_context_keys FROM ${RUNTIME_ROLE}';
   END IF;

@@ -1,24 +1,21 @@
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 import { lazySingleton } from './lazySingleton';
 import { TenantSchoolApp } from '../src/types';
 import { INITIAL_PROVISIONED_TENANTS, INITIAL_CLONED_TENANTS, INITIAL_SAAS_METRICS } from '../src/mockCurriculumServerData';
 import { MOCK_STUDENT_PROFILES } from '../src/data/curriculumFlowData';
-import { SchoolStudentSummary, SchoolAttendanceRecord, SchoolInstanceProfileResponse } from '../packages/shared-types/src/apiContracts';
+import { SchoolStudentSummary, SchoolInstanceProfileResponse } from '../packages/shared-types/src/apiContracts';
 import { TamperEvidentAuditService } from '../src/services/tamperEvidentAuditService';
 import { StorageAndDatabaseManager } from './storageAndDatabaseManager';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const TENANTS_FILE = path.join(DATA_DIR, 'tenants.json');
-const ATTENDANCE_FILE = path.join(DATA_DIR, 'attendance.json');
 const STUDENTS_FILE = path.join(DATA_DIR, 'students.json');
 
 export class ServerSchoolManager {
   private static instance: ServerSchoolManager;
   private tenants: TenantSchoolApp[] = [];
   private students: SchoolStudentSummary[] = [];
-  private attendance: SchoolAttendanceRecord[] = [];
 
   private constructor() {
     this.loadPersistence();
@@ -74,25 +71,6 @@ export class ServerSchoolManager {
         this.saveStudents();
       }
 
-      if (fs.existsSync(ATTENDANCE_FILE)) {
-        this.attendance = JSON.parse(fs.readFileSync(ATTENDANCE_FILE, 'utf8'));
-      } else {
-        const initialTenantId = this.tenants[0]?.id || 'tenant_apex_001';
-        this.attendance = [
-          {
-            id: 'att_001',
-            tenantId: initialTenantId,
-            studentId: this.students[0]?.id || 'stu_1',
-            studentName: this.students[0]?.fullName || 'Zainab Mustapha',
-            classGrade: 'SS 2',
-            date: new Date().toISOString().split('T')[0],
-            status: 'Present',
-            method: 'RFID_GATE',
-            timestamp: new Date().toISOString()
-          }
-        ];
-        this.saveAttendance();
-      }
     } catch (e) {
       console.error('Error loading ServerSchoolManager persistence:', e);
       this.tenants = [...INITIAL_PROVISIONED_TENANTS];
@@ -112,14 +90,6 @@ export class ServerSchoolManager {
       fs.writeFileSync(STUDENTS_FILE, JSON.stringify(this.students, null, 2), 'utf8');
     } catch (e) {
       console.error('Error saving students:', e);
-    }
-  }
-
-  private saveAttendance(): void {
-    try {
-      fs.writeFileSync(ATTENDANCE_FILE, JSON.stringify(this.attendance, null, 2), 'utf8');
-    } catch (e) {
-      console.error('Error saving attendance:', e);
     }
   }
 
@@ -365,36 +335,6 @@ export class ServerSchoolManager {
     this.students.push(...seeded);
     this.saveStudents();
     return seeded;
-  }
-
-  public getAttendanceByTenant(tenantId: string): SchoolAttendanceRecord[] {
-    const cleanId = tenantId.trim().toLowerCase();
-    return this.attendance.filter(a => a.tenantId.toLowerCase() === cleanId);
-  }
-
-  public recordAttendance(tenantId: string, record: Omit<SchoolAttendanceRecord, 'id' | 'tenantId' | 'timestamp'>): SchoolAttendanceRecord {
-    const newRecord: SchoolAttendanceRecord = {
-      id: `att_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`,
-      tenantId: tenantId.trim().toLowerCase(),
-      ...record,
-      timestamp: new Date().toISOString()
-    };
-
-    this.attendance.unshift(newRecord);
-    this.saveAttendance();
-
-    TamperEvidentAuditService.logPlatformAction({
-      actor: 'rfid_biometric_gate',
-      actorRole: 'attendance_daemon',
-      tenantId,
-      action: 'attendance_logged',
-      target: newRecord.studentId,
-      result: 'SUCCESS',
-      outcome: 'SUCCESS',
-      details: `Logged ${newRecord.status} attendance for ${newRecord.studentName} via ${newRecord.method}`
-    });
-
-    return newRecord;
   }
 
   public getMetrics(): any {

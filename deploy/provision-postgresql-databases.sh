@@ -288,13 +288,13 @@ END \$\$;
     echo "  [PLANNED] REVOKE ALL ON control_plane.authorization_context_keys FROM '${RUNTIME_ROLE}', PUBLIC"
   else
     run_sql_file_or_stdin "$migration_url" "
-GRANT USAGE ON SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks TO ${RUNTIME_ROLE};
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks TO ${RUNTIME_ROLE};
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks TO ${RUNTIME_ROLE};
+GRANT USAGE ON SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks, attendance TO ${RUNTIME_ROLE};
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks, attendance TO ${RUNTIME_ROLE};
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks, attendance TO ${RUNTIME_ROLE};
 
-ALTER DEFAULT PRIVILEGES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks
+ALTER DEFAULT PRIVILEGES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks, attendance
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${RUNTIME_ROLE};
-ALTER DEFAULT PRIVILEGES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks
+ALTER DEFAULT PRIVILEGES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks, attendance
   GRANT USAGE, SELECT ON SEQUENCES TO ${RUNTIME_ROLE};
 
 REVOKE ALL ON TABLE control_plane.authorization_context_keys FROM PUBLIC;

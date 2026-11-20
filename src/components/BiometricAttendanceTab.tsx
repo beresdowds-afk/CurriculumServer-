@@ -13,9 +13,6 @@ import {
   PunctualityCategory,
   MovementLocationType
 } from '../types';
-import { INITIAL_BIOMETRIC_DEVICES, INITIAL_BIOMETRIC_LOGS } from '../data/biometricAttendanceData';
-import { INITIAL_CLASS_GROUPS, INITIAL_STUDENTS, INITIAL_TEACHERS } from '../data/schoolManagementData';
-import { MOCK_USERS } from '../data/curriculumFlowData';
 import { 
   ScanFace, 
   Fingerprint, 
@@ -71,12 +68,12 @@ interface BiometricAttendanceTabProps {
 }
 
 export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
-  currentUser = MOCK_USERS[0],
-  teachers = INITIAL_TEACHERS,
-  classGroups = INITIAL_CLASS_GROUPS,
-  students = INITIAL_STUDENTS,
-  devices = INITIAL_BIOMETRIC_DEVICES,
-  movementLogs = INITIAL_BIOMETRIC_LOGS,
+  currentUser,
+  teachers = [],
+  classGroups = [],
+  students = [],
+  devices = [],
+  movementLogs = [],
   teacherAttendanceRecords = [],
   movementPasses = [],
   biometricProfiles = [],
@@ -104,6 +101,7 @@ export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
 
   // Toast / Action notification
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const testSimulatorEnabled = import.meta.env.MODE === 'test';
 
   const showToast = (msg: string) => {
     setActionNotice(msg);
@@ -151,8 +149,8 @@ export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
     const teacherScans = todayLogs.filter(l => l.personType === 'teacher').length;
     const onTimeScans = todayLogs.filter(l => l.punctualityStatus === 'early' || l.punctualityStatus === 'on_time').length;
     const lateScans = todayLogs.filter(l => l.punctualityStatus === 'slight_late' || l.punctualityStatus === 'late' || l.punctualityStatus === 'very_late').length;
-    const onTimePercentage = totalScans > 0 ? Math.round((onTimeScans / totalScans) * 100) : 100;
-    const parentAlertsDispatched = todayLogs.filter(l => l.parentAlertStatus === 'delivered' || l.parentAlertStatus === 'sent').length;
+    const onTimePercentage = totalScans > 0 ? Math.round((onTimeScans / totalScans) * 100) : null;
+    const parentAlertsDispatched = todayLogs.filter(l => l.parentAlertStatus === 'delivered').length;
     return { totalScans, studentScans, teacherScans, onTimeScans, lateScans, onTimePercentage, parentAlertsDispatched };
   }, [movementLogs, selectedDate]);
 
@@ -195,7 +193,9 @@ export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
 
   // Handle Trigger Simulated Scan
   const handleExecuteSimulatedScan = () => {
+    if (!testSimulatorEnabled) return;
     const selectedDev = devices.find(d => d.id === simDeviceId) || devices[0];
+    if (!selectedDev) return;
     let personName = '';
     let personIdentifier = '';
     let classGroupId: string | undefined = undefined;
@@ -205,6 +205,7 @@ export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
 
     if (simPersonType === 'student') {
       const stu = students.find(s => s.id === simPersonId) || students[0];
+      if (!stu) return;
       personName = stu.fullName;
       personIdentifier = stu.admissionNumber;
       classGroupId = stu.classGroupId;
@@ -212,6 +213,7 @@ export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
       parentPhone = stu.parentPhone;
     } else {
       const tch = teachers.find(t => t.id === simPersonId) || teachers[0];
+      if (!tch) return;
       personName = tch.fullName;
       personIdentifier = tch.staffId;
       department = tch.department;
@@ -297,7 +299,7 @@ export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
     }
 
     setIsSimulatorOpen(false);
-    showToast(`Instant Biometric Scan Ingested: ${personName} (${simMethod.replace('_', ' ')}) at ${selectedDev.name}. Parent notification queued.`);
+    showToast(`Test-only simulated event created for ${personName}. It is not a hardware scan or a delivered notification.`);
   };
 
   // Handle Sync Class Register from Biometric hardware
@@ -340,7 +342,7 @@ export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
       personIdentifier,
       classGroupName,
       passType: newPassData.passType,
-      issuedBy: `${currentUser.name} (${currentUser.role})`,
+      issuedBy: currentUser ? `${currentUser.name} (${currentUser.role})` : 'Unavailable',
       issuedAt,
       validUntil,
       originLocation: newPassData.originLocation,
@@ -389,18 +391,18 @@ export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
               Biometric Attendance, Punctuality & Movement Monitoring
             </h1>
             <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-              Real-time synchronization with facial recognition terminals, dual-fingerprint turnstiles, and hallway movement scanners across all class groups and staff members.
+              Attendance data and device health are shown only when supplied by the backend. Hardware integration is not yet verified.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <button
+            {testSimulatorEnabled && <button
               onClick={() => setIsSimulatorOpen(true)}
               className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs transition-all shadow-lg shadow-emerald-950/40 flex items-center gap-2"
             >
               <Zap className="w-4 h-4" />
               <span>Simulate Biometric Scan</span>
-            </button>
+            </button>}
 
             <button
               onClick={() => setIsIssuePassModalOpen(true)}
@@ -417,36 +419,42 @@ export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
           <div className="bg-slate-850/70 p-3 rounded-2xl border border-slate-800">
             <span className="text-[10px] text-slate-400 font-bold uppercase block">Hardware Fleet</span>
             <div className="flex items-center gap-1.5 mt-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="text-sm font-extrabold text-white">{devices.filter(d => d.status === 'online').length}/{devices.length} Online</span>
+              <span className={`w-2 h-2 rounded-full ${devices.length ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`}></span>
+              <span className="text-sm font-extrabold text-white">{devices.length ? `${devices.filter(d => d.status === 'online').length}/${devices.length} Online` : 'Unverified'}</span>
             </div>
           </div>
 
           <div className="bg-slate-850/70 p-3 rounded-2xl border border-slate-800">
             <span className="text-[10px] text-slate-400 font-bold uppercase block">Total Today's Scans</span>
-            <span className="text-sm font-extrabold text-white mt-1 block font-mono">{liveStats.totalScans}</span>
+            <span className="text-sm font-extrabold text-white mt-1 block font-mono">{liveStats.totalScans || '—'}</span>
           </div>
 
           <div className="bg-slate-850/70 p-3 rounded-2xl border border-slate-800">
             <span className="text-[10px] text-slate-400 font-bold uppercase block">Students Scanned</span>
-            <span className="text-sm font-extrabold text-emerald-400 mt-1 block font-mono">{liveStats.studentScans}</span>
+            <span className="text-sm font-extrabold text-emerald-400 mt-1 block font-mono">{liveStats.totalScans ? liveStats.studentScans : '—'}</span>
           </div>
 
           <div className="bg-slate-850/70 p-3 rounded-2xl border border-slate-800">
             <span className="text-[10px] text-slate-400 font-bold uppercase block">Staff Clocked-In</span>
-            <span className="text-sm font-extrabold text-teal-400 mt-1 block font-mono">{liveStats.teacherScans}</span>
+            <span className="text-sm font-extrabold text-teal-400 mt-1 block font-mono">{liveStats.totalScans ? liveStats.teacherScans : '—'}</span>
           </div>
 
           <div className="bg-slate-850/70 p-3 rounded-2xl border border-slate-800">
             <span className="text-[10px] text-slate-400 font-bold uppercase block">Punctuality Index</span>
-            <span className="text-sm font-extrabold text-amber-400 mt-1 block font-mono">{liveStats.onTimePercentage}%</span>
+            <span className="text-sm font-extrabold text-amber-400 mt-1 block font-mono">{liveStats.onTimePercentage === null ? '—' : `${liveStats.onTimePercentage}%`}</span>
           </div>
 
           <div className="bg-slate-850/70 p-3 rounded-2xl border border-slate-800">
-            <span className="text-[10px] text-slate-400 font-bold uppercase block">Parent Alerts Sent</span>
-            <span className="text-sm font-extrabold text-blue-400 mt-1 block font-mono">{liveStats.parentAlertsDispatched}</span>
+            <span className="text-[10px] text-slate-400 font-bold uppercase block">Verified Notification Receipts</span>
+            <span className="text-sm font-extrabold text-blue-400 mt-1 block font-mono">{liveStats.totalScans ? liveStats.parentAlertsDispatched : '—'}</span>
           </div>
         </div>
+
+        {movementLogs.length === 0 && devices.length === 0 && (
+          <div className="rounded-xl border border-amber-800 bg-amber-950/40 px-4 py-3 text-xs text-amber-200">
+            Attendance backend and device status are not available. No scan, attendance, or notification delivery data is being reported.
+          </div>
+        )}
 
         {/* Sub-Tabs Switcher */}
         <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-800/90 rounded-2xl border border-slate-700 w-fit mt-6">
@@ -605,13 +613,13 @@ export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
             {filteredMovementLogs.length === 0 ? (
               <div className="p-8 text-center text-xs text-slate-400 space-y-2">
                 <p>No biometric scans recorded matching the selected filter criteria.</p>
-                <button
+                {testSimulatorEnabled && <button
                   onClick={() => setIsSimulatorOpen(true)}
                   className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5"
                 >
                   <Zap className="w-3.5 h-3.5" />
                   <span>Simulate Test Face/Fingerprint Scan</span>
-                </button>
+                </button>}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -1037,7 +1045,7 @@ export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
 
                 <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-[11px]">
                   <span className="text-slate-500">Heartbeat: {dev.lastHeartbeat}</span>
-                  <button
+                  {testSimulatorEnabled && <button
                     onClick={() => {
                       setSimDeviceId(dev.id);
                       setIsSimulatorOpen(true);
@@ -1046,7 +1054,7 @@ export const BiometricAttendanceTab: React.FC<BiometricAttendanceTabProps> = ({
                   >
                     <span>Test Scan</span>
                     <Zap className="w-3 h-3" />
-                  </button>
+                  </button>}
                 </div>
               </div>
             ))}
@@ -1254,7 +1262,7 @@ Payload: {
       {/* ========================================================================= */}
       {/* SIMULATOR MODAL (Live Biometric Test Scan) */}
       {/* ========================================================================= */}
-      {isSimulatorOpen && (
+      {testSimulatorEnabled && isSimulatorOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
           <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 sm:p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-6">
             <div className="flex items-center justify-between pb-4 border-b border-slate-800">

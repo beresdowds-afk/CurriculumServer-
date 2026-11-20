@@ -15,6 +15,9 @@ const notReady = [
   'student_administration',
   'class_administration',
   'staff_administration',
+  'attendance_device_ingestion',
+  'attendance_platform_device_provisioning',
+  'attendance_school_device_management',
   'administrative_permissions',
   'student_lifecycle',
   'campus_logistics',
@@ -111,6 +114,41 @@ test('implemented administration handlers map to their canonical unready capabil
         PRODUCTION_CAPABILITIES.find(item => item.id === capabilityId)!
       )
     }, `${method} ${path}`);
+  }
+});
+
+test('attendance ingestion and register routes stay blocked until end-to-end readiness is evidenced', () => {
+  for (const [method, path] of [
+    ['POST', '/attendance/devices'],
+    ['POST', '/attendance/credentials'],
+    ['POST', '/attendance/device-events'],
+    ['POST', '/attendance/device-events/batch'],
+    ['POST', '/attendance/heartbeat'],
+    ['GET', '/attendance/sync-status'],
+    ['POST', '/attendance/enrollment-ack'],
+    ['GET', '/attendance/register'],
+    ['PATCH', '/attendance/records/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/adjustments']
+  ]) {
+    const decision = evaluateProductionCapabilityGate(method, path);
+    assert.equal(decision.allowed, false, `${method} ${path}`);
+    assert.equal(decision.reason, 'capability_not_ready');
+    assert.equal(decision.capabilityId, 'attendance_device_ingestion');
+  }
+});
+
+test('attendance provisioning and school device-management routes remain blocked', () => {
+  for (const [method, path, capabilityId] of [
+    ['POST', '/platform/attendance/provisioning-requests', 'attendance_platform_device_provisioning'],
+    ['GET', '/platform/attendance/device-catalogue', 'attendance_platform_device_provisioning'],
+    ['POST', '/platform/attendance/provisioning-requests/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/execute', 'attendance_platform_device_provisioning'],
+    ['GET', '/schools/me/attendance/devices', 'attendance_school_device_management'],
+    ['GET', '/schools/me/attendance/capability', 'attendance_school_device_management'],
+    ['POST', '/schools/me/attendance/devices/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/revoke', 'attendance_school_device_management']
+  ]) {
+    const decision = evaluateProductionCapabilityGate(method, path);
+    assert.equal(decision.allowed, false, `${method} ${path}`);
+    assert.equal(decision.reason, 'capability_not_ready');
+    assert.equal(decision.capabilityId, capabilityId);
   }
 });
 

@@ -22,6 +22,10 @@ import {
 } from './schoolFinanceFeatureTemplate';
 import { ACADEMIC_RECORDS_FEATURE_TEMPLATE } from './academicRecordsFeatureTemplate';
 import { ADAPTIVE_REMEDIAL_CBT_FEATURE_TEMPLATE } from './adaptiveRemedialCbtFeatureTemplate';
+import {
+  ATTENDANCE_DEVICE_PROVISIONING_TEMPLATE,
+  validateAttendanceCapabilityRequest
+} from './attendanceDeviceProvisioningTemplate';
 
 export const APPLICATION_CONFIGURATION_CONTRACT_VERSION = 1;
 
@@ -107,6 +111,14 @@ export const APPLICATION_FEATURE_TEMPLATE_REGISTRY: readonly ApplicationFeatureT
     versions: [ADAPTIVE_REMEDIAL_CBT_FEATURE_TEMPLATE.templateVersion],
     status: ADAPTIVE_REMEDIAL_CBT_FEATURE_TEMPLATE.status,
     provisionable: ADAPTIVE_REMEDIAL_CBT_FEATURE_TEMPLATE.provisionable
+  },
+  {
+    applicationId: 'app_curriculum_flow',
+    featureId: ATTENDANCE_DEVICE_PROVISIONING_TEMPLATE.featureId,
+    templateId: ATTENDANCE_DEVICE_PROVISIONING_TEMPLATE.templateId,
+    versions: [ATTENDANCE_DEVICE_PROVISIONING_TEMPLATE.templateVersion],
+    status: 'draft',
+    provisionable: false
   }
 ];
 
@@ -238,6 +250,10 @@ export function validateApplicationInstanceConfiguration(
     }
     if (featureId === ADAPTIVE_REMEDIAL_CBT_FEATURE_TEMPLATE.featureId) {
       errors.push('Adaptive remedial and secure CBT template is registered but not provisionable.');
+      continue;
+    }
+    if (featureId === ATTENDANCE_DEVICE_PROVISIONING_TEMPLATE.featureId) {
+      errors.push(...validateAttendanceCapabilityRequest(featureConfiguration.settings).errors);
       continue;
     }
     const logistics = validateLogisticsFeatureConfiguration(featureConfiguration.settings);
