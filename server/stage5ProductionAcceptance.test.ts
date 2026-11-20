@@ -546,9 +546,10 @@ test('Stage 5 Section 8: Rate limiter enforces HTTP 429 + Retry-After, DB failur
   );
   assert.ok(rollbackSqls.includes('ROLLBACK'));
 
-  // 3. CI workflow grants curriculum_runtime access to central_curriculum and central_textbooks
+  // 3. CI workflow grants curriculum_runtime access to application schemas
   const ciYaml = await readFile(path.join(process.cwd(), '.github/workflows/ci.yml'), 'utf8');
-  assert.match(ciYaml, /GRANT USAGE ON SCHEMA[^\n]*central_curriculum,\s*central_textbooks,\s*school_finance TO curriculum_runtime/);
-  assert.match(ciYaml, /GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA[^\n]*central_curriculum,\s*central_textbooks,\s*school_finance TO curriculum_runtime/);
+  assert.match(ciYaml, /GRANT USAGE ON SCHEMA[^\n]*central_curriculum,\s*central_textbooks,\s*school_finance,\s*attendance TO curriculum_runtime/);
+  assert.match(ciYaml, /GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA[^\n]*central_curriculum,\s*central_textbooks,\s*school_finance,\s*attendance TO curriculum_runtime/);
+  assert.match(ciYaml, /GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA[^\n]*central_curriculum,\s*central_textbooks,\s*school_finance,\s*attendance TO curriculum_runtime/);
   assert.match(ciYaml, /REVOKE ALL ON control_plane\.authorization_context_keys FROM curriculum_runtime/);
 });
