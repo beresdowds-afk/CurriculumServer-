@@ -862,7 +862,8 @@ function createStatefulTeachingPool() {
   const pool: DatabasePool = {
     query,
     connect: async () => client,
-    end: async () => {}
+    end: async () => {},
+    on() { return this; }
   };
 
   return {
@@ -914,8 +915,8 @@ async function seedCompletedFractionsDelivery(service: TeachingEvidenceService, 
     confirmTaught: true,
     coverageMode: 'full',
     coveredObjectiveIds: objIds,
-    understandingLevel: 'Good',
-    studentEngagement: 'High',
+    understandingLevel: 'good',
+    studentEngagement: 'high',
     teacherComments: 'Students solved decimal conversion exercises accurately.',
     idempotencyKey: `idem-${delivery.id}`
   });
@@ -1099,8 +1100,8 @@ test('6 & 7. Lesson notes and opening/acknowledging do NOT mark a topic as taugh
         targetStatus: 'completed',
         confirmTaught: true,
         coverageMode: 'full',
-        understandingLevel: 'Good',
-        studentEngagement: 'High'
+        understandingLevel: 'good',
+        studentEngagement: 'high'
       }),
     (err: unknown) => err instanceof TeachingEvidenceError && err.code === 'INVALID_TRANSITION' && err.httpStatus === 409
   );
@@ -1123,8 +1124,8 @@ test('6 & 7. Lesson notes and opening/acknowledging do NOT mark a topic as taugh
         targetStatus: 'completed',
         confirmTaught: false,
         coverageMode: 'full',
-        understandingLevel: 'Good',
-        studentEngagement: 'High'
+        understandingLevel: 'good',
+        studentEngagement: 'high'
       }),
     (err: unknown) => err instanceof TeachingEvidenceError && err.code === 'VALIDATION_ERROR'
   );
@@ -1136,8 +1137,8 @@ test('6 & 7. Lesson notes and opening/acknowledging do NOT mark a topic as taugh
     coverageMode: 'partial',
     coveredObjectiveIds: [OBJ_FRAC_1],
     uncoveredObjectiveIds: [OBJ_FRAC_2],
-    understandingLevel: 'Fair',
-    studentEngagement: 'Moderate',
+    understandingLevel: 'fair',
+    studentEngagement: 'medium',
     remedialNeeded: true,
     remedialTopic: 'Unlike denominators',
     teacherComments: 'Need remedial drill on unlike fractions'
@@ -1155,8 +1156,8 @@ test('8, 9, 10 & 11. Completion feedback linkage, duplicate idempotency, and ver
   const service = new TeachingEvidenceService(pool);
   const { teacherCtx, delivery } = await seedCompletedFractionsDelivery(service);
 
-  assert.equal(delivery.understandingLevel, 'Good');
-  assert.equal(delivery.studentEngagement, 'High');
+  assert.equal(delivery.understandingLevel, 'good');
+  assert.equal(delivery.studentEngagement, 'high');
   assert.equal(delivery.recordVersion, 1);
 
   // Scenario 10: Duplicate completion with same idempotencyKey replays without error or duplication
@@ -1165,8 +1166,8 @@ test('8, 9, 10 & 11. Completion feedback linkage, duplicate idempotency, and ver
     confirmTaught: true,
     coverageMode: 'full',
     coveredObjectiveIds: [OBJ_FRAC_1, OBJ_FRAC_2],
-    understandingLevel: 'Good',
-    studentEngagement: 'High',
+    understandingLevel: 'good',
+    studentEngagement: 'high',
     idempotencyKey: `idem-${delivery.id}`
   });
   assert.equal(replay.idempotentReplay, true);
@@ -1242,8 +1243,8 @@ test('12 & 13. Topics and learning objectives validate strictly against exact cu
         confirmTaught: true,
         coverageMode: 'full',
         coveredObjectiveIds: [OBJ_ALG_1], // belongs to Algebra, not Fractions!
-        understandingLevel: 'Good',
-        studentEngagement: 'High'
+        understandingLevel: 'good',
+        studentEngagement: 'high'
       }),
     (err: unknown) => err instanceof TeachingEvidenceError && err.code === 'UNRESOLVED_CURRICULUM'
   );
@@ -1269,8 +1270,8 @@ test('14 & 15. Unresolved topics excluded until manually mapped; historical supe
     targetStatus: 'completed',
     confirmTaught: true,
     coverageMode: 'full',
-    understandingLevel: 'Good',
-    studentEngagement: 'Moderate'
+    understandingLevel: 'good',
+    studentEngagement: 'medium'
   });
 
   // Excluded from verified evidence & progress count until manually mapped
@@ -1534,10 +1535,16 @@ test('24-30. Central AI Gateway enforces server-side evidence/scope, rejects spo
     GOOGLE_CLOUD_PROJECT: 'curious-subject-477114-e4',
     GOOGLE_CLOUD_LOCATION: 'europe-west1'
   };
+  const store = new InMemoryAiGatewayStore();
+  store.registerApplicationInstance({
+    id: INSTANCE_A,
+    tenantId: TENANT_A,
+    applicationId: 'app_curriculum_flow'
+  });
   const gateway = new CentralAiGatewayService({
     provider: new GoogleGeminiProviderAdapter(mockTransport, () => env),
     trafficController: new AiGatewayTrafficController(),
-    getStore: () => ({ store: new InMemoryAiGatewayStore(), databaseConfigured: true, pool }),
+    getStore: () => ({ store, databaseConfigured: true, pool }),
     getEntitlementMode: () => 'decoupled',
     getEnv: () => env
   });
@@ -1719,7 +1726,8 @@ test('31-35. Existing Question Bank isolation, review/approval, exam config, and
     classGradeName: 'JSS 1',
     term: 'Term 1',
     selectedQuestionIds: [approved.id],
-    totalMarks: 2
+    totalMarks: 2,
+    generationHash: 'sha256-mock-hash'
   });
   assert.equal(examConfig.selectedQuestionIds.length, 1);
   assert.equal(examConfig.blueprintId, blueprint.id);
