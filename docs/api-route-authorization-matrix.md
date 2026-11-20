@@ -50,6 +50,13 @@ matrix. The `administrative_permissions` registration reserves membership and
 role paths, but those handlers do not exist yet. Do not mark those capabilities
 ready or add frontend-only access controls.
 
+The `biometric_attendance` capability is `not_started` and declares no routes.
+The mounted JSON-backed `GET` and `POST /api/v1/flow/school/:tenantId/attendance`
+handlers are unmatched and remain blocked. The attendance permission catalog
+does not grant any role access or implement attendance authorization. Central
+IAM, authenticated devices, scoped repositories and acceptance evidence must
+be established before any attendance routes can be admitted.
+
 The matrix is derived from `server/capabilities/productionCapabilityRegistry.ts`.
 The registry is the enforcement source of truth; tests in
 `server/capabilities/productionCapabilityRegistry.test.ts` verify that unready
