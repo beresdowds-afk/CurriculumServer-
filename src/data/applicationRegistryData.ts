@@ -296,18 +296,28 @@ export const INITIAL_REGISTERED_FEATURES: RegisteredFeature[] = [
   },
   {
     featureId: 'feat_biometric_attendance',
-    name: 'Biometric RFID Attendance & Gate Sync',
-    description: 'Real-time school gate attendance logging, RFID card check-in, and instant parent SMS/WhatsApp alert dispatch.',
+    name: 'Attendance Device Provisioning & Ingestion',
+    description: 'Request-only attendance capability template; device catalogue, Central IAM, ingestion routes, and verified hardware adapters are not production-ready.',
     applicationAssociation: 'app_curriculum_flow',
-    dependencies: ['feat_student_registration'],
-    requiredPermissions: ['view_attendance'],
-    apiDependencies: ['/api/v1/attendance/log'],
-    databaseRequirements: ['attendance_logs_table'],
+    dependencies: ['feat_school_administration_identity', 'feat_student_registration'],
+    requiredPermissions: ['attendance.read', 'attendance.devices.manage', 'attendance.devices.activate'],
+    apiDependencies: [
+      '/api/v1/platform/attendance/provisioning-requests',
+      '/api/v1/platform/attendance/device-catalogue',
+      '/api/v1/attendance/device-events'
+    ],
+    databaseRequirements: [
+      'attendance.school_capabilities',
+      'attendance.device_catalogue',
+      'attendance.provisioning_requests',
+      'attendance.device_allocations'
+    ],
     storageRequirements: [],
-    configOptions: { autoNotifyParentsOnArrival: true },
-    version: '1.5.0',
-    availabilityStatus: 'beta',
-    honestyStatus: 'simulated_ui'
+    configOptions: { templateId: 'attendance-device-provisioning', templateVersion: '1.0.0' },
+    version: '1.0.0',
+    availabilityStatus: 'experimental',
+    honestyStatus: 'partial_stub',
+    readiness: ['designed', 'implemented']
   },
   {
     featureId: 'feat_ai_curriculum_advisor',

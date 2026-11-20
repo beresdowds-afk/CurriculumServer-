@@ -76,6 +76,8 @@ import {
   type StudentTransition
 } from './server/db/schoolAdministrationRepository';
 import { createApiCapabilityGateMiddleware } from './server/capabilities/productionCapabilityMiddleware';
+import { AttendanceProvisioningRepository } from './server/attendance/attendanceProvisioningRepository';
+import { createAttendanceProvisioningRouter } from './server/attendance/provisioningRoutes';
 import { createSchoolAdministrationGuards } from './server/authorization/schoolAdministrationGuards';
 import { LogisticsError, LogisticsRepository } from './server/logistics/logisticsRepository';
 import { LogisticsGpsRepository, LogisticsGpsRepositoryError } from './server/logistics/logisticsGpsRepository';
@@ -449,6 +451,10 @@ const authorizationMiddleware = createAuthorizationMiddleware({
   },
   internalServiceKey: () => process.env.INTERNAL_SERVICE_KEY
 });
+app.use('/api/v1/platform/attendance', createAttendanceProvisioningRouter(
+  requireProvisioningPlatformAdmin,
+  () => new AttendanceProvisioningRepository(postgresRuntime.getPool())
+));
 const schoolAdministrationGuards = createSchoolAdministrationGuards(authorizationMiddleware);
 
 function resolveApplicationInstanceId(req: Request): string {
@@ -6367,26 +6373,6 @@ app.get('/api/v1/flow/school/:tenantId/students', requireSchoolAuth, requireTrus
       correlationId: (req as any).correlationId
     });
   }
-});
-
-app.get('/api/v1/flow/school/:tenantId/attendance', requireSchoolAuth, (req: Request, res: Response) => {
-  const attendance = serverSchoolManager.getAttendanceByTenant(req.params.tenantId);
-  res.json({
-    success: true,
-    data: attendance,
-    correlationId: (req as any).correlationId,
-    timestamp: new Date().toISOString()
-  });
-});
-
-app.post('/api/v1/flow/school/:tenantId/attendance', requireSchoolAuth, (req: Request, res: Response) => {
-  const record = serverSchoolManager.recordAttendance(req.params.tenantId, req.body);
-  res.json({
-    success: true,
-    data: record,
-    correlationId: (req as any).correlationId,
-    timestamp: new Date().toISOString()
-  });
 });
 
 // -------------------------------------------------------------

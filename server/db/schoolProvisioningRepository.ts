@@ -26,6 +26,7 @@ import {
 import { advanceLifecycle } from './applicationLifecycle';
 import { assertAuthorized, type AuthorizedPrincipal } from '../authorization/authorizedPrincipal';
 import { PERMISSIONS } from '../authorization/permissions';
+import { validateAttendanceCapabilityRequest } from '../../src/data/attendanceDeviceProvisioningTemplate';
 
 interface ProvisioningRow extends QueryResultRow {
   operation_id: string;
@@ -440,6 +441,26 @@ export class SchoolProvisioningRepository {
               JSON.stringify(logisticsConfiguration.settings)]
           );
         }
+        const attendanceConfiguration =
+          applicationConfiguration.featureConfigurations?.feat_biometric_attendance;
+        const attendanceCapability = attendanceConfiguration
+          ? validateAttendanceCapabilityRequest(attendanceConfiguration.settings)
+          : { valid: true, errors: [], settings: { requestCapability: false } };
+        if (!attendanceCapability.valid || !attendanceCapability.settings) {
+          throw new Error('ATTENDANCE_CAPABILITY_CONFIGURATION_INVALID');
+        }
+        await client.query(
+          `INSERT INTO attendance.school_capabilities
+             (tenant_id, school_id, application_instance_id, status,
+              requested_configuration, requested_by, requested_at)
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6, CASE WHEN $4 = 'requested' THEN now() END)`,
+          [
+            tenant.id, schoolId, instanceId,
+            attendanceCapability.settings.requestCapability ? 'requested' : 'not_requested',
+            JSON.stringify(attendanceCapability.settings),
+            attendanceCapability.settings.requestCapability ? initiatedBy : null
+          ]
+        );
         await client.query(
           `INSERT INTO production.school_commercial_agreements
              (tenant_id, school_id, application_instance_id, commercial_model,

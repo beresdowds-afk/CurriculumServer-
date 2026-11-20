@@ -730,16 +730,9 @@ class UnifiedApiClient {
   }
 
   public async getAttendance(tenantId?: string): Promise<SchoolAttendanceRecord[]> {
-    const targetTenantId = tenantId || this.getActiveTenantId();
-    if (!targetTenantId) {
-      throw {
-        success: false,
-        error: 'No active authenticated school tenant session found.',
-        code: 'UNAUTHENTICATED'
-      };
-    }
+    void tenantId;
     const res = await this.request<{ success: boolean; data: SchoolAttendanceRecord[] }>(
-      `/api/v1/flow/school/${targetTenantId}/attendance`,
+      '/api/v1/attendance/register',
       { method: 'GET' },
       'school_flow'
     );
@@ -750,23 +743,13 @@ class UnifiedApiClient {
     tenantId: string | undefined, 
     record: Omit<SchoolAttendanceRecord, 'id' | 'tenantId' | 'timestamp'>
   ): Promise<SchoolAttendanceRecord> {
-    const targetTenantId = tenantId || this.getActiveTenantId();
-    if (!targetTenantId) {
-      throw {
-        success: false,
-        error: 'No active authenticated school tenant session found.',
-        code: 'UNAUTHENTICATED'
-      };
-    }
-    const res = await this.request<{ success: boolean; data: SchoolAttendanceRecord }>(
-      `/api/v1/flow/school/${targetTenantId}/attendance`,
-      {
-        method: 'POST',
-        body: JSON.stringify(record)
-      },
-      'school_flow'
-    );
-    return res.data;
+    void tenantId;
+    void record;
+    throw {
+      success: false,
+      error: 'Attendance writes are unavailable until the authenticated PostgreSQL attendance capability is operational.',
+      code: 'ATTENDANCE_NOT_READY'
+    };
   }
 
   // =============================================================

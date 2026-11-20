@@ -209,8 +209,11 @@ All communication between frontends and backend MUST follow the contracts in `pa
 | `GET` | `/api/v1/flow/school/:tenantId/profile` | `requireSchoolAuth` | Retrieve school profile & entitlements |
 | `GET` | `/api/v1/flow/school/:tenantId/students` | `requireSchoolAuth` | Retrieve tenant-isolated student roster |
 | `POST` | `/api/v1/flow/school/:tenantId/students` | `requireSchoolAuth` | Enroll student into school instance |
-| `GET` | `/api/v1/flow/school/:tenantId/attendance` | `requireSchoolAuth` | Retrieve daily attendance register |
-| `POST` | `/api/v1/flow/school/:tenantId/attendance` | `requireSchoolAuth` | Submit biometric/manual attendance record |
+| `GET` | `/api/v1/flow/school/:tenantId/attendance` | Retired | Legacy JSON-backed attendance route removed; no longer registered |
+| `POST` | `/api/v1/flow/school/:tenantId/attendance` | Retired | Legacy JSON-backed attendance route removed; no longer registered |
+| `POST` | `/api/v1/attendance/device-events` | Blocked by production capability gate | Device-authenticated event ingestion; implementation not started |
+| `POST` | `/api/v1/attendance/device-events/batch` | Blocked by production capability gate | Offline batch ingestion; implementation not started |
+| `GET` | `/api/v1/attendance/register` | Blocked by production capability gate | Canonical attendance register; implementation not started |
 | `GET` | `/api/v1/integration/test` | Public | Automated UBCIC 12-test suite execution |
 
 ---
