@@ -86,6 +86,7 @@ class MigrationMemoryPool implements DatabasePool {
           this.executionCount += 1;
           return result<R>();
         }
+        this.executionCount += 1;
         return this.query<R>(sql, values);
       },
       release: () => {}
@@ -109,7 +110,7 @@ function migration(version: number, name: string, sql: string): MigrationFile {
 test('migration discovery recognizes the preserved initial migration and sorts versions', async () => {
   const root = process.cwd();
   const discovered = await discoverMigrations(path.join(root, 'src/db/migrations'));
-  assert.deepEqual(discovered.map(item => item.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]);
+  assert.deepEqual(discovered.map(item => item.version), Array.from({ length: 25 }, (_, index) => index + 1));
   assert.equal(discovered[0].name, '001_initial_control_plane.sql');
   assert.equal(discovered[1].name, '002_durable_control_plane.sql');
   assert.equal(discovered[2].name, '003_tenant_relationship_integrity.sql');
@@ -127,12 +128,17 @@ test('migration discovery recognizes the preserved initial migration and sorts v
   assert.equal(discovered[15].name, '016_central_curriculum_and_textbook_domains.sql');
   assert.equal(discovered[16].name, '017_central_ai_gateway.sql');
   assert.equal(discovered[17].name, '018_invitation_role_and_assignment_lifecycle.sql');
-  assert.equal(discovered[18].name, '019_ai_gateway_execution_hardening.sql');
-  assert.equal(discovered[19].name, '020_billing_payments_and_cloud_billing.sql');
-  assert.equal(discovered[20].name, '021_tenant_database_storage_provisioning.sql');
-  assert.equal(discovered[21].name, '022_tenant_provisioning_authorization.sql');
-  assert.equal(discovered[22].name, '023_piam_verification_evidence.sql');
-  assert.equal(discovered[23].name, '024_project_approval_notifications.sql');
+  assert.equal(discovered.filter(item => item.version === 18).length, 1);
+  assert.deepEqual(discovered.slice(18, 24).map(item => item.name), [
+    '019_ai_gateway_execution_hardening.sql',
+    '020_billing_payments_and_cloud_billing.sql',
+    '021_tenant_database_storage_provisioning.sql',
+    '022_tenant_provisioning_authorization.sql',
+    '023_piam_verification_evidence.sql',
+    '024_project_approval_notifications.sql'
+  ]);
+  assert.equal(discovered.filter(item => item.version === 25).length, 1);
+  assert.equal(discovered[24].name, '025_teacher_academic_progress_authority.sql');
 
   const directory = await mkdtemp(path.join(os.tmpdir(), 'migration-order-'));
   try {
@@ -144,6 +150,38 @@ test('migration discovery recognizes the preserved initial migration and sorts v
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('migration runner rejects duplicate versions before executing or recording migrations', async () => {
+  const pool = new MigrationMemoryPool();
+  const duplicate = migration(25, '025_teacher_academic_progress_authority.sql', 'SELECT MIGRATION_MARKER;');
+  await assert.rejects(applyMigrations(pool, [duplicate, duplicate]), /Duplicate migration version 25/);
+  assert.equal(pool.executionCount, 0);
+  assert.equal(pool.historyExists, false);
+});
+
+test('migration runner applies out-of-order input in numeric version order', async () => {
+  const pool = new MigrationMemoryPool();
+  await applyMigrations(pool, [
+    migration(2, '002_second.sql', 'SELECT MIGRATION_MARKER;'),
+    migration(1, '001_first.sql', 'SELECT MIGRATION_MARKER;')
+  ]);
+  assert.deepEqual([...pool.history.keys()], [1, 2]);
+});
+
+test('migration 025 executes once on a clean database and is skipped on rerun', async () => {
+  const discovered = await discoverMigrations(path.join(process.cwd(), 'src/db/migrations'));
+  const teacherAuthorityMigration = discovered.find(item => item.version === 25);
+  assert.ok(teacherAuthorityMigration);
+  const pool = new MigrationMemoryPool();
+
+  await applyMigrations(pool, [teacherAuthorityMigration]);
+  assert.equal(pool.executionCount, 1);
+  assert.equal(pool.history.get(25)?.name, '025_teacher_academic_progress_authority.sql');
+  assert.equal(pool.history.get(25)?.status, 'applied');
+
+  await applyMigrations(pool, [teacherAuthorityMigration]);
+  assert.equal(pool.executionCount, 1);
 });
 
 test('migration runner applies once, records status, and detects checksum changes', async () => {

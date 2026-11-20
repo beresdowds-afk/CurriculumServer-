@@ -1,4 +1,4 @@
--- 018_teacher_academic_progress_authority.sql
+-- 025_teacher_academic_progress_authority.sql
 -- Phase A: Teacher Academic Progress Authority & Evidence Integration
 -- Establishes authenticated teacher-to-class-section-subject-curriculum-version assignments,
 -- lesson note linkage (never counting as taught evidence), 6-stage teaching delivery workflow,

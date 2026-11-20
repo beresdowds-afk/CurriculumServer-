@@ -134,6 +134,13 @@ test('ready capabilities have evidence, no activation problems, and acceptance t
   }
 });
 
+test('teacher academic progress capability requires migration 025', () => {
+  const capability = PRODUCTION_CAPABILITIES.find(item => item.id === 'teacher_academic_progress_authority');
+  assert.ok(capability);
+  assert.deepEqual(capability.requiredMigrations, [25]);
+  assert.ok(existsSync('src/db/migrations/025_teacher_academic_progress_authority.sql'));
+});
+
 test('an incomplete feature cannot bypass the lockdown by being marked ready', () => {
   const incomplete = {
     ...PRODUCTION_CAPABILITIES.find(item => item.id === 'student_administration')!,
