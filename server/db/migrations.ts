@@ -23,21 +23,24 @@ export interface MigrationStatus {
   checksum: string;
 }
 
+function orderMigrations<T extends { version: number }>(migrations: T[]): T[] {
+  const ordered = [...migrations].sort((left, right) => left.version - right.version);
+  for (let index = 1; index < ordered.length; index += 1) {
+    if (ordered[index - 1].version === ordered[index].version) {
+      throw new DatabaseFailure('migration', `Duplicate migration version ${ordered[index].version}.`);
+    }
+  }
+  return ordered;
+}
+
 export async function discoverMigrations(directory: string): Promise<MigrationFile[]> {
   const { readdir } = await import('node:fs/promises');
-  const entries = (await readdir(directory, { withFileTypes: true }))
+  const entries = orderMigrations((await readdir(directory, { withFileTypes: true }))
     .filter(entry => entry.isFile() && MIGRATION_PATTERN.test(entry.name))
     .map(entry => {
       const match = MIGRATION_PATTERN.exec(entry.name)!;
       return { version: Number(match[1]), name: entry.name, filePath: path.join(directory, entry.name) };
-    })
-    .sort((left, right) => left.version - right.version);
-
-  for (let index = 1; index < entries.length; index += 1) {
-    if (entries[index - 1].version === entries[index].version) {
-      throw new DatabaseFailure('migration', `Duplicate migration version ${entries[index].version}.`);
-    }
-  }
+    }));
   return Promise.all(entries.map(async entry => {
     const sql = await readFile(entry.filePath, 'utf8');
     return {
@@ -78,11 +81,12 @@ export async function inspectMigrations(
   pool: DatabasePool,
   migrations: MigrationFile[]
 ): Promise<MigrationStatus[]> {
+  const ordered = orderMigrations(migrations);
   const historyExists = await pool.query<{ exists: boolean }>(
     `SELECT to_regclass('${HISTORY_TABLE}') IS NOT NULL AS exists`
   );
   const history = historyExists.rows[0]?.exists ? await readHistory(pool) : new Map();
-  return migrations.map(migration => {
+  return ordered.map(migration => {
     const applied = history.get(migration.version);
     if (applied?.status === 'applied' && applied.checksum !== migration.checksum) {
       throw new DatabaseFailure('migration', `Checksum mismatch for applied migration ${migration.name}.`);
@@ -101,7 +105,8 @@ export async function applyMigrations(
   migrations: MigrationFile[],
   options: { dryRun?: boolean } = {}
 ): Promise<MigrationStatus[]> {
-  if (options.dryRun) return inspectMigrations(pool, migrations);
+  const ordered = orderMigrations(migrations);
+  if (options.dryRun) return inspectMigrations(pool, ordered);
   const lockClient: DatabaseClient = await pool.connect();
   let locked = false;
   try {
@@ -109,7 +114,7 @@ export async function applyMigrations(
     locked = true;
     await ensureHistoryTable(pool);
     let history = await readHistory(pool);
-    for (const migration of migrations) {
+    for (const migration of ordered) {
       const applied = history.get(migration.version);
       if (applied?.status === 'applied') {
         if (applied.checksum !== migration.checksum) {
@@ -155,7 +160,7 @@ export async function applyMigrations(
       }
       history.set(migration.version, { checksum: migration.checksum, status: 'applied' });
     }
-    return inspectMigrations(pool, migrations);
+    return inspectMigrations(pool, ordered);
   } finally {
     if (locked) {
       try {

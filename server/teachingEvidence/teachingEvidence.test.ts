@@ -20,6 +20,7 @@ import { AiGatewayTrafficController } from '../ai/rateLimiter';
 import { AiGatewayError } from '../ai/types';
 import { InMemoryAiGatewayStore } from '../ai/usageMetering';
 import { evaluateProductionCapabilityGate } from '../capabilities/productionCapabilityRegistry';
+import { applyMigrations, discoverMigrations } from '../db/migrations';
 import { InstanceQuestionBankService } from '../questionBank/instanceQuestionBankService';
 import { TeachingEvidenceService } from './teachingEvidenceService';
 import { TeachingEvidenceError } from './teachingEvidenceTypes';
@@ -1725,21 +1726,47 @@ test('31-35. Existing Question Bank isolation, review/approval, exam config, and
 });
 
 // =========================================================================
-// LIVE POSTGRESQL MIGRATION 018 ACCEPTANCE (when DATABASE_TEST_DISPOSABLE=1)
+// LIVE POSTGRESQL MIGRATION 025 ACCEPTANCE (when DATABASE_TEST_DISPOSABLE=1)
 // =========================================================================
 
 test(
-  'Live PostgreSQL acceptance: migration 018 enforces schema constraints, RLS policies, and RBAC teacher-only scope grant',
+  'Live PostgreSQL acceptance: migration 025 enforces schema constraints, RLS policies, and RBAC teacher-only scope grant',
   acceptanceTestOptions,
   async () => {
     const pg = await import('pg');
     const pool = new pg.Pool({ connectionString: databaseUrl });
     try {
-      const migrationSql = readFileSync(
-        path.join(process.cwd(), 'src/db/migrations/018_teacher_academic_progress_authority.sql'),
-        'utf8'
+      const historyTable = await pool.query<{ exists: boolean }>(
+        `SELECT to_regclass('control_plane.schema_migrations') IS NOT NULL AS exists`
       );
-      await pool.query(migrationSql);
+      let history: Array<{ version: string; name: string; status: string }> = [];
+      if (historyTable.rows[0]?.exists) {
+        const result = await pool.query<{ version: string; name: string; status: string }>(
+          `SELECT version::text, name, status FROM control_plane.schema_migrations WHERE version IN (18, 25)`
+        );
+        history = result.rows;
+      }
+      if (history.some(row =>
+        row.version === '18' && row.name === '018_teacher_academic_progress_authority.sql'
+      )) {
+        throw new Error('Legacy teacher-authority migration history at version 018 requires manual reconciliation.');
+      }
+
+      const applied025 = history.some(row =>
+        row.version === '25' && row.name === '025_teacher_academic_progress_authority.sql' && row.status === 'applied'
+      );
+      const authorityTable = await pool.query<{ exists: boolean }>(
+        `SELECT to_regclass('production.teacher_subject_assignments') IS NOT NULL AS exists`
+      );
+      if (!applied025 && authorityTable.rows[0]?.exists) {
+        throw new Error('Teacher-authority schema exists without an applied migration 025 history record; refusing replay.');
+      }
+      if (!applied025) {
+        const migrations = await discoverMigrations(path.join(process.cwd(), 'src/db/migrations'));
+        const migration025 = migrations.find(migration => migration.version === 25);
+        if (!migration025) throw new Error('Migration 025 was not discovered.');
+        await applyMigrations(pool, [migration025]);
+      }
 
       const rlsTables = await pool.query<{ tablename: string; rowsecurity: boolean }>(
         `SELECT tablename, rowsecurity

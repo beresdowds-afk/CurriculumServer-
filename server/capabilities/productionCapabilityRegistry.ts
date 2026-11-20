@@ -509,7 +509,7 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
       { method: 'POST', path: /^\/assessments\/scope-authorizations\/[0-9a-f-]+\/revoke$/i }
     ],
     requiredRepositories: ['TeachingEvidenceRepository', 'InstanceQuestionBankRepository'],
-    requiredMigrations: [18],
+    requiredMigrations: [25],
     authentication: 'tenant_user_session',
     authorization: {
       rule: 'database_permission_and_assignment_ownership',
