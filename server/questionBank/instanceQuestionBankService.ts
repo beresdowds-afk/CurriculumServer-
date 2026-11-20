@@ -144,7 +144,7 @@ export class InstanceQuestionBankService {
         sourceType: 'verified_past_question',
         sourceReference: 'WAEC May/June 2023 General Mathematics Paper 1, Question 14',
         creationMethod: 'imported',
-        reviewStatus: 'approved'
+        reviewStatus: 'pending_review'
       }),
       this.repository.createQuestion(tenant, applicationInstanceId, {
         subjectReferenceId: 'sub-chem',
@@ -168,7 +168,7 @@ export class InstanceQuestionBankService {
         sourceType: 'verified_past_question',
         sourceReference: 'WAEC 2022 Chemistry Paper 1, Question 8',
         creationMethod: 'imported',
-        reviewStatus: 'approved'
+        reviewStatus: 'pending_review'
       })
     ]);
     return items;
@@ -200,7 +200,7 @@ export class InstanceQuestionBankService {
         sourceType: 'verified_past_question',
         sourceReference: 'WAEC May/June 2023 General Mathematics Paper 2, Question 5',
         creationMethod: 'imported',
-        reviewStatus: 'approved'
+        reviewStatus: 'pending_review'
       })
     ]);
   }
@@ -230,7 +230,7 @@ export class InstanceQuestionBankService {
         sourceType: 'verified_past_question',
         sourceReference: 'WAEC May/June 2023 Chemistry Practical Alternative B',
         creationMethod: 'imported',
-        reviewStatus: 'approved'
+        reviewStatus: 'pending_review'
       })
     ]);
   }

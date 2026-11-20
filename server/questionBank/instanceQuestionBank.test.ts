@@ -93,6 +93,7 @@ function createScopedPool() {
       if (idx === -1) return { rows: [], rowCount: 0, command: 'UPDATE', oid: 0, fields: [] };
       questions[idx].review_status = values?.[3];
       questions[idx].reviewer_id = values?.[4];
+      questions[idx].approval_timestamp = values?.[3] === 'approved' ? new Date() : null;
       return { rows: [questions[idx] as unknown as R], rowCount: 1, command: 'UPDATE', oid: 0, fields: [] };
     }
     if (sql.includes('FROM production.instance_question_bank_items')) {
@@ -258,6 +259,45 @@ test('InstanceQuestionBankService isolates questions, categories, blueprints, ex
   assert.equal(assessment.tenantId, tenantA);
   assert.equal((await service.listAssessmentRecords(pA, instanceA)).length, 1);
   assert.equal((await service.listAssessmentRecords(pB, instanceB)).length, 0);
+});
+
+test('questions require separate review before approval, including starter imports', async () => {
+  const { pool, queries } = createScopedPool();
+  const service = new InstanceQuestionBankService(pool);
+  const actor = principal(tenantA, 'teacher');
+  const input = {
+    subjectReferenceId: 'math',
+    classGradeName: 'SS 3',
+    questionType: 'objective' as const,
+    stem: 'Calculate 2 + 2.',
+    correctAnswer: '4'
+  };
+
+  await assert.rejects(
+    () => service.createQuestion(actor, instanceA, { ...input, reviewStatus: 'approved' }),
+    (err: unknown) => err instanceof InstanceQuestionBankError && err.code === 'VALIDATION_ERROR'
+  );
+  assert.equal(queries.some(q => q.sql.includes('INSERT INTO production.instance_question_bank_items')), false);
+
+  const question = await service.createQuestion(actor, instanceA, input);
+  assert.equal(question.reviewStatus, 'pending_review');
+  const approved = await service.reviewQuestion(actor, instanceA, question.id, 'approved');
+  assert.equal(approved.reviewStatus, 'approved');
+  assert.ok(approved.approvalTimestamp);
+  const rejected = await service.reviewQuestion(actor, instanceA, question.id, 'rejected');
+  assert.equal(rejected.approvalTimestamp, null);
+  await assert.rejects(
+    () => service.reviewQuestion(actor, instanceA, question.id, 'invalid' as never),
+    (err: unknown) => err instanceof InstanceQuestionBankError && err.code === 'VALIDATION_ERROR'
+  );
+
+  const seeded = [
+    ...await service.seedStarterPastQuestions(actor, instanceA),
+    ...await service.seedStarterTheoryQuestions(actor, instanceA),
+    ...await service.seedStarterPracticalQuestions(actor, instanceA)
+  ];
+  assert.equal(seeded.length, 4);
+  assert.ok(seeded.every(q => q.reviewStatus === 'pending_review'));
 });
 
 test('InstanceQuestionBankService rejects non-UUID tenant or application instance scopes and super_admin cross-tenant mixing', async () => {

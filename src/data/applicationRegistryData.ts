@@ -5,7 +5,7 @@ export const INITIAL_REGISTERED_APPLICATIONS: RegisteredApplication[] = [
     appId: 'app_curriculum_flow',
     name: 'Curriculum Flow School ERP',
     family: 'Academic Administration',
-    description: 'Comprehensive K-12 school management, student records, continuous assessment, NERDC syllabus mapping, CBT exam lockdown, and terminal report card studio.',
+    description: 'K-12 school management, curriculum mapping, and academic administration; secure CBT and results workflows remain under development.',
     version: '2.4.0',
     containerImageRef: 'gcr.io/curriculum-server/curriculum-flow:v2.4.0',
     supportedDeploymentTargets: ['cloud_run', 'kubernetes', 'bare_metal_edge'],
@@ -249,17 +249,18 @@ export const INITIAL_REGISTERED_FEATURES: RegisteredFeature[] = [
   {
     featureId: 'feat_exam_management',
     name: 'Examination & Assessment Management',
-    description: 'CBT question bank, secure exam kiosk, automated grading, and question provenance tracing.',
+    description: 'Adaptive remedial learning and secure CBT template under development; official examination workflows are not yet operational.',
     applicationAssociation: 'app_curriculum_flow',
     dependencies: ['feat_student_registration'],
     requiredPermissions: ['manage_exams'],
     apiDependencies: ['/api/v1/flow/exams/generate', '/api/curriculum/subjects'],
     databaseRequirements: ['exam_questions_table', 'exam_sessions_table'],
     storageRequirements: ['exam_attachments_bucket'],
-    configOptions: { lockdownBrowserRequired: true, randomizeQuestionOrder: true },
+    configOptions: { templateId: 'adaptive-remedial-secure-cbt', templateVersion: '0.1.0' },
     version: '2.3.0',
-    availabilityStatus: 'available',
-    honestyStatus: 'fully_implemented'
+    availabilityStatus: 'beta',
+    honestyStatus: 'partial_stub',
+    readiness: ['designed']
   },
   {
     featureId: 'feat_results_processing',

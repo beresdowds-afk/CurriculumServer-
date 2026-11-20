@@ -8,10 +8,9 @@ import { CommandCenterTab } from '../../../src/components/CommandCenterTab';
 import { CurriculumExplorerTab } from '../../../src/components/CurriculumExplorerTab';
 import { LessonApprovalChainTab } from '../../../src/components/LessonApprovalChainTab';
 import { TeacherDeliveryTrackerTab } from '../../../src/components/TeacherDeliveryTrackerTab';
-import { QuestionBankTab } from '../../../src/components/QuestionBankTab';
-import { SecureExaminationTab } from '../../../src/components/SecureExaminationTab';
+import { AssessmentSuiteUnavailable } from '../../../src/components/AssessmentSuiteUnavailable';
+import { RemedialEvidenceWorkspace } from '../../../src/components/RemedialEvidenceWorkspace';
 import { TaughtAssessmentTab } from '../../../src/components/TaughtAssessmentTab';
-import { AdaptiveRemedialTab } from '../../../src/components/AdaptiveRemedialTab';
 import { AcademicRecordsWorkspace } from '../../../src/components/AcademicRecordsWorkspace';
 import { AcademicAnalyticsTab } from '../../../src/components/AcademicAnalyticsTab';
 import { StudentRegistersTab } from '../../../src/components/StudentRegistersTab';
@@ -31,13 +30,11 @@ import { QualityAssuranceTab } from '../../../src/components/QualityAssuranceTab
 // Modals
 import { LessonPlanModal } from '../../../src/components/LessonPlanModal';
 import { SchemeOfWorkModal } from '../../../src/components/SchemeOfWorkModal';
-import { ExamBuilderModal } from '../../../src/components/ExamBuilderModal';
 import { SubjectDetailModal } from '../../../src/components/SubjectDetailModal';
 
 // Dev role login presets & non-Phase-A feature placeholders
 import { 
   MOCK_USERS, 
-  MOCK_REMEDIALS, 
   MOCK_STUDENT_PROFILES 
 } from '../../../src/data/curriculumFlowData';
 import { INITIAL_SCHOOL_BRAND } from '../../../src/data/brandManagementData';
@@ -82,7 +79,6 @@ export const CurriculumFlowApp: React.FC = () => {
 
   // Modals state
   const [selectedSubjectDetail, setSelectedSubjectDetail] = useState<SubjectCurriculum | null>(null);
-  const [isExamBuilderOpen, setIsExamBuilderOpen] = useState(false);
   const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
   const [isSchemeModalOpen, setIsSchemeModalOpen] = useState(false);
 
@@ -163,6 +159,8 @@ const handleHash = () => {
     setActiveTab('account_management');
   } else if (hash === 'taught_assessment') {
     setActiveTab('taught_assessment');
+  } else if (hash === 'remedial_hub') {
+    setActiveTab('remedial_hub');
   } else if (hash === 'academic_analytics') {
     setActiveTab('academic_analytics');
   } else if (hash === 'teacher_dashboard') {
@@ -238,7 +236,7 @@ const handleHash = () => {
             {activeTab === 'command_center' && (
               <CommandCenterTab
                 onLaunchLessonModal={() => setIsLessonModalOpen(true)}
-                onLaunchExamModal={() => setIsExamBuilderOpen(true)}
+                onLaunchExamModal={() => handleSelectTab('secure_examination')}
                 onNavigateTab={(tab) => handleSelectTab(tab as any)}
                 currentUser={currentUser}
               />
@@ -271,29 +269,16 @@ const handleHash = () => {
               />
             )}
 
-            {activeTab === 'question_bank' && (
-              <QuestionBankTab
-                onOpenExamBuilder={() => setIsExamBuilderOpen(true)}
-              />
+            {(activeTab === 'question_bank' || activeTab === 'secure_examination') && (
+              <AssessmentSuiteUnavailable />
             )}
 
-            {activeTab === 'secure_examination' && (
-              <SecureExaminationTab
-                currentUser={currentUser}
-                onOpenExamBuilder={() => setIsExamBuilderOpen(true)}
-              />
-            )}
+            {activeTab === 'remedial_hub' && <RemedialEvidenceWorkspace />}
 
             {activeTab === 'taught_assessment' && (
               <TaughtAssessmentTab currentUser={currentUser} />
             )}
 
-            {activeTab === 'remedial_hub' && (
-              <AdaptiveRemedialTab
-                remedials={MOCK_REMEDIALS}
-                currentUser={currentUser}
-              />
-            )}
 
             {activeTab === 'academic_records' && (
               <AcademicRecordsWorkspace />
@@ -368,13 +353,6 @@ const handleHash = () => {
           isOpen={Boolean(selectedSubjectDetail)}
           onClose={() => setSelectedSubjectDetail(null)}
           subject={selectedSubjectDetail}
-        />
-      )}
-
-      {isExamBuilderOpen && (
-        <ExamBuilderModal
-          isOpen={isExamBuilderOpen}
-          onClose={() => setIsExamBuilderOpen(false)}
         />
       )}
 
