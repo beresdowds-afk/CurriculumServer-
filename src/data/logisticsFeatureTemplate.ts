@@ -16,7 +16,20 @@ export const LOGISTICS_FEATURE_TEMPLATE = {
     'production.logistics_exeats',
     'production.logistics_dining_attendance',
     'production.logistics_trips',
-    'production.logistics_library_resources'
+    'production.logistics_library_resources',
+    'production.logistics_night_curfew',
+    'production.logistics_dietary_restrictions',
+    'production.logistics_workflow_requests',
+    'production.logistics_vehicle_maintenance',
+    'production.logistics_transport_incidents',
+    'production.logistics_gps_device_bindings',
+    'production.logistics_gps_telemetry',
+    'production.logistics_gps_events',
+    'production.logistics_library_storage_configurations',
+    'production.logistics_library_usage_events',
+    'production.notification_subscriptions',
+    'production.notification_outbox',
+    'production.notification_attempts'
   ],
   requiredPermissions: [
     'logistics.configuration.read',
@@ -26,17 +39,22 @@ export const LOGISTICS_FEATURE_TEMPLATE = {
     'logistics.hostel.manage',
     'logistics.exeat.approve',
     'logistics.dining.manage',
+    'logistics.dietary.read',
+    'logistics.dietary.manage',
+    'logistics.dietary.exception',
     'logistics.transport.manage',
-    'logistics.library.manage'
+    'logistics.gps.read',
+    'logistics.gps.manage',
+    'logistics.library.manage',
+    'logistics.library.storage.manage'
   ],
   apiCapabilities: [
     '/api/v1/logistics/configuration',
     '/api/v1/logistics/gate',
     '/api/v1/logistics/guardians',
     '/api/v1/logistics/pickup-passes',
-    '/api/v1/logistics/hostels',
+    '/api/v1/logistics/hostel',
     '/api/v1/logistics/exeats',
-    '/api/v1/logistics/roll-calls',
     '/api/v1/logistics/dining',
     '/api/v1/logistics/transport',
     '/api/v1/logistics/vehicles',
@@ -45,12 +63,32 @@ export const LOGISTICS_FEATURE_TEMPLATE = {
     '/api/v1/logistics/trips',
     '/api/v1/logistics/passengers',
     '/api/v1/logistics/library',
-    '/api/v1/logistics/audit'
+    '/api/v1/logistics/audit',
+    '/api/v1/logistics/transport/vehicles/:vehicleId/gps-device',
+    '/api/v1/logistics/transport/vehicles/:vehicleId/telemetry/sync'
   ],
   implementedApiCapabilities: [
     'GET /api/v1/logistics/configuration',
     'PATCH /api/v1/logistics/configuration',
     'GET /api/v1/logistics/occupancy',
+    'GET /api/v1/logistics/gate/events',
+    'GET /api/v1/logistics/hostel/allocations',
+    'GET /api/v1/logistics/hostel/register',
+    'POST /api/v1/logistics/hostel/register',
+    'POST /api/v1/logistics/hostel/assignments',
+    'POST /api/v1/logistics/dining/meals',
+    'GET /api/v1/logistics/dining/dietary-restrictions',
+    'POST /api/v1/logistics/dining/dietary-restrictions',
+    'GET /api/v1/logistics/transport/routes',
+    'POST /api/v1/logistics/transport/routes',
+    'GET /api/v1/logistics/transport/drivers',
+    'POST /api/v1/logistics/transport/drivers',
+    'GET /api/v1/logistics/transport/vehicles',
+    'POST /api/v1/logistics/transport/vehicles',
+    'GET /api/v1/logistics/transport/trips',
+    'POST /api/v1/logistics/transport/trips',
+    'POST /api/v1/logistics/transport/vehicles/:vehicleId/gps-device',
+    'POST /api/v1/logistics/transport/vehicles/:vehicleId/telemetry/sync',
     'POST /api/v1/logistics/pickup-passes',
     'POST /api/v1/logistics/gate/scans'
   ],
@@ -85,7 +123,7 @@ export const LOGISTICS_FEATURE_TEMPLATE = {
   featureEnablementRules: [
     'hostel_management requires boarding_school=true',
     'school_transport may use school_owned, outsourced, or mixed operators',
-    'gps_geofencing requires an explicitly configured provider and device policy',
+    'gps_geofencing requires a verified Traccar device and an active route with coordinate-backed stops',
     'library metadata may be enabled without enabling file uploads'
   ]
 } as const;
@@ -220,8 +258,8 @@ export function validateLogisticsFeatureConfiguration(
   if (value.transportOwnership === 'none' && value.capabilities?.school_transport) {
     errors.push('School transport requires an operator, including an outsourced operator.');
   }
-  if (value.capabilities?.gps_geofencing) {
-    errors.push('GPS geofencing cannot be enabled until a provider and device policy are provisioned.');
+  if (value.capabilities?.gps_geofencing && !value.capabilities.school_transport) {
+    errors.push('GPS geofencing requires school transport to be enabled.');
   }
   if (value.capabilities?.device_management) {
     errors.push('Device management cannot be enabled until its enrollment and authentication adapter is provisioned.');

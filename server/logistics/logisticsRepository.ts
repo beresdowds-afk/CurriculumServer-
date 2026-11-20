@@ -148,6 +148,21 @@ function parseDate(value: string, field: string): Date {
   return date;
 }
 
+function calendarDate(value: string, field: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+      !Number.isFinite(Date.parse(`${value}T00:00:00Z`)) ||
+      new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) {
+    throw new LogisticsError('INVALID_INPUT', `${field} must be a valid YYYY-MM-DD date.`);
+  }
+  return value;
+}
+
+function requiredText(value: string, field: string, max: number): string {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text || text.length > max) throw new LogisticsError('INVALID_INPUT', `${field} is invalid.`);
+  return text;
+}
+
 export class LogisticsRepository {
   constructor(private readonly pool: DatabasePool) {}
 
@@ -179,6 +194,46 @@ export class LogisticsRepository {
       const schoolId = await this.schoolContext(client, actor, capability);
       return operation(client, schoolId);
     });
+  }
+
+  private async workflow(
+    actor: AuthorizedPrincipal, capability: string, permission: string, operation: string,
+    key: string, payload: unknown,
+    action: (client: DatabaseClient, schoolId: string) => Promise<{ id: string }>
+  ): Promise<{ id: string; replayed: boolean }> {
+    const idempotencyKey = validateIdempotencyKey(key);
+    const fingerprint = keyedFingerprint(`logistics-workflow:${operation}`, [actor.userId, payload]);
+    try {
+      return await this.inSchool(actor, capability, [permission], async (client, schoolId) => {
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+          [`${actor.tenantId}:${schoolId}:${idempotencyKey}`]);
+        const previous = await client.query<{ operation: string; fingerprint: Buffer; result: { id: string } }>(
+          `SELECT operation, fingerprint, result FROM production.logistics_workflow_requests
+           WHERE tenant_id = $1 AND school_id = $2 AND idempotency_key = $3`,
+          [actor.tenantId, schoolId, idempotencyKey]
+        );
+        if (previous.rows[0]) {
+          const row = previous.rows[0];
+          if (row.operation !== operation || !row.fingerprint.equals(fingerprint)) {
+            throw new LogisticsError('CONFLICT', 'Idempotency key already used for a different request.');
+          }
+          return { ...row.result, replayed: true };
+        }
+        const result = await action(client, schoolId);
+        await client.query(
+          `INSERT INTO production.logistics_workflow_requests
+             (tenant_id, school_id, idempotency_key, operation, actor_user_id, fingerprint, result)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+          [actor.tenantId, schoolId, idempotencyKey, operation, actor.userId, fingerprint, JSON.stringify(result)]
+        );
+        return { ...result, replayed: false };
+      });
+    } catch (error) {
+      if (['23505', '23503', '23514'].includes((error as { code?: string }).code || '')) {
+        throw new LogisticsError('CONFLICT', 'The operation conflicts with an existing or invalid record.');
+      }
+      throw error;
+    }
   }
 
   private async guardianForStudent(
@@ -555,22 +610,32 @@ export class LogisticsRepository {
     studentId: string;
     idempotencyKey: string;
     overrideReason?: string;
+    dietaryFulfilled?: boolean;
+    dietaryExceptionReason?: string;
   }): Promise<{ id: string; mealId: string; studentId: string; servedAt: Date; replayed: boolean }> {
     const mealId = validateUuid(input.mealId);
     const studentId = validateUuid(input.studentId);
     const idempotencyKey = validateIdempotencyKey(input.idempotencyKey);
     const overrideReason = input.overrideReason?.trim() || null;
-    if (overrideReason && overrideReason.length > 500) {
+    const dietaryExceptionReason = input.dietaryExceptionReason?.trim() || null;
+    if ((overrideReason && overrideReason.length > 500) ||
+        (dietaryExceptionReason && dietaryExceptionReason.length > 500) ||
+        (input.dietaryFulfilled !== undefined && typeof input.dietaryFulfilled !== 'boolean') ||
+        (dietaryExceptionReason && input.dietaryFulfilled)) {
       throw new LogisticsError('INVALID_INPUT', 'Dining exception reason is too long.');
     }
+    const fingerprint = keyedFingerprint('dining-attendance-v1',
+      [actor.userId, mealId, studentId, overrideReason, input.dietaryFulfilled ?? false, dietaryExceptionReason]);
     return this.inSchool(
       actor, 'dining_management',
       ['logistics.dining.attendance.record', 'logistics.dining.manage'],
       async (client, schoolId) => {
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+          [`dining:${actor.tenantId}:${schoolId}:${idempotencyKey}`]);
         const replay = await client.query<{
-          id: string; meal_id: string; student_id: string; served_at: Date; served_by: string;
+          id: string; meal_id: string; student_id: string; served_at: Date; served_by: string; request_fingerprint: Buffer | null;
         }>(
-          `SELECT id, meal_id, student_id, served_at, served_by
+          `SELECT id, meal_id, student_id, served_at, served_by, request_fingerprint
            FROM production.logistics_dining_attendance
            WHERE tenant_id = $1 AND school_id = $2 AND idempotency_key = $3
            FOR UPDATE`,
@@ -579,7 +644,8 @@ export class LogisticsRepository {
         if (replay.rows[0]) {
           const previous = replay.rows[0];
           if (previous.meal_id !== mealId || previous.student_id !== studentId ||
-              previous.served_by !== actor.userId) {
+              previous.served_by !== actor.userId ||
+              (previous.request_fingerprint && !previous.request_fingerprint.equals(fingerprint))) {
             throw new LogisticsError('CONFLICT', 'This idempotency key was already used for a different attendance record.');
           }
           return {
@@ -605,6 +671,24 @@ export class LogisticsRepository {
         );
         if (!student.rowCount) throw new LogisticsError('NOT_FOUND', 'Active school student not found.');
 
+        const dietary = await client.query(
+          `SELECT 1 FROM production.logistics_dietary_restrictions
+           WHERE tenant_id=$1 AND school_id=$2 AND student_id=$3 AND revoked_at IS NULL
+             AND starts_on <= $4::date AND (ends_on IS NULL OR ends_on >= $4::date) LIMIT 1`,
+          [actor.tenantId, schoolId, studentId, service.service_date]);
+        if (dietary.rowCount && !input.dietaryFulfilled) {
+          if (!dietaryExceptionReason || !actor.hasPermission('logistics.dietary.exception')) {
+            throw new LogisticsError('FORBIDDEN', 'Dietary requirements must be fulfilled or an authorized exception recorded.');
+          }
+          await client.query(
+            `INSERT INTO production.logistics_dining_exceptions
+             (tenant_id,school_id,meal_id,student_id,exception_type,reason,idempotency_key,authorized_by)
+             VALUES ($1,$2,$3,$4,'dietary_exception',$5,$6,$7)`,
+            [actor.tenantId, schoolId, mealId, studentId, dietaryExceptionReason,
+              `dietary:${keyedFingerprint('dining-exception-key-v1', idempotencyKey).toString('hex')}`, actor.userId]);
+        } else if (dietaryExceptionReason) {
+          throw new LogisticsError('INVALID_INPUT', 'No dietary exception is needed.');
+        }
         const entitlement = await client.query(
           `SELECT 1 FROM production.logistics_dining_entitlements
            WHERE tenant_id = $1 AND school_id = $2 AND student_id = $3
@@ -634,13 +718,13 @@ export class LogisticsRepository {
         if (duplicate.rowCount) throw new LogisticsError('CONFLICT', 'Student attendance is already recorded for this meal.');
         const result = await client.query<{ id: string; served_at: Date }>(
           `INSERT INTO production.logistics_dining_attendance
-             (tenant_id, school_id, meal_id, student_id, served_by, diet_fulfilled, idempotency_key)
-           VALUES ($1, $2, $3, $4, $5, false, $6)
+             (tenant_id, school_id, meal_id, student_id, served_by, diet_fulfilled, idempotency_key, request_fingerprint)
+           VALUES ($1, $2, $3, $4, $5, $7, $6, $8)
            RETURNING id, served_at`,
-          [actor.tenantId, schoolId, mealId, studentId, actor.userId, idempotencyKey]
+          [actor.tenantId, schoolId, mealId, studentId, actor.userId, idempotencyKey, !!input.dietaryFulfilled, fingerprint]
         );
         await this.audit(client, actor, schoolId, 'dining_attendance_recorded', 'dining_attendance', result.rows[0].id, {
-          mealId, studentId, exception: !!overrideReason
+          mealId, studentId, exception: !!overrideReason, dietaryException: !!dietaryExceptionReason
         });
         return {
           id: result.rows[0].id, mealId, studentId, servedAt: result.rows[0].served_at, replayed: false
@@ -664,6 +748,8 @@ export class LogisticsRepository {
     return this.inSchool(
       actor, 'school_transport', ['logistics.transport.passengers.manage', 'logistics.transport.manage'],
       async (client, schoolId) => {
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+          [`passenger:${actor.tenantId}:${schoolId}:${idempotencyKey}`]);
         const replay = await client.query<{
           id: string; trip_id: string; student_id: string; event_type: string;
           recorded_by: string; occurred_at: Date;
@@ -807,7 +893,7 @@ export class LogisticsRepository {
         if (trip.status !== 'scheduled') throw new LogisticsError('CONFLICT', 'Only scheduled trips can be assigned.');
         const route = await client.query(
           `SELECT 1 FROM production.logistics_routes
-           WHERE tenant_id = $1 AND school_id = $2 AND id = $3 AND status = 'active'`,
+           WHERE tenant_id = $1 AND school_id = $2 AND id = $3 AND status = 'active' FOR UPDATE`,
           [actor.tenantId, schoolId, trip.route_id]
         );
         if (!route.rowCount) throw new LogisticsError('CONFLICT', 'Trip route is not active.');
@@ -823,6 +909,10 @@ export class LogisticsRepository {
           `SELECT capacity FROM production.logistics_vehicles
            WHERE tenant_id = $1 AND school_id = $2 AND id = $3
              AND approved = true AND status = 'active' AND inspection_valid_until >= $4::date
+             AND (insurance_valid_until IS NULL OR insurance_valid_until >= $4::date)
+             AND NOT EXISTS (SELECT 1 FROM production.logistics_vehicle_maintenance maintenance
+               WHERE maintenance.tenant_id = logistics_vehicles.tenant_id AND maintenance.school_id = logistics_vehicles.school_id
+                 AND maintenance.vehicle_id = logistics_vehicles.id AND maintenance.completed_at IS NULL AND maintenance.due_on <= $4::date)
            FOR UPDATE`,
           [actor.tenantId, schoolId, vehicleId, trip.trip_date]
         );
@@ -840,7 +930,7 @@ export class LogisticsRepository {
           `SELECT 1 FROM production.logistics_trips
            WHERE tenant_id = $1 AND school_id = $2 AND trip_date = $3::date
              AND id <> $4
-             AND status IN ('vehicle_assigned', 'started', 'in_progress', 'emergency')
+             AND status IN ('driver_assigned', 'vehicle_assigned', 'started', 'in_progress', 'emergency')
              AND (driver_id = $5 OR vehicle_id = $6)
            LIMIT 1`,
           [actor.tenantId, schoolId, trip.trip_date, tripId, driverId, vehicleId]
@@ -883,6 +973,14 @@ export class LogisticsRepository {
         if (trip.status !== 'vehicle_assigned' || !trip.driver_id || !trip.vehicle_id) {
           throw new LogisticsError('CONFLICT', 'Trip requires an eligible driver and vehicle assignment before starting.');
         }
+        const route = await client.query(
+          `SELECT 1 FROM production.logistics_routes WHERE tenant_id=$1 AND school_id=$2 AND id=$3 AND status='active' FOR UPDATE`,
+          [actor.tenantId, schoolId, trip.route_id]);
+        if (!route.rowCount) throw new LogisticsError('CONFLICT', 'Trip route is not active.');
+        await client.query(`SELECT id FROM production.logistics_drivers WHERE tenant_id=$1 AND school_id=$2 AND id=$3 FOR UPDATE`,
+          [actor.tenantId, schoolId, trip.driver_id]);
+        await client.query(`SELECT id FROM production.logistics_vehicles WHERE tenant_id=$1 AND school_id=$2 AND id=$3 FOR UPDATE`,
+          [actor.tenantId, schoolId, trip.vehicle_id]);
         const authorized = await client.query(
           `SELECT 1
            FROM production.logistics_drivers driver
@@ -896,11 +994,22 @@ export class LogisticsRepository {
              AND driver.licence_valid_until >= $6::date
              AND vehicle.approved = true AND vehicle.status = 'active'
              AND vehicle.inspection_valid_until >= $6::date
-             AND route.status = 'active'
-           FOR UPDATE OF driver, vehicle, route`,
+             AND (vehicle.insurance_valid_until IS NULL OR vehicle.insurance_valid_until >= $6::date)
+             AND NOT EXISTS (SELECT 1 FROM production.logistics_vehicle_maintenance maintenance
+               WHERE maintenance.tenant_id=vehicle.tenant_id AND maintenance.school_id=vehicle.school_id
+                 AND maintenance.vehicle_id=vehicle.id AND maintenance.completed_at IS NULL AND maintenance.due_on <= $6::date)
+             AND route.status = 'active'`,
           [actor.tenantId, schoolId, trip.driver_id, trip.vehicle_id, trip.route_id, trip.trip_date]
         );
         if (!authorized.rowCount) throw new LogisticsError('CONFLICT', 'Assigned trip resources are no longer authorized.');
+        const capacity = await client.query(
+          `SELECT 1 FROM production.logistics_vehicles vehicle
+           WHERE vehicle.tenant_id=$1 AND vehicle.school_id=$2 AND vehicle.id=$3 AND vehicle.capacity >=
+             (SELECT count(*) FROM production.logistics_student_routes sr
+              WHERE sr.tenant_id=$1 AND sr.school_id=$2 AND sr.route_id=$4
+                AND sr.starts_at <= $5::date AND (sr.ends_at IS NULL OR sr.ends_at >= $5::date))`,
+          [actor.tenantId, schoolId, trip.vehicle_id, trip.route_id, trip.trip_date]);
+        if (!capacity.rowCount) throw new LogisticsError('CONFLICT', 'Vehicle capacity is below route subscriptions.');
         const update = await client.query<{ started_at: Date }>(
           `UPDATE production.logistics_trips
            SET status = 'started', started_at = now()
@@ -1781,6 +1890,59 @@ export class LogisticsRepository {
     };
   }
 
+  async listGateEvents(actor: AuthorizedPrincipal, input: {
+    page?: number;
+    pageSize?: number;
+    direction?: 'entry' | 'exit';
+    outcome?: 'authorized' | 'denied';
+    gateLocationId?: string;
+  }): Promise<{ page: number; pageSize: number; total: number; data: Record<string, unknown>[] }> {
+    const pagination = parsePage(input.page, input.pageSize);
+    if (input.direction && input.direction !== 'entry' && input.direction !== 'exit') {
+      throw new LogisticsError('INVALID_INPUT', 'Gate-event direction must be entry or exit.');
+    }
+    if (input.outcome && input.outcome !== 'authorized' && input.outcome !== 'denied') {
+      throw new LogisticsError('INVALID_INPUT', 'Gate-event outcome must be authorized or denied.');
+    }
+    const gateLocationId = input.gateLocationId === undefined ? null : validateUuid(input.gateLocationId);
+    return this.inSchool(
+      actor, 'gate_security', ['logistics.gate.manage'],
+      async (client, schoolId) => {
+        const values = [actor.tenantId, schoolId, input.direction ?? null, input.outcome ?? null, gateLocationId];
+        const where = `WHERE gate_event.tenant_id = $1 AND gate_event.school_id = $2
+          AND ($3::text IS NULL OR gate_event.direction = $3)
+          AND ($4::text IS NULL OR gate_event.outcome = $4)
+          AND ($5::uuid IS NULL OR gate_event.gate_location_id = $5)`;
+        const count = await client.query<{ total: string }>(
+          `SELECT count(*)::text AS total
+           FROM production.logistics_gate_events gate_event ${where}`,
+          values
+        );
+        const result = await client.query<Record<string, unknown>>(
+          `SELECT gate_event.id AS "eventId", gate_event.gate_location_id AS "gateLocationId",
+                  gate.name AS "gateName", gate_event.student_id AS "studentId",
+                  gate_event.actor_user_id AS "operatorId",
+                  gate_event.direction, gate_event.outcome, gate_event.reason_code AS reason,
+                  gate_event.occurred_at AS "occurredAt"
+           FROM production.logistics_gate_events gate_event
+           JOIN production.logistics_gate_locations gate
+             ON gate.tenant_id = gate_event.tenant_id AND gate.school_id = gate_event.school_id
+            AND gate.id = gate_event.gate_location_id
+           ${where}
+           ORDER BY gate_event.occurred_at DESC, gate_event.id DESC
+           LIMIT $6 OFFSET $7`,
+          [...values, pagination.pageSize, pagination.offset]
+        );
+        return {
+          page: pagination.page,
+          pageSize: pagination.pageSize,
+          total: Number(count.rows[0]?.total || 0),
+          data: result.rows
+        };
+      }
+    );
+  }
+
   private async assertCanManageBuilding(
     client: DatabaseClient,
     actor: AuthorizedPrincipal,
@@ -2043,6 +2205,572 @@ export class LogisticsRepository {
           [actor.tenantId, schoolId, studentId, input.status ?? null, pageSize, offset]
         );
         return { items: result.rows, page, pageSize };
+      });
+  }
+
+  async assignHostelStaff(actor: AuthorizedPrincipal, input: {
+    buildingId: string; userId: string; role: 'housemaster' | 'assistant'; idempotencyKey: string;
+  }) {
+    const buildingId = validateUuid(input.buildingId);
+    const userId = validateUuid(input.userId);
+    if (!['housemaster', 'assistant'].includes(input.role)) throw new LogisticsError('INVALID_INPUT');
+    if (!actor.roles.some(role => role === 'principal' || role === 'tenant_admin')) throw new LogisticsError('FORBIDDEN');
+    return this.workflow(actor, 'hostel_management', 'logistics.hostel.manage', 'assign_hostel_staff', input.idempotencyKey,
+      [buildingId, userId, input.role], async (client, schoolId) => {
+        const building = await client.query(
+          `SELECT id FROM production.logistics_hostel_buildings
+           WHERE tenant_id=$1 AND school_id=$2 AND id=$3 AND status='active' FOR UPDATE`,
+          [actor.tenantId, schoolId, buildingId]);
+        if (!building.rowCount) throw new LogisticsError('NOT_FOUND');
+        const member = await client.query(
+          `SELECT 1 FROM production.memberships WHERE tenant_id=$1 AND user_id=$2 AND status='active'`,
+          [actor.tenantId, userId]);
+        if (!member.rowCount) throw new LogisticsError('NOT_FOUND', 'Active membership not found.');
+        const existing = await client.query(
+          `SELECT 1 FROM production.logistics_hostel_assignments
+           WHERE tenant_id=$1 AND school_id=$2 AND building_id=$3 AND user_id=$4 AND assignment_role=$5
+             AND revoked_at IS NULL AND (ends_at IS NULL OR ends_at > now())`,
+          [actor.tenantId, schoolId, buildingId, userId, input.role]);
+        if (existing.rowCount) throw new LogisticsError('CONFLICT', 'Assignment already active.');
+        const result = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_hostel_assignments
+           (tenant_id, school_id, building_id, user_id, assignment_role, assigned_by)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+          [actor.tenantId, schoolId, buildingId, userId, input.role, actor.userId]);
+        await this.audit(client, actor, schoolId, 'hostel_staff_assigned', 'hostel_assignment', result.rows[0].id, { buildingId, userId, role: input.role });
+        return result.rows[0];
+      });
+  }
+
+  async revokeHostelStaff(actor: AuthorizedPrincipal, input: { assignmentId: string; idempotencyKey: string }) {
+    const id = validateUuid(input.assignmentId);
+    if (!actor.roles.some(role => role === 'principal' || role === 'tenant_admin')) throw new LogisticsError('FORBIDDEN');
+    return this.workflow(actor, 'hostel_management', 'logistics.hostel.manage', 'revoke_hostel_staff', input.idempotencyKey,
+      [id], async (client, schoolId) => {
+        const result = await client.query<{ id: string }>(
+          `UPDATE production.logistics_hostel_assignments SET revoked_at=now()
+           WHERE tenant_id=$1 AND school_id=$2 AND id=$3 AND revoked_at IS NULL RETURNING id`,
+          [actor.tenantId, schoolId, id]);
+        if (!result.rowCount) throw new LogisticsError('NOT_FOUND');
+        await this.audit(client, actor, schoolId, 'hostel_staff_revoked', 'hostel_assignment', id);
+        return { id };
+      });
+  }
+
+  async recordBoardingRegister(actor: AuthorizedPrincipal, input: {
+    kind: 'evening' | 'curfew'; studentId: string; serviceDate: string;
+    status: 'present' | 'absent' | 'excused' | 'unaccounted'; idempotencyKey: string;
+  }) {
+    const studentId = validateUuid(input.studentId);
+    const date = calendarDate(input.serviceDate, 'serviceDate');
+    if (!['evening', 'curfew'].includes(input.kind) ||
+        !['present', 'absent', 'excused', 'unaccounted'].includes(input.status)) throw new LogisticsError('INVALID_INPUT');
+    const table = input.kind === 'evening' ? 'logistics_roll_calls' : 'logistics_night_curfew';
+    return this.workflow(actor, 'hostel_management', 'logistics.hostel.manage', 'boarding_register', input.idempotencyKey,
+      [input.kind, studentId, date, input.status], async (client, schoolId) => {
+        const allocation = await client.query<{ building_id: string }>(
+          `SELECT room.building_id FROM production.logistics_bed_allocations allocation
+           JOIN production.logistics_hostel_beds bed ON bed.tenant_id=allocation.tenant_id AND bed.school_id=allocation.school_id AND bed.id=allocation.bed_id
+           JOIN production.logistics_hostel_rooms room ON room.tenant_id=bed.tenant_id AND room.school_id=bed.school_id AND room.id=bed.room_id
+           WHERE allocation.tenant_id=$1 AND allocation.school_id=$2 AND allocation.student_id=$3 AND allocation.ended_at IS NULL
+           FOR UPDATE OF allocation`, [actor.tenantId, schoolId, studentId]);
+        if (!allocation.rowCount) throw new LogisticsError('NOT_FOUND', 'Active hostel allocation not found.');
+        await this.assertCanManageBuilding(client, actor, schoolId, allocation.rows[0].building_id);
+        const result = await client.query<{ id: string }>(
+          `INSERT INTO production.${table} (tenant_id, school_id, student_id, service_date, status, recorded_by)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+          [actor.tenantId, schoolId, studentId, date, input.status, actor.userId]);
+        await this.audit(client, actor, schoolId, 'boarding_register_recorded', table, result.rows[0].id, { studentId, kind: input.kind, status: input.status, serviceDate: date });
+        return result.rows[0];
+      });
+  }
+
+  async listBoardingRegister(actor: AuthorizedPrincipal, input: {
+    buildingId: string; kind: 'evening' | 'curfew'; serviceDate: string;
+  }): Promise<Record<string, unknown>[]> {
+    const buildingId = validateUuid(input.buildingId);
+    const date = calendarDate(input.serviceDate, 'serviceDate');
+    if (!['evening', 'curfew'].includes(input.kind)) throw new LogisticsError('INVALID_INPUT');
+    const table = input.kind === 'evening' ? 'logistics_roll_calls' : 'logistics_night_curfew';
+    return this.inSchool(actor, 'hostel_management', ['logistics.hostel.read', 'logistics.hostel.manage'], async (client, schoolId) => {
+      await this.assertCanManageBuilding(client, actor, schoolId, buildingId);
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT allocation.student_id AS "studentId", register.id, COALESCE(register.status, 'unaccounted') AS status,
+                register.recorded_at AS "recordedAt"
+         FROM production.logistics_bed_allocations allocation
+         JOIN production.logistics_hostel_beds bed ON bed.tenant_id=allocation.tenant_id AND bed.school_id=allocation.school_id AND bed.id=allocation.bed_id
+         JOIN production.logistics_hostel_rooms room ON room.tenant_id=bed.tenant_id AND room.school_id=bed.school_id AND room.id=bed.room_id
+         LEFT JOIN production.${table} register ON register.tenant_id=allocation.tenant_id AND register.school_id=allocation.school_id
+           AND register.student_id=allocation.student_id AND register.service_date=$4::date
+         WHERE allocation.tenant_id=$1 AND allocation.school_id=$2 AND room.building_id=$3 AND allocation.ended_at IS NULL
+         ORDER BY allocation.student_id`, [actor.tenantId, schoolId, buildingId, date]);
+      return result.rows;
+    });
+  }
+
+  async scheduleMeal(actor: AuthorizedPrincipal, input: {
+    diningHall: string; serviceDate: string; servicePeriod: string; menu: unknown[];
+    startsAt: string; endsAt: string; idempotencyKey: string;
+  }) {
+    const hall = requiredText(input.diningHall, 'diningHall', 200);
+    const date = calendarDate(input.serviceDate, 'serviceDate');
+    const period = requiredText(input.servicePeriod, 'servicePeriod', 100);
+    const starts = parseDate(input.startsAt, 'startsAt');
+    const ends = parseDate(input.endsAt, 'endsAt');
+    if (!Array.isArray(input.menu) || ends <= starts) throw new LogisticsError('INVALID_INPUT');
+    return this.workflow(actor, 'dining_management', 'logistics.dining.manage', 'schedule_meal', input.idempotencyKey,
+      [hall, date, period, input.menu, starts.toISOString(), ends.toISOString()], async (client, schoolId) => {
+        const result = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_dining_meals
+           (tenant_id,school_id,dining_hall,service_date,service_period,menu,starts_at,ends_at)
+           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8) RETURNING id`,
+          [actor.tenantId, schoolId, hall, date, period, JSON.stringify(input.menu), starts, ends]);
+        await this.audit(client, actor, schoolId, 'dining_meal_scheduled', 'dining_meal', result.rows[0].id);
+        return result.rows[0];
+      });
+  }
+
+  async authorizeDietaryRestriction(actor: AuthorizedPrincipal, input: {
+    studentId: string; restriction: string; startsOn: string; endsOn?: string; idempotencyKey: string;
+  }) {
+    const studentId = validateUuid(input.studentId);
+    const restriction = requiredText(input.restriction, 'restriction', 1000);
+    const starts = calendarDate(input.startsOn, 'startsOn');
+    const ends = input.endsOn ? calendarDate(input.endsOn, 'endsOn') : null;
+    if (ends && ends < starts) throw new LogisticsError('INVALID_INPUT');
+    return this.workflow(actor, 'dining_management', 'logistics.dietary.manage', 'authorize_dietary', input.idempotencyKey,
+      [studentId, restriction, starts, ends], async (client, schoolId) => {
+        const student = await client.query(
+          `SELECT id FROM production.students WHERE tenant_id=$1 AND school_id=$2 AND id=$3
+           AND lifecycle_status IN ('admitted','active') FOR UPDATE`, [actor.tenantId, schoolId, studentId]);
+        if (!student.rowCount) throw new LogisticsError('NOT_FOUND');
+        const result = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_dietary_restrictions
+           (tenant_id,school_id,student_id,restriction,starts_on,ends_on,authorized_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+          [actor.tenantId, schoolId, studentId, restriction, starts, ends, actor.userId]);
+        await this.audit(client, actor, schoolId, 'dietary_restriction_authorized', 'dietary_restriction', result.rows[0].id, { studentId });
+        return result.rows[0];
+      });
+  }
+
+  async revokeDietaryRestriction(actor: AuthorizedPrincipal, input: { restrictionId: string; idempotencyKey: string }) {
+    const id = validateUuid(input.restrictionId);
+    return this.workflow(actor, 'dining_management', 'logistics.dietary.manage', 'revoke_dietary', input.idempotencyKey,
+      [id], async (client, schoolId) => {
+        const existing = await client.query<{ student_id: string }>(
+          `SELECT student_id FROM production.logistics_dietary_restrictions WHERE tenant_id=$1 AND school_id=$2 AND id=$3 AND revoked_at IS NULL`,
+          [actor.tenantId, schoolId, id]);
+        if (!existing.rowCount) throw new LogisticsError('NOT_FOUND');
+        await client.query(`SELECT id FROM production.students WHERE tenant_id=$1 AND school_id=$2 AND id=$3 FOR UPDATE`,
+          [actor.tenantId, schoolId, existing.rows[0].student_id]);
+        const result = await client.query<{ id: string }>(
+          `UPDATE production.logistics_dietary_restrictions SET revoked_at=now(), revoked_by=$4
+           WHERE tenant_id=$1 AND school_id=$2 AND id=$3 AND revoked_at IS NULL RETURNING id`,
+          [actor.tenantId, schoolId, id, actor.userId]);
+        if (!result.rowCount) throw new LogisticsError('NOT_FOUND');
+        await this.audit(client, actor, schoolId, 'dietary_restriction_revoked', 'dietary_restriction', id);
+        return { id };
+      });
+  }
+
+  async listDietaryRestrictions(actor: AuthorizedPrincipal, studentIdInput: string): Promise<Record<string, unknown>[]> {
+    const studentId = validateUuid(studentIdInput);
+    return this.inSchool(actor, 'dining_management', ['logistics.dietary.read'], async (client, schoolId) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT id, restriction, starts_on AS "startsOn", ends_on AS "endsOn", revoked_at AS "revokedAt"
+         FROM production.logistics_dietary_restrictions WHERE tenant_id=$1 AND school_id=$2 AND student_id=$3
+         ORDER BY created_at DESC`, [actor.tenantId, schoolId, studentId]);
+      await this.audit(client, actor, schoolId, 'dietary_restrictions_viewed', 'student', studentId);
+      return result.rows;
+    });
+  }
+
+  async createTransportRoute(actor: AuthorizedPrincipal, input: {
+    name: string;
+    stops: Array<string | {
+      name: string;
+      latitude?: number;
+      longitude?: number;
+      geofenceRadiusMeters?: number;
+    }>;
+    idempotencyKey: string;
+  }) {
+    const name = requiredText(input.name, 'name', 200);
+    if (!Array.isArray(input.stops) || !input.stops.length || input.stops.length > 100) throw new LogisticsError('INVALID_INPUT');
+    const stops = input.stops.map(stop => {
+      if (typeof stop === 'string') {
+        return { name: requiredText(stop, 'stop', 200), latitude: null, longitude: null, radius: 150 };
+      }
+      if (!stop || typeof stop !== 'object' || Array.isArray(stop)) throw new LogisticsError('INVALID_INPUT');
+      const stopName = requiredText(stop.name, 'stop', 200);
+      const hasLatitude = stop.latitude !== undefined;
+      const hasLongitude = stop.longitude !== undefined;
+      const latitude = stop.latitude ?? null;
+      const longitude = stop.longitude ?? null;
+      const radius = stop.geofenceRadiusMeters ?? 150;
+      if (hasLatitude !== hasLongitude ||
+          (latitude !== null && (typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90)) ||
+          (longitude !== null && (typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180)) ||
+          !Number.isInteger(radius) || radius < 25 || radius > 2000) {
+        throw new LogisticsError('INVALID_INPUT');
+      }
+      return { name: stopName, latitude, longitude, radius };
+    });
+    return this.workflow(actor, 'school_transport', 'logistics.transport.manage', 'create_transport_route', input.idempotencyKey,
+      [name, stops], async (client, schoolId) => {
+        const result = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_routes (tenant_id,school_id,route_name) VALUES ($1,$2,$3) RETURNING id`,
+          [actor.tenantId, schoolId, name]);
+        for (const [index, stop] of stops.entries()) {
+          await client.query(
+            `INSERT INTO production.logistics_route_stops
+             (tenant_id,school_id,route_id,stop_order,stop_name,latitude,longitude,geofence_radius_meters)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [actor.tenantId, schoolId, result.rows[0].id, index + 1,
+              stop.name, stop.latitude, stop.longitude, stop.radius]);
+        }
+        await this.audit(client, actor, schoolId, 'transport_route_created', 'route', result.rows[0].id);
+        return result.rows[0];
+      });
+  }
+
+  async registerTransportDriver(actor: AuthorizedPrincipal, input: {
+    fullName: string; licenceNumber: string; licenceValidUntil: string; qualified: boolean;
+    userId?: string; idempotencyKey: string;
+  }) {
+    const name = requiredText(input.fullName, 'fullName', 200);
+    const licence = requiredText(input.licenceNumber, 'licenceNumber', 200);
+    const valid = calendarDate(input.licenceValidUntil, 'licenceValidUntil');
+    const userId = input.userId ? validateUuid(input.userId) : null;
+    if (typeof input.qualified !== 'boolean') throw new LogisticsError('INVALID_INPUT');
+    const licenceHash = keyedFingerprint('transport-licence-v1', licence);
+    return this.workflow(actor, 'school_transport', 'logistics.transport.manage', 'register_driver', input.idempotencyKey,
+      [name, licence, valid, input.qualified, userId], async (client, schoolId) => {
+        if (userId) {
+          const member = await client.query(`SELECT 1 FROM production.memberships WHERE tenant_id=$1 AND user_id=$2 AND status='active'`, [actor.tenantId, userId]);
+          if (!member.rowCount) throw new LogisticsError('NOT_FOUND', 'Active membership not found.');
+        }
+        const result = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_drivers (tenant_id,school_id,user_id,full_name,licence_hash,licence_valid_until,qualified)
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+          [actor.tenantId, schoolId, userId, name, licenceHash, valid, input.qualified]);
+        await this.audit(client, actor, schoolId, 'transport_driver_registered', 'driver', result.rows[0].id);
+        return result.rows[0];
+      });
+  }
+
+  async registerTransportVehicle(actor: AuthorizedPrincipal, input: {
+    registration: string; operatorType: 'school_owned' | 'outsourced'; capacity: number;
+    approved: boolean; inspectionValidUntil: string; insuranceValidUntil: string; idempotencyKey: string;
+  }) {
+    const registration = requiredText(input.registration, 'registration', 100);
+    const inspection = calendarDate(input.inspectionValidUntil, 'inspectionValidUntil');
+    const insurance = calendarDate(input.insuranceValidUntil, 'insuranceValidUntil');
+    if (!['school_owned', 'outsourced'].includes(input.operatorType) || !Number.isInteger(input.capacity) ||
+        input.capacity < 1 || input.capacity > 1000 || typeof input.approved !== 'boolean') throw new LogisticsError('INVALID_INPUT');
+    return this.workflow(actor, 'school_transport', 'logistics.transport.manage', 'register_vehicle', input.idempotencyKey,
+      [registration, input.operatorType, input.capacity, input.approved, inspection, insurance], async (client, schoolId) => {
+        const result = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_vehicles
+           (tenant_id,school_id,registration,operator_type,capacity,approved,inspection_valid_until,insurance_valid_until)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+          [actor.tenantId, schoolId, registration, input.operatorType, input.capacity, input.approved, inspection, insurance]);
+        await this.audit(client, actor, schoolId, 'transport_vehicle_registered', 'vehicle', result.rows[0].id);
+        return result.rows[0];
+      });
+  }
+
+  async scheduleVehicleMaintenance(actor: AuthorizedPrincipal, input: {
+    vehicleId: string; description: string; dueOn: string; idempotencyKey: string;
+  }) {
+    const vehicleId = validateUuid(input.vehicleId);
+    const description = requiredText(input.description, 'description', 500);
+    const due = calendarDate(input.dueOn, 'dueOn');
+    return this.workflow(actor, 'school_transport', 'logistics.transport.manage', 'schedule_maintenance', input.idempotencyKey,
+      [vehicleId, description, due], async (client, schoolId) => {
+        const vehicle = await client.query(`SELECT id FROM production.logistics_vehicles WHERE tenant_id=$1 AND school_id=$2 AND id=$3 FOR UPDATE`, [actor.tenantId, schoolId, vehicleId]);
+        if (!vehicle.rowCount) throw new LogisticsError('NOT_FOUND');
+        const result = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_vehicle_maintenance (tenant_id,school_id,vehicle_id,description,due_on,scheduled_by)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [actor.tenantId, schoolId, vehicleId, description, due, actor.userId]);
+        await this.audit(client, actor, schoolId, 'transport_maintenance_scheduled', 'vehicle_maintenance', result.rows[0].id, { vehicleId });
+        return result.rows[0];
+      });
+  }
+
+  async updateTransportVehicleCompliance(actor: AuthorizedPrincipal, input: {
+    vehicleId: string; inspectionValidUntil: string; insuranceValidUntil: string;
+    approved: boolean; status: 'active' | 'suspended' | 'retired'; idempotencyKey: string;
+  }) {
+    const id = validateUuid(input.vehicleId);
+    const inspection = calendarDate(input.inspectionValidUntil, 'inspectionValidUntil');
+    const insurance = calendarDate(input.insuranceValidUntil, 'insuranceValidUntil');
+    if (typeof input.approved !== 'boolean' || !['active', 'suspended', 'retired'].includes(input.status)) throw new LogisticsError('INVALID_INPUT');
+    return this.workflow(actor, 'school_transport', 'logistics.transport.manage', 'update_vehicle_compliance', input.idempotencyKey,
+      [id, inspection, insurance, input.approved, input.status], async (client, schoolId) => {
+        const result = await client.query(
+          `UPDATE production.logistics_vehicles SET inspection_valid_until=$4,insurance_valid_until=$5,approved=$6,status=$7
+           WHERE tenant_id=$1 AND school_id=$2 AND id=$3 RETURNING id`,
+          [actor.tenantId, schoolId, id, inspection, insurance, input.approved, input.status]);
+        if (!result.rowCount) throw new LogisticsError('NOT_FOUND');
+        await this.audit(client, actor, schoolId, 'transport_vehicle_compliance_updated', 'vehicle', id);
+        return { id };
+      });
+  }
+
+  async updateTransportDriverQualification(actor: AuthorizedPrincipal, input: {
+    driverId: string; licenceValidUntil: string; qualified: boolean;
+    status: 'active' | 'suspended' | 'retired'; idempotencyKey: string;
+  }) {
+    const id = validateUuid(input.driverId);
+    const valid = calendarDate(input.licenceValidUntil, 'licenceValidUntil');
+    if (typeof input.qualified !== 'boolean' || !['active', 'suspended', 'retired'].includes(input.status)) throw new LogisticsError('INVALID_INPUT');
+    return this.workflow(actor, 'school_transport', 'logistics.transport.manage', 'update_driver_qualification', input.idempotencyKey,
+      [id, valid, input.qualified, input.status], async (client, schoolId) => {
+        const result = await client.query(
+          `UPDATE production.logistics_drivers SET licence_valid_until=$4,qualified=$5,status=$6
+           WHERE tenant_id=$1 AND school_id=$2 AND id=$3 RETURNING id`,
+          [actor.tenantId, schoolId, id, valid, input.qualified, input.status]);
+        if (!result.rowCount) throw new LogisticsError('NOT_FOUND');
+        await this.audit(client, actor, schoolId, 'transport_driver_qualification_updated', 'driver', id);
+        return { id };
+      });
+  }
+
+  async listTransportVehicles(actor: AuthorizedPrincipal): Promise<Record<string, unknown>[]> {
+    return this.inSchool(actor, 'school_transport', ['logistics.transport.read', 'logistics.transport.manage'], async (client, schoolId) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT id, registration, operator_type AS "operatorType", capacity, approved, status,
+          inspection_valid_until AS "inspectionValidUntil", insurance_valid_until AS "insuranceValidUntil"
+         FROM production.logistics_vehicles WHERE tenant_id=$1 AND school_id=$2 ORDER BY registration,id LIMIT 100`,
+        [actor.tenantId, schoolId]);
+      return result.rows;
+    });
+  }
+
+  async listTransportDrivers(actor: AuthorizedPrincipal): Promise<Record<string, unknown>[]> {
+    return this.inSchool(actor, 'school_transport', ['logistics.transport.read', 'logistics.transport.manage'], async (client, schoolId) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT id, user_id AS "userId", full_name AS "fullName", licence_valid_until AS "licenceValidUntil", qualified, status
+         FROM production.logistics_drivers WHERE tenant_id=$1 AND school_id=$2 ORDER BY full_name,id LIMIT 100`,
+        [actor.tenantId, schoolId]);
+      return result.rows;
+    });
+  }
+
+  async completeVehicleMaintenance(actor: AuthorizedPrincipal, input: { maintenanceId: string; idempotencyKey: string }) {
+    const id = validateUuid(input.maintenanceId);
+    return this.workflow(actor, 'school_transport', 'logistics.transport.manage', 'complete_maintenance', input.idempotencyKey,
+      [id], async (client, schoolId) => {
+        const result = await client.query<{ id: string }>(
+          `UPDATE production.logistics_vehicle_maintenance SET completed_at=now(),completed_by=$4
+           WHERE tenant_id=$1 AND school_id=$2 AND id=$3 AND completed_at IS NULL RETURNING id`,
+          [actor.tenantId, schoolId, id, actor.userId]);
+        if (!result.rowCount) throw new LogisticsError('NOT_FOUND');
+        await this.audit(client, actor, schoolId, 'transport_maintenance_completed', 'vehicle_maintenance', id);
+        return { id };
+      });
+  }
+
+  async subscribeStudentRoute(actor: AuthorizedPrincipal, input: {
+    studentId: string; routeId: string; pickupStopId: string; dropoffStopId: string;
+    startsOn: string; endsOn?: string; idempotencyKey: string;
+  }) {
+    const student = validateUuid(input.studentId);
+    const route = validateUuid(input.routeId);
+    const pickup = validateUuid(input.pickupStopId);
+    const dropoff = validateUuid(input.dropoffStopId);
+    const starts = calendarDate(input.startsOn, 'startsOn');
+    const ends = input.endsOn ? calendarDate(input.endsOn, 'endsOn') : null;
+    if (ends && ends < starts) throw new LogisticsError('INVALID_INPUT');
+    return this.workflow(actor, 'school_transport', 'logistics.transport.manage', 'subscribe_student_route', input.idempotencyKey,
+      [student, route, pickup, dropoff, starts, ends], async (client, schoolId) => {
+        const routeRow = await client.query(`SELECT id FROM production.logistics_routes WHERE tenant_id=$1 AND school_id=$2 AND id=$3 AND status='active' FOR UPDATE`, [actor.tenantId, schoolId, route]);
+        if (!routeRow.rowCount) throw new LogisticsError('NOT_FOUND', 'Active route not found.');
+        const studentRow = await client.query(`SELECT id FROM production.students WHERE tenant_id=$1 AND school_id=$2 AND id=$3 AND lifecycle_status IN ('admitted','active') FOR UPDATE`, [actor.tenantId, schoolId, student]);
+        if (!studentRow.rowCount) throw new LogisticsError('NOT_FOUND', 'Active student not found.');
+        const stopRows = await client.query(
+          `SELECT id FROM production.logistics_route_stops WHERE tenant_id=$1 AND school_id=$2 AND route_id=$3 AND id=ANY($4::uuid[])`,
+          [actor.tenantId, schoolId, route, [pickup, dropoff]]);
+        if (stopRows.rowCount !== (pickup === dropoff ? 1 : 2)) throw new LogisticsError('INVALID_INPUT', 'Stops must belong to this route.');
+        const overlap = await client.query(
+          `SELECT 1 FROM production.logistics_student_routes WHERE tenant_id=$1 AND school_id=$2 AND student_id=$3
+           AND starts_at <= COALESCE($5::date,'infinity'::date) AND COALESCE(ends_at,'infinity'::date) >= $4::date LIMIT 1`,
+          [actor.tenantId, schoolId, student, starts, ends]);
+        if (overlap.rowCount) throw new LogisticsError('CONFLICT', 'Student already has an overlapping route subscription.');
+        const capacity = await client.query(
+          `SELECT 1 FROM production.logistics_trips trip
+           JOIN production.logistics_vehicles vehicle ON vehicle.tenant_id=trip.tenant_id AND vehicle.school_id=trip.school_id AND vehicle.id=trip.vehicle_id
+           WHERE trip.tenant_id=$1 AND trip.school_id=$2 AND trip.route_id=$3
+             AND trip.status IN ('vehicle_assigned','started','in_progress','emergency')
+             AND trip.trip_date >= $4::date AND trip.trip_date <= COALESCE($5::date,'infinity'::date)
+             AND (SELECT count(*) FROM production.logistics_student_routes sr
+                  WHERE sr.tenant_id=trip.tenant_id AND sr.school_id=trip.school_id AND sr.route_id=trip.route_id
+                    AND sr.starts_at<=trip.trip_date AND (sr.ends_at IS NULL OR sr.ends_at>=trip.trip_date)) >= vehicle.capacity LIMIT 1`,
+          [actor.tenantId, schoolId, route, starts, ends]);
+        if (capacity.rowCount) throw new LogisticsError('CONFLICT', 'Assigned trip capacity would be exceeded.');
+        const result = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_student_routes (tenant_id,school_id,student_id,route_id,pickup_stop_id,dropoff_stop_id,starts_at,ends_at,assigned_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+          [actor.tenantId, schoolId, student, route, pickup, dropoff, starts, ends, actor.userId]);
+        await this.audit(client, actor, schoolId, 'transport_student_subscribed', 'student_route', result.rows[0].id, { studentId: student, routeId: route });
+        return result.rows[0];
+      });
+  }
+
+  async scheduleTrip(actor: AuthorizedPrincipal, input: {
+    routeId: string; tripDate: string; departureAt: string; arrivalAt: string; idempotencyKey: string;
+  }) {
+    const route = validateUuid(input.routeId);
+    const date = calendarDate(input.tripDate, 'tripDate');
+    const departure = parseDate(input.departureAt, 'departureAt');
+    const arrival = parseDate(input.arrivalAt, 'arrivalAt');
+    if (arrival <= departure) throw new LogisticsError('INVALID_INPUT');
+    return this.workflow(actor, 'school_transport', 'logistics.transport.manage', 'schedule_trip', input.idempotencyKey,
+      [route, date, departure.toISOString(), arrival.toISOString()], async (client, schoolId) => {
+        const active = await client.query(`SELECT 1 FROM production.logistics_routes WHERE tenant_id=$1 AND school_id=$2 AND id=$3 AND status='active' FOR UPDATE`, [actor.tenantId, schoolId, route]);
+        if (!active.rowCount) throw new LogisticsError('NOT_FOUND', 'Active route not found.');
+        const result = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_trips (tenant_id,school_id,route_id,trip_date,scheduled_departure_at,scheduled_arrival_at)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+          [actor.tenantId, schoolId, route, date, departure, arrival]);
+        await this.audit(client, actor, schoolId, 'transport_trip_scheduled', 'trip', result.rows[0].id, { routeId: route });
+        return result.rows[0];
+      });
+  }
+
+  async endStudentRoute(actor: AuthorizedPrincipal, input: {
+    subscriptionId: string; endsOn: string; idempotencyKey: string;
+  }) {
+    const id = validateUuid(input.subscriptionId);
+    const ends = calendarDate(input.endsOn, 'endsOn');
+    return this.workflow(actor, 'school_transport', 'logistics.transport.manage', 'end_student_route', input.idempotencyKey,
+      [id, ends], async (client, schoolId) => {
+        const existing = await client.query<{ route_id: string; student_id: string }>(
+          `SELECT route_id,student_id FROM production.logistics_student_routes
+           WHERE tenant_id=$1 AND school_id=$2 AND id=$3`, [actor.tenantId, schoolId, id]);
+        if (!existing.rowCount) throw new LogisticsError('NOT_FOUND');
+        await client.query(`SELECT id FROM production.logistics_routes WHERE tenant_id=$1 AND school_id=$2 AND id=$3 FOR UPDATE`,
+          [actor.tenantId, schoolId, existing.rows[0].route_id]);
+        await client.query(`SELECT id FROM production.students WHERE tenant_id=$1 AND school_id=$2 AND id=$3 FOR UPDATE`,
+          [actor.tenantId, schoolId, existing.rows[0].student_id]);
+        const updated = await client.query(
+          `UPDATE production.logistics_student_routes SET ends_at=$4::date
+           WHERE tenant_id=$1 AND school_id=$2 AND id=$3 AND ends_at IS NULL AND starts_at <= $4::date RETURNING id`,
+          [actor.tenantId, schoolId, id, ends]);
+        if (!updated.rowCount) throw new LogisticsError('CONFLICT', 'Subscription already ended or end date precedes its start.');
+        await this.audit(client, actor, schoolId, 'transport_student_unsubscribed', 'student_route', id, { endsOn: ends });
+        return { id };
+      });
+  }
+
+  async listTransportRoutes(actor: AuthorizedPrincipal): Promise<Record<string, unknown>[]> {
+    return this.inSchool(actor, 'school_transport', ['logistics.transport.read', 'logistics.transport.manage'], async (client, schoolId) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT route.id, route.route_name AS name, route.status,
+          COALESCE((SELECT jsonb_agg(jsonb_build_object('id',stop.id,'name',stop.stop_name,'order',stop.stop_order) ORDER BY stop.stop_order)
+            FROM production.logistics_route_stops stop
+            WHERE stop.tenant_id=route.tenant_id AND stop.school_id=route.school_id AND stop.route_id=route.id), '[]'::jsonb) AS stops
+         FROM production.logistics_routes route WHERE route.tenant_id=$1 AND route.school_id=$2
+         ORDER BY route.route_name,route.id LIMIT 100`, [actor.tenantId, schoolId]);
+      return result.rows;
+    });
+  }
+
+  async listTransportTrips(actor: AuthorizedPrincipal, input: { tripDate: string }): Promise<Record<string, unknown>[]> {
+    const date = calendarDate(input.tripDate, 'tripDate');
+    return this.inSchool(actor, 'school_transport', ['logistics.transport.read', 'logistics.transport.manage'], async (client, schoolId) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT id, route_id AS "routeId", driver_id AS "driverId", vehicle_id AS "vehicleId", status,
+          trip_date AS "tripDate", scheduled_departure_at AS "departureAt", scheduled_arrival_at AS "arrivalAt",
+          started_at AS "startedAt", completed_at AS "completedAt"
+         FROM production.logistics_trips WHERE tenant_id=$1 AND school_id=$2 AND trip_date=$3::date
+         ORDER BY scheduled_departure_at, id LIMIT 100`, [actor.tenantId, schoolId, date]);
+      return result.rows;
+    });
+  }
+
+  async listVehicleMaintenance(actor: AuthorizedPrincipal, vehicleIdInput: string): Promise<Record<string, unknown>[]> {
+    const vehicleId = validateUuid(vehicleIdInput);
+    return this.inSchool(actor, 'school_transport', ['logistics.transport.read', 'logistics.transport.manage'], async (client, schoolId) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT id, description, due_on AS "dueOn", completed_at AS "completedAt"
+         FROM production.logistics_vehicle_maintenance WHERE tenant_id=$1 AND school_id=$2 AND vehicle_id=$3
+         ORDER BY due_on DESC, id LIMIT 100`, [actor.tenantId, schoolId, vehicleId]);
+      return result.rows;
+    });
+  }
+
+  async listStudentRoutes(actor: AuthorizedPrincipal, studentIdInput: string): Promise<Record<string, unknown>[]> {
+    const studentId = validateUuid(studentIdInput);
+    return this.inSchool(actor, 'school_transport', ['logistics.transport.read', 'logistics.transport.manage'], async (client, schoolId) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT id, route_id AS "routeId", pickup_stop_id AS "pickupStopId", dropoff_stop_id AS "dropoffStopId",
+          starts_at AS "startsOn", ends_at AS "endsOn" FROM production.logistics_student_routes
+         WHERE tenant_id=$1 AND school_id=$2 AND student_id=$3 ORDER BY starts_at DESC, id LIMIT 100`,
+        [actor.tenantId, schoolId, studentId]);
+      return result.rows;
+    });
+  }
+
+  async listTransportIncidents(actor: AuthorizedPrincipal, tripIdInput: string): Promise<Record<string, unknown>[]> {
+    const tripId = validateUuid(tripIdInput);
+    return this.inSchool(actor, 'school_transport', ['logistics.transport.read', 'logistics.transport.manage'], async (client, schoolId) => {
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT id, student_id AS "studentId", incident_type AS type, description, occurred_at AS "occurredAt"
+         FROM production.logistics_transport_incidents WHERE tenant_id=$1 AND school_id=$2 AND trip_id=$3
+         ORDER BY occurred_at DESC, id LIMIT 100`, [actor.tenantId, schoolId, tripId]);
+      return result.rows;
+    });
+  }
+
+  async completeTrip(actor: AuthorizedPrincipal, input: { tripId: string; idempotencyKey: string }) {
+    const id = validateUuid(input.tripId);
+    return this.workflow(actor, 'school_transport', 'logistics.transport.manage', 'complete_trip', input.idempotencyKey,
+      [id], async (client, schoolId) => {
+        const trip = await client.query<{ status: string }>(`SELECT status FROM production.logistics_trips WHERE tenant_id=$1 AND school_id=$2 AND id=$3 FOR UPDATE`, [actor.tenantId, schoolId, id]);
+        if (!trip.rowCount) throw new LogisticsError('NOT_FOUND');
+        if (!['started', 'in_progress'].includes(trip.rows[0].status)) throw new LogisticsError('CONFLICT', 'Trip is not active.');
+        const passengers = await client.query(`SELECT 1 FROM production.logistics_trip_passengers WHERE tenant_id=$1 AND school_id=$2 AND trip_id=$3 AND boarded_at IS NOT NULL AND dropped_off_at IS NULL LIMIT 1`, [actor.tenantId, schoolId, id]);
+        if (passengers.rowCount) throw new LogisticsError('CONFLICT', 'Passengers remain on board.');
+        await client.query(`UPDATE production.logistics_trips SET status='completed', completed_at=now() WHERE tenant_id=$1 AND school_id=$2 AND id=$3`, [actor.tenantId, schoolId, id]);
+        await this.audit(client, actor, schoolId, 'transport_trip_completed', 'trip', id);
+        return { id };
+      });
+  }
+
+  async recordTransportIncident(actor: AuthorizedPrincipal, input: {
+    tripId: string; studentId?: string; type: 'missed_pickup' | 'incident'; description: string; idempotencyKey: string;
+  }) {
+    const trip = validateUuid(input.tripId);
+    const student = input.studentId ? validateUuid(input.studentId) : null;
+    const description = requiredText(input.description, 'description', 1000);
+    if (!['missed_pickup', 'incident'].includes(input.type) || (input.type === 'missed_pickup' && !student)) throw new LogisticsError('INVALID_INPUT');
+    return this.workflow(actor, 'school_transport', 'logistics.transport.passengers.manage', 'transport_incident', input.idempotencyKey,
+      [trip, student, input.type, description], async (client, schoolId) => {
+        const tripRow = await client.query<{ route_id: string; trip_date: string; status: string }>(
+          `SELECT route_id,trip_date::text,status FROM production.logistics_trips WHERE tenant_id=$1 AND school_id=$2 AND id=$3 FOR UPDATE`,
+          [actor.tenantId, schoolId, trip]);
+        if (!tripRow.rowCount) throw new LogisticsError('NOT_FOUND');
+        if (!['started','in_progress'].includes(tripRow.rows[0].status)) throw new LogisticsError('CONFLICT', 'Trip is not active.');
+        if (student) {
+          const eligible = await client.query(
+            `SELECT 1 FROM production.logistics_student_routes WHERE tenant_id=$1 AND school_id=$2 AND student_id=$3 AND route_id=$4
+             AND starts_at<=$5::date AND (ends_at IS NULL OR ends_at >= $5::date)`,
+            [actor.tenantId, schoolId, student, tripRow.rows[0].route_id, tripRow.rows[0].trip_date]);
+          if (!eligible.rowCount) throw new LogisticsError('FORBIDDEN', 'Student is not assigned to this route.');
+        }
+        if (input.type === 'missed_pickup') {
+          const boarded = await client.query(`SELECT 1 FROM production.logistics_trip_passengers WHERE tenant_id=$1 AND school_id=$2 AND trip_id=$3 AND student_id=$4 AND boarded_at IS NOT NULL`, [actor.tenantId, schoolId, trip, student]);
+          if (boarded.rowCount) throw new LogisticsError('CONFLICT', 'Student already boarded.');
+        }
+        const result = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_transport_incidents (tenant_id,school_id,trip_id,student_id,incident_type,description,recorded_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+          [actor.tenantId, schoolId, trip, student, input.type, description, actor.userId]);
+        await this.audit(client, actor, schoolId, 'transport_incident_recorded', 'transport_incident', result.rows[0].id, { tripId: trip, studentId: student, type: input.type });
+        return result.rows[0];
       });
   }
 

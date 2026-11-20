@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import path from 'path';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
@@ -76,6 +76,10 @@ import {
 import { createApiCapabilityGateMiddleware } from './server/capabilities/productionCapabilityMiddleware';
 import { createSchoolAdministrationGuards } from './server/authorization/schoolAdministrationGuards';
 import { LogisticsError, LogisticsRepository } from './server/logistics/logisticsRepository';
+import { LogisticsGpsRepository, LogisticsGpsRepositoryError } from './server/logistics/logisticsGpsRepository';
+import { TraccarGpsAdapter, TraccarGpsError } from './server/logistics/traccarGpsAdapter';
+import { LogisticsLibraryStorageError, LogisticsLibraryStorageService } from './server/logistics/logisticsLibraryStorageService';
+import { GooglePlatformAccessTokenProvider } from './server/logistics/googlePlatformAccessTokenProvider';
 import { validateLogisticsFeatureConfiguration } from './src/data/logisticsFeatureTemplate';
 import type { AuthorizedPrincipal } from './server/authorization/authorizedPrincipal';
 import type { CentralSharedServiceId, SharedServiceOperation } from './packages/shared-types/src/sharedServiceContracts';
@@ -1543,6 +1547,24 @@ app.get('/api/v1/students', requireSchoolAuth, requireTrustedDatabaseIdentity, a
 // Tenant- and school-scoped logistics API. These routes remain fail-closed in
 // the capability registry until the production readiness evidence is complete.
 const logisticsRepository = () => new LogisticsRepository(postgresRuntime.getPool());
+const logisticsGpsRepository = () => {
+  let adapter: TraccarGpsAdapter;
+  try {
+    adapter = new TraccarGpsAdapter({
+      baseUrl: process.env.TRACCAR_API_URL || '',
+      apiToken: process.env.TRACCAR_API_TOKEN || '',
+      maxTelemetryAgeSeconds: Number(process.env.TRACCAR_MAX_TELEMETRY_AGE_SECONDS || 300)
+    });
+  } catch (error) {
+    if (error instanceof TraccarGpsError) throw new LogisticsGpsRepositoryError('PROVIDER_NOT_READY');
+    throw error;
+  }
+  return new LogisticsGpsRepository(postgresRuntime.getPool(), adapter);
+};
+const logisticsLibraryStorageService = () => new LogisticsLibraryStorageService(
+  postgresRuntime.getPool(),
+  { platformTokens: new GooglePlatformAccessTokenProvider() }
+);
 const logisticsActor = (req: Request) => (req as any).authorizedPrincipal as AuthorizedPrincipal;
 const respondLogisticsFailure = (req: Request, res: Response, error: unknown) => {
   const known = error instanceof LogisticsError;
@@ -1558,6 +1580,46 @@ const respondLogisticsFailure = (req: Request, res: Response, error: unknown) =>
     success: false,
     code,
     error: known ? error.message : 'The logistics operation could not be completed.',
+    correlationId: (req as any).correlationId,
+    timestamp: new Date().toISOString()
+  });
+};
+const respondLogisticsGpsFailure = (req: Request, res: Response, error: unknown) => {
+  const known = error instanceof LogisticsGpsRepositoryError;
+  const status = known
+    ? error.code === 'FORBIDDEN' || error.code === 'FEATURE_DISABLED' ? 403
+      : error.code === 'NOT_FOUND' ? 404
+        : error.code === 'CONFLICT' ? 409
+          : error.code === 'INVALID_INPUT' ? 400 : 503
+    : 503;
+  res.status(status).json({
+    success: false,
+    code: known ? error.code : 'GPS_PROVIDER_UNAVAILABLE',
+    error: known && error.code === 'INVALID_INPUT'
+      ? 'GPS operation fields are invalid.'
+      : 'The configured Traccar provider or verified device is unavailable.',
+    correlationId: (req as any).correlationId,
+    timestamp: new Date().toISOString()
+  });
+};
+const respondLogisticsLibraryFailure = (req: Request, res: Response, error: unknown) => {
+  const known = error instanceof LogisticsLibraryStorageError;
+  const status = known
+    ? error.code === 'FORBIDDEN' ? 403
+      : error.code === 'NOT_FOUND' ? 404
+        : error.code === 'INVALID_INPUT' || error.code === 'INVALID_CONFIGURATION' ? 400
+          : error.code === 'CONFLICT' ? 409 : 503
+    : 503;
+  res.status(status).json({
+    success: false,
+    code: known ? error.code : 'LIBRARY_STORAGE_UNAVAILABLE',
+    error: known && error.code === 'INVALID_INPUT'
+      ? 'Library file operation fields are invalid.'
+      : known && error.code === 'INVALID_CONFIGURATION'
+        ? 'Library storage configuration is invalid.'
+        : known && error.code === 'FORBIDDEN'
+          ? 'The authenticated account cannot access this library resource.'
+          : 'Library storage is unavailable or has not been verified.',
     correlationId: (req as any).correlationId,
     timestamp: new Date().toISOString()
   });
@@ -1594,13 +1656,17 @@ app.patch(
     }
     try {
       const configuration = validated.configuration;
+      if (configuration.capabilities.gps_geofencing) {
+        await logisticsGpsRepository().assertConfigurationReady(logisticsActor(req));
+      }
       const data = await logisticsRepository().updateConfiguration(logisticsActor(req), {
         capabilities: configuration.capabilities,
         settings: { ...configuration }
       });
       res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
     } catch (error) {
-      respondLogisticsFailure(req, res, error);
+      if (error instanceof LogisticsGpsRepositoryError) respondLogisticsGpsFailure(req, res, error);
+      else respondLogisticsFailure(req, res, error);
     }
   }
 );
@@ -1621,11 +1687,14 @@ app.get(
 const logisticsHostelRoute = (
   method: 'post' | 'get' | 'delete',
   path: string,
-  permission: string,
+  permission: string | string[],
   handler: (req: Request) => Promise<unknown>,
   status = 200
 ) => {
-  app[method](path, authorizationMiddleware.requirePermission(permission), async (req: Request, res: Response) => {
+  const permissionMiddleware = Array.isArray(permission)
+    ? requireAnyLogisticsPermission(...permission)
+    : authorizationMiddleware.requirePermission(permission);
+  app[method](path, permissionMiddleware, async (req: Request, res: Response) => {
     try {
       const data = await handler(req);
       res.status(status).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
@@ -1634,6 +1703,42 @@ const logisticsHostelRoute = (
     }
   });
 };
+const requireAnyLogisticsPermission = (...permissions: string[]) =>
+  (req: Request, res: Response, next: NextFunction) => {
+    authorizationMiddleware.activeMembership(req, res, () => {
+      const actor = (req as any).authorizedPrincipal as AuthorizedPrincipal;
+      if (permissions.some(permission => actor.hasPermission(permission))) {
+        next();
+        return;
+      }
+      res.status(403).json({
+        success: false,
+        code: 'FORBIDDEN',
+        error: 'The required logistics permission is not granted.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+    });
+  };
+const requireLibraryReadPermission = (req: Request, res: Response, next: NextFunction) =>
+  authorizationMiddleware.activeMembership(req, res, () => {
+    const actor = (req as any).authorizedPrincipal as AuthorizedPrincipal;
+    const allowed = actor.roles.includes('student')
+      ? actor.grants.some(grant => grant.permissions.includes('logistics.library.read') &&
+          grant.scopes.some(scope => scope.resourceType === 'student'))
+      : actor.hasPermission('logistics.library.read');
+    if (!allowed) {
+      res.status(403).json({
+        success: false,
+        code: 'FORBIDDEN',
+        error: 'The required library permission is not granted.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    next();
+  });
 const bodyText = (value: unknown) => (typeof value === 'string' ? value : '');
 
 // Tenant and school are always derived from the authenticated principal; bodies never carry them.
@@ -1660,13 +1765,244 @@ logisticsHostelRoute('post', '/api/v1/logistics/hostel/transfers', 'logistics.ho
   }));
 logisticsHostelRoute('post', '/api/v1/logistics/hostel/allocations/:allocationId/vacate', 'logistics.hostel.manage', req =>
   logisticsRepository().vacateAllocation(logisticsActor(req), req.params.allocationId));
-logisticsHostelRoute('get', '/api/v1/logistics/hostel/allocations', 'logistics.hostel.read', req =>
+logisticsHostelRoute('get', '/api/v1/logistics/hostel/allocations', ['logistics.hostel.read', 'logistics.hostel.manage'], req =>
   logisticsRepository().listBedAllocations(logisticsActor(req), {
     page: req.query.page === undefined ? undefined : Number(req.query.page),
     pageSize: req.query.pageSize === undefined ? undefined : Number(req.query.pageSize),
     studentId: typeof req.query.studentId === 'string' ? req.query.studentId : undefined,
     status: typeof req.query.status === 'string' ? req.query.status : undefined
   }));
+app.get(
+  '/api/v1/logistics/hostel/register',
+  requireAnyLogisticsPermission('logistics.hostel.read', 'logistics.hostel.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().listBoardingRegister(logisticsActor(req), {
+        buildingId: bodyText(req.query.buildingId),
+        kind: bodyText(req.query.kind) as 'evening' | 'curfew',
+        serviceDate: bodyText(req.query.serviceDate)
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+logisticsHostelRoute('post', '/api/v1/logistics/hostel/register', 'logistics.hostel.manage', req =>
+  logisticsRepository().recordBoardingRegister(logisticsActor(req), {
+    kind: bodyText(req.body?.kind) as 'evening' | 'curfew',
+    studentId: bodyText(req.body?.studentId),
+    serviceDate: bodyText(req.body?.serviceDate),
+    status: bodyText(req.body?.status) as 'present' | 'absent' | 'excused' | 'unaccounted',
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }), 201);
+logisticsHostelRoute('post', '/api/v1/logistics/hostel/assignments', 'logistics.hostel.manage', req =>
+  logisticsRepository().assignHostelStaff(logisticsActor(req), {
+    buildingId: bodyText(req.body?.buildingId),
+    userId: bodyText(req.body?.userId),
+    role: bodyText(req.body?.role) as 'housemaster' | 'assistant',
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }), 201);
+logisticsHostelRoute('post', '/api/v1/logistics/hostel/assignments/:assignmentId/revoke', 'logistics.hostel.manage', req =>
+  logisticsRepository().revokeHostelStaff(logisticsActor(req), {
+    assignmentId: req.params.assignmentId,
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }));
+logisticsHostelRoute('post', '/api/v1/logistics/dining/meals', 'logistics.dining.manage', req =>
+  logisticsRepository().scheduleMeal(logisticsActor(req), {
+    diningHall: bodyText(req.body?.diningHall),
+    serviceDate: bodyText(req.body?.serviceDate),
+    servicePeriod: bodyText(req.body?.servicePeriod),
+    menu: Array.isArray(req.body?.menu) ? req.body.menu : [],
+    startsAt: bodyText(req.body?.startsAt),
+    endsAt: bodyText(req.body?.endsAt),
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }), 201);
+app.get(
+  '/api/v1/logistics/dining/dietary-restrictions',
+  authorizationMiddleware.requirePermission('logistics.dietary.read'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().listDietaryRestrictions(
+        logisticsActor(req), bodyText(req.query.studentId)
+      );
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+logisticsHostelRoute('post', '/api/v1/logistics/dining/dietary-restrictions', 'logistics.dietary.manage', req =>
+  logisticsRepository().authorizeDietaryRestriction(logisticsActor(req), {
+    studentId: bodyText(req.body?.studentId),
+    restriction: bodyText(req.body?.restriction),
+    startsOn: bodyText(req.body?.startsOn),
+    ...(req.body?.endsOn ? { endsOn: bodyText(req.body.endsOn) } : {}),
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }), 201);
+logisticsHostelRoute('post', '/api/v1/logistics/dining/dietary-restrictions/:restrictionId/revoke', 'logistics.dietary.manage', req =>
+  logisticsRepository().revokeDietaryRestriction(logisticsActor(req), {
+    restrictionId: req.params.restrictionId,
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }));
+
+app.get(
+  '/api/v1/logistics/transport/routes',
+  requireAnyLogisticsPermission('logistics.transport.read', 'logistics.transport.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().listTransportRoutes(logisticsActor(req));
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) { respondLogisticsFailure(req, res, error); }
+  }
+);
+logisticsHostelRoute('post', '/api/v1/logistics/transport/routes', 'logistics.transport.manage', req =>
+  logisticsRepository().createTransportRoute(logisticsActor(req), {
+    name: bodyText(req.body?.name),
+    stops: Array.isArray(req.body?.stops) ? req.body.stops : [],
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }), 201);
+app.get(
+  '/api/v1/logistics/transport/drivers',
+  requireAnyLogisticsPermission('logistics.transport.read', 'logistics.transport.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().listTransportDrivers(logisticsActor(req));
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) { respondLogisticsFailure(req, res, error); }
+  }
+);
+app.get(
+  '/api/v1/logistics/transport/vehicles',
+  requireAnyLogisticsPermission('logistics.transport.read', 'logistics.transport.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().listTransportVehicles(logisticsActor(req));
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) { respondLogisticsFailure(req, res, error); }
+  }
+);
+logisticsHostelRoute('post', '/api/v1/logistics/transport/drivers', 'logistics.transport.manage', req =>
+  logisticsRepository().registerTransportDriver(logisticsActor(req), {
+    fullName: bodyText(req.body?.fullName),
+    licenceNumber: bodyText(req.body?.licenceNumber),
+    licenceValidUntil: bodyText(req.body?.licenceValidUntil),
+    qualified: req.body?.qualified === true,
+    ...(req.body?.userId ? { userId: bodyText(req.body.userId) } : {}),
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }), 201);
+logisticsHostelRoute('post', '/api/v1/logistics/transport/vehicles', 'logistics.transport.manage', req =>
+  logisticsRepository().registerTransportVehicle(logisticsActor(req), {
+    registration: bodyText(req.body?.registration),
+    operatorType: bodyText(req.body?.operatorType) as 'school_owned' | 'outsourced',
+    capacity: Number(req.body?.capacity),
+    approved: req.body?.approved === true,
+    inspectionValidUntil: bodyText(req.body?.inspectionValidUntil),
+    insuranceValidUntil: bodyText(req.body?.insuranceValidUntil),
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }), 201);
+logisticsHostelRoute('post', '/api/v1/logistics/transport/drivers/:driverId/qualification', 'logistics.transport.manage', req =>
+  logisticsRepository().updateTransportDriverQualification(logisticsActor(req), {
+    driverId: req.params.driverId,
+    licenceValidUntil: bodyText(req.body?.licenceValidUntil),
+    qualified: req.body?.qualified === true,
+    status: bodyText(req.body?.status) as 'active' | 'suspended' | 'retired',
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }));
+logisticsHostelRoute('post', '/api/v1/logistics/transport/vehicles/:vehicleId/compliance', 'logistics.transport.manage', req =>
+  logisticsRepository().updateTransportVehicleCompliance(logisticsActor(req), {
+    vehicleId: req.params.vehicleId,
+    inspectionValidUntil: bodyText(req.body?.inspectionValidUntil),
+    insuranceValidUntil: bodyText(req.body?.insuranceValidUntil),
+    approved: req.body?.approved === true,
+    status: bodyText(req.body?.status) as 'active' | 'suspended' | 'retired',
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }));
+logisticsHostelRoute('post', '/api/v1/logistics/transport/vehicles/:vehicleId/maintenance', 'logistics.transport.manage', req =>
+  logisticsRepository().scheduleVehicleMaintenance(logisticsActor(req), {
+    vehicleId: req.params.vehicleId,
+    description: bodyText(req.body?.description),
+    dueOn: bodyText(req.body?.dueOn),
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }), 201);
+logisticsHostelRoute('get', '/api/v1/logistics/transport/vehicles/:vehicleId/maintenance', ['logistics.transport.read', 'logistics.transport.manage'], req =>
+  logisticsRepository().listVehicleMaintenance(logisticsActor(req), req.params.vehicleId));
+logisticsHostelRoute('post', '/api/v1/logistics/transport/maintenance/:maintenanceId/complete', 'logistics.transport.manage', req =>
+  logisticsRepository().completeVehicleMaintenance(logisticsActor(req), {
+    maintenanceId: req.params.maintenanceId,
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }));
+app.get(
+  '/api/v1/logistics/transport/student-routes',
+  requireAnyLogisticsPermission('logistics.transport.read', 'logistics.transport.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().listStudentRoutes(
+        logisticsActor(req), bodyText(req.query.studentId)
+      );
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) { respondLogisticsFailure(req, res, error); }
+  }
+);
+logisticsHostelRoute('post', '/api/v1/logistics/transport/student-routes', 'logistics.transport.manage', req =>
+  logisticsRepository().subscribeStudentRoute(logisticsActor(req), {
+    studentId: bodyText(req.body?.studentId),
+    routeId: bodyText(req.body?.routeId),
+    pickupStopId: bodyText(req.body?.pickupStopId),
+    dropoffStopId: bodyText(req.body?.dropoffStopId),
+    startsOn: bodyText(req.body?.startsOn),
+    ...(req.body?.endsOn ? { endsOn: bodyText(req.body.endsOn) } : {}),
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }), 201);
+logisticsHostelRoute('post', '/api/v1/logistics/transport/student-routes/:subscriptionId/end', 'logistics.transport.manage', req =>
+  logisticsRepository().endStudentRoute(logisticsActor(req), {
+    subscriptionId: req.params.subscriptionId,
+    endsOn: bodyText(req.body?.endsOn),
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }));
+app.get(
+  '/api/v1/logistics/transport/trips',
+  requireAnyLogisticsPermission('logistics.transport.read', 'logistics.transport.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().listTransportTrips(
+        logisticsActor(req), { tripDate: bodyText(req.query.tripDate) }
+      );
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) { respondLogisticsFailure(req, res, error); }
+  }
+);
+logisticsHostelRoute('post', '/api/v1/logistics/transport/trips', 'logistics.transport.manage', req =>
+  logisticsRepository().scheduleTrip(logisticsActor(req), {
+    routeId: bodyText(req.body?.routeId),
+    tripDate: bodyText(req.body?.tripDate),
+    departureAt: bodyText(req.body?.departureAt),
+    arrivalAt: bodyText(req.body?.arrivalAt),
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }), 201);
+logisticsHostelRoute('post', '/api/v1/logistics/transport/trips/:tripId/complete', 'logistics.transport.manage', req =>
+  logisticsRepository().completeTrip(logisticsActor(req), {
+    tripId: req.params.tripId,
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }));
+app.get(
+  '/api/v1/logistics/transport/trips/:tripId/incidents',
+  requireAnyLogisticsPermission('logistics.transport.read', 'logistics.transport.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsRepository().listTransportIncidents(logisticsActor(req), req.params.tripId);
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) { respondLogisticsFailure(req, res, error); }
+  }
+);
+logisticsHostelRoute('post', '/api/v1/logistics/transport/trips/:tripId/incidents', 'logistics.transport.passengers.manage', req =>
+  logisticsRepository().recordTransportIncident(logisticsActor(req), {
+    tripId: req.params.tripId,
+    ...(req.body?.studentId ? { studentId: bodyText(req.body.studentId) } : {}),
+    type: bodyText(req.body?.type) as 'missed_pickup' | 'incident',
+    description: bodyText(req.body?.description),
+    idempotencyKey: String(req.headers['idempotency-key'] || '')
+  }), 201);
 
 app.get(
   '/api/v1/logistics/exeats',
@@ -1822,9 +2158,11 @@ app.post(
   '/api/v1/logistics/dining/meals/:mealId/attendance',
   authorizationMiddleware.requirePermission('logistics.dining.attendance.record'),
   async (req: Request, res: Response) => {
-    const { studentId, overrideReason } = req.body ?? {};
+    const { studentId, overrideReason, dietaryFulfilled, dietaryExceptionReason } = req.body ?? {};
     if (typeof studentId !== 'string' ||
-        (overrideReason !== undefined && typeof overrideReason !== 'string')) {
+        (overrideReason !== undefined && typeof overrideReason !== 'string') ||
+        (dietaryFulfilled !== undefined && typeof dietaryFulfilled !== 'boolean') ||
+        (dietaryExceptionReason !== undefined && typeof dietaryExceptionReason !== 'string')) {
       res.status(400).json({
         success: false,
         code: 'VALIDATION_FAILED',
@@ -1839,7 +2177,9 @@ app.post(
         mealId: req.params.mealId,
         studentId,
         idempotencyKey: String(req.headers['idempotency-key'] || ''),
-        ...(overrideReason ? { overrideReason } : {})
+        ...(overrideReason ? { overrideReason } : {}),
+        ...(dietaryFulfilled !== undefined ? { dietaryFulfilled } : {}),
+        ...(dietaryExceptionReason ? { dietaryExceptionReason } : {})
       });
       res.status(data.replayed ? 200 : 201).json({
         success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString()
@@ -1921,19 +2261,81 @@ app.post(
   }
 );
 
-app.get(
-  '/api/v1/logistics/library/resources',
-  authorizationMiddleware.requirePermission('logistics.library.read'),
+app.post(
+  '/api/v1/logistics/transport/vehicles/:vehicleId/gps-device',
+  authorizationMiddleware.requirePermission('logistics.gps.manage'),
+  async (req: Request, res: Response) => {
+    const { providerDeviceId, providerUniqueId } = req.body ?? {};
+    if (typeof providerDeviceId !== 'number' || typeof providerUniqueId !== 'string') {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'GPS device binding fields are invalid.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsGpsRepository().verifyAndBindDevice(logisticsActor(req), {
+        vehicleId: req.params.vehicleId, providerDeviceId, providerUniqueId
+      });
+      res.status(201).json({
+        success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      respondLogisticsGpsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/transport/vehicles/:vehicleId/telemetry/sync',
+  authorizationMiddleware.requirePermission('logistics.gps.read'),
   async (req: Request, res: Response) => {
     try {
-      const data = await logisticsRepository().listLibraryResources(logisticsActor(req), {
+      const data = await logisticsGpsRepository().syncVehicleTelemetry(
+        logisticsActor(req), req.params.vehicleId
+      );
+      res.json({
+        success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      respondLogisticsGpsFailure(req, res, error);
+    }
+  }
+);
+
+app.post(
+  '/api/v1/logistics/transport/gps-device-bindings/:bindingId/revoke',
+  authorizationMiddleware.requirePermission('logistics.gps.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsGpsRepository().revokeDeviceBinding(
+        logisticsActor(req), req.params.bindingId
+      );
+      res.json({
+        success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      respondLogisticsGpsFailure(req, res, error);
+    }
+  }
+);
+
+app.get(
+  '/api/v1/logistics/library/resources',
+  requireLibraryReadPermission,
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsLibraryStorageService().listResources(logisticsActor(req), {
         page: req.query.page === undefined ? undefined : Number(req.query.page),
         pageSize: req.query.pageSize === undefined ? undefined : Number(req.query.pageSize),
         search: typeof req.query.search === 'string' ? req.query.search : undefined
       });
       res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
     } catch (error) {
-      respondLogisticsFailure(req, res, error);
+      respondLogisticsLibraryFailure(req, res, error);
     }
   }
 );
@@ -1971,6 +2373,109 @@ app.post(
   }
 );
 
+app.get(
+  '/api/v1/logistics/library/storage',
+  authorizationMiddleware.requirePermission('logistics.library.storage.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsLibraryStorageService().getConfiguration(logisticsActor(req));
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsLibraryFailure(req, res, error);
+    }
+  }
+);
+app.put(
+  '/api/v1/logistics/library/storage',
+  authorizationMiddleware.requirePermission('logistics.library.storage.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await logisticsLibraryStorageService().configure(logisticsActor(req), req.body);
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsLibraryFailure(req, res, error);
+    }
+  }
+);
+app.post(
+  '/api/v1/logistics/library/resources/:resourceId/visibility',
+  authorizationMiddleware.requirePermission('logistics.library.manage'),
+  async (req: Request, res: Response) => {
+    try {
+      await logisticsLibraryStorageService().setResourceVisibility(logisticsActor(req), {
+        resourceId: req.params.resourceId,
+        visibility: req.body?.visibility,
+        studentIds: Array.isArray(req.body?.studentIds) ? req.body.studentIds : []
+      });
+      res.json({
+        success: true, data: { resourceId: req.params.resourceId },
+        correlationId: (req as any).correlationId, timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      respondLogisticsLibraryFailure(req, res, error);
+    }
+  }
+);
+app.put(
+  '/api/v1/logistics/library/resources/:resourceId/file',
+  authorizationMiddleware.requirePermission('logistics.library.manage'),
+  async (req: Request, res: Response) => {
+    const contentLength = Number(req.headers['content-length']);
+    const contentType = typeof req.headers['content-type'] === 'string'
+      ? req.headers['content-type'].split(';', 1)[0].trim()
+      : '';
+    if (!Number.isSafeInteger(contentLength) || contentLength < 1 ||
+        contentLength > 250 * 1024 * 1024 || !contentType) {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'A valid file Content-Length and Content-Type are required.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsLibraryStorageService().uploadResource(logisticsActor(req), {
+        resourceId: req.params.resourceId,
+        contentType,
+        contentLength,
+        content: req
+      });
+      res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsLibraryFailure(req, res, error);
+    }
+  }
+);
+app.get(
+  '/api/v1/logistics/library/resources/:resourceId/download',
+  requireLibraryReadPermission,
+  async (req: Request, res: Response) => {
+    try {
+      const version = typeof req.query.version === 'string' ? Number(req.query.version) : undefined;
+      const result = await logisticsLibraryStorageService().openResource(logisticsActor(req), {
+        resourceId: req.params.resourceId,
+        ...(version !== undefined ? { version } : {}),
+        action: 'download'
+      });
+      res.status(200);
+      res.setHeader('Content-Type', result.contentType);
+      res.setHeader('Content-Length', String(result.contentLength));
+      res.setHeader('Content-Disposition', `attachment; filename="resource-v${result.version}"`);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      result.stream.on('error', () => {
+        if (res.headersSent) res.destroy();
+        else respondLogisticsLibraryFailure(req, res, new LogisticsLibraryStorageError('STORAGE_FAILED'));
+      });
+      result.stream.pipe(res);
+    } catch (error) {
+      respondLogisticsLibraryFailure(req, res, error);
+    }
+  }
+);
+
 app.post(
   '/api/v1/logistics/pickup-passes',
   authorizationMiddleware.requirePermission('logistics.guardians.manage'),
@@ -1999,6 +2504,44 @@ app.post(
         ...(maxUses !== undefined ? { maxUses } : {})
       });
       res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+    } catch (error) {
+      respondLogisticsFailure(req, res, error);
+    }
+  }
+);
+
+app.get(
+  '/api/v1/logistics/gate/events',
+  authorizationMiddleware.requirePermission('logistics.gate.manage'),
+  async (req: Request, res: Response) => {
+    const direction = req.query.direction === 'entry' || req.query.direction === 'exit'
+      ? req.query.direction
+      : undefined;
+    const outcome = req.query.outcome === 'authorized' || req.query.outcome === 'denied'
+      ? req.query.outcome
+      : undefined;
+    const gateLocationId = req.query.gateLocationId;
+    if ((req.query.direction !== undefined && direction === undefined) ||
+        (req.query.outcome !== undefined && outcome === undefined) ||
+        (gateLocationId !== undefined && typeof gateLocationId !== 'string')) {
+      res.status(400).json({
+        success: false,
+        code: 'VALIDATION_FAILED',
+        error: 'Gate-event filters are invalid.',
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+    try {
+      const data = await logisticsRepository().listGateEvents(logisticsActor(req), {
+        page: req.query.page === undefined ? undefined : Number(req.query.page),
+        pageSize: req.query.pageSize === undefined ? undefined : Number(req.query.pageSize),
+        ...(direction ? { direction } : {}),
+        ...(outcome ? { outcome } : {}),
+        ...(typeof gateLocationId === 'string' ? { gateLocationId } : {})
+      });
+      res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
     } catch (error) {
       respondLogisticsFailure(req, res, error);
     }

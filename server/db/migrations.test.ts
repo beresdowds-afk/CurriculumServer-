@@ -110,7 +110,8 @@ function migration(version: number, name: string, sql: string): MigrationFile {
 test('migration discovery recognizes the preserved initial migration and sorts versions', async () => {
   const root = process.cwd();
   const discovered = await discoverMigrations(path.join(root, 'src/db/migrations'));
-  assert.deepEqual(discovered.map(item => item.version), Array.from({ length: 25 }, (_, index) => index + 1));
+  assert.ok(discovered.length >= 26);
+  assert.deepEqual(discovered.map(item => item.version), Array.from({ length: discovered.length }, (_, index) => index + 1));
   assert.equal(discovered[0].name, '001_initial_control_plane.sql');
   assert.equal(discovered[1].name, '002_durable_control_plane.sql');
   assert.equal(discovered[2].name, '003_tenant_relationship_integrity.sql');
@@ -139,6 +140,7 @@ test('migration discovery recognizes the preserved initial migration and sorts v
   ]);
   assert.equal(discovered.filter(item => item.version === 25).length, 1);
   assert.equal(discovered[24].name, '025_teacher_academic_progress_authority.sql');
+  assert.equal(discovered[25].name, '026_boarding_transport_workflows.sql');
 
   const directory = await mkdtemp(path.join(os.tmpdir(), 'migration-order-'));
   try {
