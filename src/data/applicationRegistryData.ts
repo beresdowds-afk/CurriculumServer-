@@ -279,17 +279,18 @@ export const INITIAL_REGISTERED_FEATURES: RegisteredFeature[] = [
   {
     featureId: 'feat_bursary_billing',
     name: 'Bursary & Fee Installment Management',
-    description: 'Invoice generation, PSP multi-gateway payment splits, installment tracking, and digital receipts.',
+    description: 'School finance template under development; school payment and accounting workflows are not yet operational.',
     applicationAssociation: 'app_curriculum_flow',
     dependencies: ['feat_student_registration'],
     requiredPermissions: ['manage_bursary'],
     apiDependencies: ['/api/v1/bursary/invoices'],
     databaseRequirements: ['invoices_table', 'transactions_table'],
     storageRequirements: ['receipt_pdf_bucket'],
-    configOptions: { defaultCurrency: 'NGN', gateway: 'paystack_flutterwave' },
+    configOptions: { templateId: 'school-finance', templateVersion: '0.1.0' },
     version: '2.0.0',
-    availabilityStatus: 'available',
-    honestyStatus: 'fully_implemented'
+    availabilityStatus: 'beta',
+    honestyStatus: 'partial_stub',
+    readiness: ['designed', 'implemented']
   },
   {
     featureId: 'feat_biometric_attendance',

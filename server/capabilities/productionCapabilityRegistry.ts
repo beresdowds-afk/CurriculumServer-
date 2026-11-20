@@ -130,6 +130,45 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     state: 'implemented'
   },
   {
+    id: 'school_finance_fee_policies',
+    description: 'School-specific immutable fee policy versions and principal approvals.',
+    routes: [
+      { method: 'GET', path: exact('/school-finance/schools') },
+      { method: 'GET', path: new RegExp(`^/school-finance/schools/${uuid}/fee-policies$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/school-finance/schools/${uuid}/fee-policies(?:/${uuid}/approve)?$`, 'i') }
+    ],
+    requiredRepositories: ['SchoolFinancePolicies', 'AuthorizationRepository'],
+    requiredMigrations: [8, 9, 10, 29],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'tenant_wide_database_permission_and_principal_role_for_approval',
+      permissions: ['school_finance.policies.read', 'school_finance.policies.create', 'school_finance.policies.approve']
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: ['server/db/schoolFinancePolicies.integration.test.ts'],
+    readinessEvidence: [],
+    state: 'implemented'
+  },
+  {
+    id: 'school_finance_settlement_account_requests',
+    description: 'Principal proposals and proprietor approvals of school settlement accounts; no provider activation.',
+    routes: [
+      { method: 'GET', path: new RegExp(`^/school-finance/schools/${uuid}/settlement-accounts(?:/${uuid})?$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/school-finance/schools/${uuid}/settlement-accounts(?:/${uuid}/approve)?$`, 'i') }
+    ],
+    requiredRepositories: ['SchoolSettlementAccounts', 'AuthorizationRepository'],
+    requiredMigrations: [8, 9, 10, 29, 30],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'tenant_wide_database_permission_and_principal_or_proprietor_role',
+      permissions: ['school_finance.settlement.read', 'school_finance.settlement.request', 'school_finance.settlement.approve']
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: ['server/db/schoolFinancePolicies.integration.test.ts'],
+    readinessEvidence: [],
+    state: 'implemented'
+  },
+  {
     id: 'school_identity',
     description: 'Tenant-scoped school profile, configuration, and membership APIs.',
     routes: [
