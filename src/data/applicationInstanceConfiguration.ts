@@ -20,6 +20,7 @@ import {
   SCHOOL_FINANCE_FEATURE_TEMPLATE,
   validateSchoolFinanceTemplateSettings
 } from './schoolFinanceFeatureTemplate';
+import { ACADEMIC_RECORDS_FEATURE_TEMPLATE } from './academicRecordsFeatureTemplate';
 
 export const APPLICATION_CONFIGURATION_CONTRACT_VERSION = 1;
 
@@ -89,6 +90,14 @@ export const APPLICATION_FEATURE_TEMPLATE_REGISTRY: readonly ApplicationFeatureT
     versions: [SCHOOL_FINANCE_FEATURE_TEMPLATE.templateVersion],
     status: SCHOOL_FINANCE_FEATURE_TEMPLATE.status,
     provisionable: SCHOOL_FINANCE_FEATURE_TEMPLATE.provisionable
+  },
+  {
+    applicationId: ACADEMIC_RECORDS_FEATURE_TEMPLATE.applicationId,
+    featureId: ACADEMIC_RECORDS_FEATURE_TEMPLATE.featureId,
+    templateId: ACADEMIC_RECORDS_FEATURE_TEMPLATE.templateId,
+    versions: [ACADEMIC_RECORDS_FEATURE_TEMPLATE.templateVersion],
+    status: ACADEMIC_RECORDS_FEATURE_TEMPLATE.status,
+    provisionable: ACADEMIC_RECORDS_FEATURE_TEMPLATE.provisionable
   }
 ];
 
@@ -212,6 +221,10 @@ export function validateApplicationInstanceConfiguration(
       if (!featureTemplate.provisionable || featureTemplate.status !== 'published') {
         errors.push('School finance template is registered but not provisionable.');
       }
+      continue;
+    }
+    if (featureId === ACADEMIC_RECORDS_FEATURE_TEMPLATE.featureId) {
+      errors.push('Academic records template is registered but not provisionable.');
       continue;
     }
     const logistics = validateLogisticsFeatureConfiguration(featureConfiguration.settings);
