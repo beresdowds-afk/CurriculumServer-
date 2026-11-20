@@ -9,6 +9,7 @@ import { LogisticsError, LogisticsRepository } from './logisticsRepository';
 
 const permissions = [
   'logistics.configuration.manage',
+  'logistics.gate.manage',
   'logistics.exeat.read',
   'logistics.exeat.request',
   'logistics.exeat.approve',
@@ -117,7 +118,7 @@ test('logistics exeats and dining attendance are durable, idempotent and school 
               enabled_features, deployment_architecture, architecture, template_id,
               template_version, provisioning_status, activated_at)
            VALUES ($1, $2, 'app_curriculum_flow', '1', 'active',
-                   ARRAY['feat_logistics_boarding_house', 'feat_logistics_elibrary', 'feat_logistics_transportation'], 'shared_database',
+                   ARRAY['feat_logistics_gate_security', 'feat_logistics_boarding_house', 'feat_logistics_elibrary', 'feat_logistics_transportation'], 'shared_database',
                    'shared_database', 'school-standard', '1', 'ready', now())`,
           [tenantId, schoolId]
         );
@@ -127,7 +128,7 @@ test('logistics exeats and dining attendance are durable, idempotent and school 
     for (let index = 0; index < tenantIds.length; index += 1) {
       await repository.updateConfiguration(actors[index], {
         capabilities: {
-          exeat_management: true, dining_management: true, digital_library: true,
+          gate_security: true, exeat_management: true, dining_management: true, digital_library: true,
           school_transport: true
         },
         settings: {}
@@ -213,6 +214,15 @@ test('logistics exeats and dining attendance are durable, idempotent and school 
       exeatId: created.id, gateLocationId, direction: 'return',
       idempotencyKey: `movement-${randomUUID()}`
     })).status, 'returned');
+    const gateHistory = await repository.listGateEvents(actors[0], { pageSize: 10 });
+    assert.equal(gateHistory.total, 2);
+    assert.equal(gateHistory.data[0].operatorId, workflowUserIds[2]);
+    assert.equal(gateHistory.data[0].gateName, 'Main Gate');
+    assert.deepEqual(gateHistory.data.map(event => String(event.direction)).sort(), ['entry', 'exit']);
+    assert.equal((await repository.listGateEvents(actors[0], { direction: 'exit' })).total, 1);
+    assert.equal((await repository.listGateEvents(actors[1], {})).total, 0);
+    await assert.rejects(repository.listGateEvents(parentActor, {}), (error: unknown) =>
+      error instanceof LogisticsError && error.code === 'FORBIDDEN');
 
     const mealId = randomUUID();
     await withTenantTransaction(pool, actors[0].tenant, async client => {

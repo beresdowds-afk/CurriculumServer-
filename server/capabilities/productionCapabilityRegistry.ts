@@ -245,24 +245,54 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     id: 'campus_logistics',
     description: 'Tenant-authorized campus gate security, exeat workflows, dining, transport events, and hostel occupancy.',
     routes: [
-      { method: 'GET', path: exact('/logistics/configuration', '/logistics/occupancy') },
-      { method: 'GET', path: exact('/logistics/exeats', '/logistics/dining/meals', '/logistics/library/resources') },
+      { method: 'GET', path: exact(
+        '/logistics/configuration', '/logistics/occupancy', '/logistics/gate/events',
+        '/logistics/hostel/allocations', '/logistics/hostel/register',
+        '/logistics/exeats', '/logistics/dining/meals', '/logistics/dining/dietary-restrictions',
+        '/logistics/library/resources', '/logistics/library/storage', '/logistics/transport/routes', '/logistics/transport/drivers',
+        '/logistics/transport/vehicles', '/logistics/transport/student-routes', '/logistics/transport/trips'
+      ) },
       { method: 'GET', path: new RegExp(`^/logistics/exeats/${uuid}$`, 'i') },
+      { method: 'GET', path: new RegExp(`^/logistics/transport/vehicles/${uuid}/maintenance$`, 'i') },
+      { method: 'GET', path: new RegExp(`^/logistics/transport/trips/${uuid}/incidents$`, 'i') },
+      { method: 'GET', path: new RegExp(`^/logistics/library/resources/${uuid}/download$`, 'i') },
       { method: 'PATCH', path: exact('/logistics/configuration') },
+      { method: 'PUT', path: exact('/logistics/library/storage') },
+      { method: 'PUT', path: new RegExp(`^/logistics/library/resources/${uuid}/file$`, 'i') },
       { method: 'POST', path: exact(
         '/logistics/pickup-passes',
         '/logistics/gate/scans',
         '/logistics/exeats',
-        '/logistics/library/resources'
+        '/logistics/library/resources',
+        '/logistics/hostel/register',
+        '/logistics/hostel/assignments',
+        '/logistics/dining/meals',
+        '/logistics/dining/dietary-restrictions',
+        '/logistics/transport/routes',
+        '/logistics/transport/drivers',
+        '/logistics/transport/vehicles',
+        '/logistics/transport/student-routes',
+        '/logistics/transport/trips'
       ) },
+      { method: 'POST', path: new RegExp(`^/logistics/hostel/assignments/${uuid}/revoke$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/dining/dietary-restrictions/${uuid}/revoke$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/transport/drivers/${uuid}/qualification$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/transport/vehicles/${uuid}/(?:compliance|maintenance)$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/transport/maintenance/${uuid}/complete$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/transport/student-routes/${uuid}/end$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/transport/trips/${uuid}/(?:complete|incidents)$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/library/resources/${uuid}/visibility$`, 'i') },
       { method: 'POST', path: new RegExp(`^/logistics/exeats/${uuid}/(?:decisions|departure-authorization|gate-movements)$`, 'i') },
       { method: 'POST', path: new RegExp(`^/logistics/dining/meals/${uuid}/attendance$`, 'i') },
       { method: 'POST', path: new RegExp(`^/logistics/transport/trips/${uuid}/passenger-events$`, 'i') },
       { method: 'PATCH', path: new RegExp(`^/logistics/transport/trips/${uuid}/assignment$`, 'i') },
-      { method: 'POST', path: new RegExp(`^/logistics/transport/trips/${uuid}/start$`, 'i') }
+      { method: 'POST', path: new RegExp(`^/logistics/transport/trips/${uuid}/start$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/transport/vehicles/${uuid}/gps-device$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/transport/vehicles/${uuid}/telemetry/sync$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/transport/gps-device-bindings/${uuid}/revoke$`, 'i') }
     ],
-    requiredRepositories: ['LogisticsRepository', 'AuthorizationRepository'],
-    requiredMigrations: [11, 12, 13],
+    requiredRepositories: ['LogisticsRepository', 'LogisticsGpsRepository', 'AuthorizationRepository'],
+    requiredMigrations: [11, 12, 13, 26, 27, 28],
     authentication: 'tenant_user_session',
     authorization: {
       rule: 'database_permission_and_school_configuration',
@@ -270,13 +300,28 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
         'logistics.configuration.read',
         'logistics.configuration.manage',
         'logistics.gate.manage',
-        'logistics.hostel.read'
+        'logistics.hostel.read',
+        'logistics.hostel.manage',
+        'logistics.dining.manage',
+        'logistics.dietary.read',
+        'logistics.dietary.manage',
+        'logistics.dietary.exception',
+        'logistics.transport.read',
+        'logistics.transport.manage',
+        'logistics.transport.passengers.manage',
+        'logistics.gps.read',
+        'logistics.gps.manage',
+        'logistics.library.read',
+        'logistics.library.manage',
+        'logistics.library.storage.manage'
       ]
     },
     tenantContext: 'transaction_local_tenant',
     acceptanceTests: [
       'server/logistics/logisticsRepository.test.ts',
-      'server/logistics/logisticsRepository.integration.test.ts'
+      'server/logistics/logisticsRepository.integration.test.ts',
+      'server/logistics/boardingTransport.integration.test.ts',
+      'server/notifications/notificationService.test.ts'
     ],
     readinessEvidence: [],
     state: 'implemented'

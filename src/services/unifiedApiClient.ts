@@ -415,6 +415,54 @@ class UnifiedApiClient {
     return this.request<T>(`/api/v1/logistics${endpoint}`, options, 'school_flow');
   }
 
+  public async requestLogisticsBlob(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<Blob> {
+    if (!this.isAuthenticated('school_flow')) {
+      throw new Error('A valid authenticated school session is required.');
+    }
+    if (!endpoint.startsWith('/') || endpoint.includes('?tenantId=') || endpoint.includes('?schoolId=')) {
+      throw new Error('Logistics requests must use a relative API path without client-selected school context.');
+    }
+    const correlationId = this.generateCorrelationId();
+    const rawHeaders = (options.headers as Record<string, string>) || {};
+    const headers: Record<string, string> = {
+      'X-Correlation-ID': correlationId,
+      ...Object.fromEntries(Object.entries(rawHeaders).filter(([key]) =>
+        !['x-tenant-id', 'x-user-role', 'x-role'].includes(key.toLowerCase())
+      ))
+    };
+    if (this.schoolFlowToken) headers.Authorization = `Bearer ${this.schoolFlowToken}`;
+    try {
+      const response = await fetch(`${this.baseUrl}/api/v1/logistics${endpoint}`, {
+        ...options,
+        headers
+      });
+      if (response.ok) return response.blob();
+      const data = await response.json().catch(() => ({}));
+      throw {
+        success: false,
+        error: data.error || `HTTP ${response.status}: ${response.statusText}`,
+        code: data.code || 'INTERNAL_ERROR',
+        status: response.status,
+        correlationId: data.correlationId || correlationId,
+        timestamp: data.timestamp || new Date().toISOString(),
+        details: data.data || data.details
+      };
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && 'correlationId' in error) throw error;
+      throw {
+        success: false,
+        error: error instanceof Error ? error.message : 'Network request failed or backend service unreachable',
+        code: 'INTERNAL_ERROR',
+        status: 0,
+        correlationId,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
   public async getMySchoolConfiguration(): Promise<SchoolConfigurationResponse> {
     const res = await this.request<{ success: boolean; data: SchoolConfigurationResponse }>(
       '/api/v1/schools/me/config', { method: 'GET' }, 'school_flow'
