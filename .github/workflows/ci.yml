@@ -52,10 +52,10 @@ jobs:
           psql postgres://postgres:postgres@localhost:5432/curriculum_platform \
             -v ON_ERROR_STOP=1 \
             -c "CREATE ROLE curriculum_runtime LOGIN PASSWORD 'runtime-test'; \
-                GRANT USAGE ON SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks TO curriculum_runtime; \
-                GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks TO curriculum_runtime; \
+                GRANT USAGE ON SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks, school_finance TO curriculum_runtime; \
+                GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks, school_finance TO curriculum_runtime; \
                 REVOKE ALL ON control_plane.authorization_context_keys FROM curriculum_runtime; \
-                GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks TO curriculum_runtime;"
+                GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public, production, control_plane, curriculum_flow, central_curriculum, central_textbooks, school_finance TO curriculum_runtime;"
 
       - name: Typecheck
         run: npm run lint
