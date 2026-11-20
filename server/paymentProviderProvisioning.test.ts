@@ -91,12 +91,20 @@ test('rejects a credential secret reference belonging to another tenant', async 
   await assert.rejects(service.execute(contract, sign(contract)), /CROSS_TENANT_CREDENTIAL_REFERENCE/);
 });
 
-test('does not imply provider provisioning success when its adapter is absent', async () => {
+test('does not imply provider provisioning success when a school provider adapter is absent', async () => {
   const deps = dependencies();
   const service = new PaymentProviderProvisioningService({}, deps.secretManager, deps.billingPayments, signingKey);
-  const contract = request();
-
-  await assert.rejects(service.execute(contract, sign(contract)), /PROVIDER_ADAPTER_UNAVAILABLE:paystack/);
+  for (const provider of ['paystack', 'flutterwave', 'opay'] as const) {
+    const contract = request({
+      provider,
+      credentialSecretVersion:
+        `projects/curriculum-prod/secrets/curriculum-payment-intake-${tenantId}-${provider}/versions/1`
+    });
+    await assert.rejects(
+      service.execute(contract, sign(contract)),
+      new RegExp(`PROVIDER_ADAPTER_UNAVAILABLE:${provider}`)
+    );
+  }
 });
 
 test('derives distinct tenant and provider Secret Manager resources', () => {

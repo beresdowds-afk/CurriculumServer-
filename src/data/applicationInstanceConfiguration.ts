@@ -16,6 +16,10 @@ import {
   LOGISTICS_FEATURE_TEMPLATE,
   validateLogisticsFeatureConfiguration
 } from './logisticsFeatureTemplate';
+import {
+  SCHOOL_FINANCE_FEATURE_TEMPLATE,
+  validateSchoolFinanceTemplateSettings
+} from './schoolFinanceFeatureTemplate';
 
 export const APPLICATION_CONFIGURATION_CONTRACT_VERSION = 1;
 
@@ -77,6 +81,14 @@ export const APPLICATION_FEATURE_TEMPLATE_REGISTRY: readonly ApplicationFeatureT
     versions: [LOGISTICS_FEATURE_TEMPLATE.templateVersion],
     status: 'draft',
     provisionable: false
+  },
+  {
+    applicationId: SCHOOL_FINANCE_FEATURE_TEMPLATE.applicationId,
+    featureId: SCHOOL_FINANCE_FEATURE_TEMPLATE.featureId,
+    templateId: SCHOOL_FINANCE_FEATURE_TEMPLATE.templateId,
+    versions: [SCHOOL_FINANCE_FEATURE_TEMPLATE.templateVersion],
+    status: SCHOOL_FINANCE_FEATURE_TEMPLATE.status,
+    provisionable: SCHOOL_FINANCE_FEATURE_TEMPLATE.provisionable
   }
 ];
 
@@ -193,7 +205,14 @@ export function validateApplicationInstanceConfiguration(
       continue;
     }
     if (!featureTemplate.versions.includes(featureConfiguration.templateVersion)) {
-      errors.push('Unsupported Campus Logistics & Support template version.');
+      errors.push(`Unsupported version for feature configuration '${featureId}'.`);
+    }
+    if (featureId === SCHOOL_FINANCE_FEATURE_TEMPLATE.featureId) {
+      errors.push(...validateSchoolFinanceTemplateSettings(featureConfiguration.settings).errors);
+      if (!featureTemplate.provisionable || featureTemplate.status !== 'published') {
+        errors.push('School finance template is registered but not provisionable.');
+      }
+      continue;
     }
     const logistics = validateLogisticsFeatureConfiguration(featureConfiguration.settings);
     errors.push(...logistics.errors);

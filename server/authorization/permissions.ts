@@ -45,7 +45,13 @@ export const PERMISSIONS = {
   teachingDeliveryRead: 'teaching.delivery.read',
   teachingDeliveryManage: 'teaching.delivery.manage',
   teachingEvidenceRead: 'teaching.evidence.read',
-  assessmentsScopeAuthorize: 'assessments.scope.authorize'
+  assessmentsScopeAuthorize: 'assessments.scope.authorize',
+  schoolFinancePoliciesRead: 'school_finance.policies.read',
+  schoolFinancePoliciesCreate: 'school_finance.policies.create',
+  schoolFinancePoliciesApprove: 'school_finance.policies.approve',
+  schoolFinanceSettlementRead: 'school_finance.settlement.read',
+  schoolFinanceSettlementRequest: 'school_finance.settlement.request',
+  schoolFinanceSettlementApprove: 'school_finance.settlement.approve'
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

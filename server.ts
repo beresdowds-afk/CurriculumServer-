@@ -61,6 +61,8 @@ import {
 } from './server/db/schoolProvisioningRepository';
 import { createVerifiedTenantPrincipal } from './server/db/tenantContext';
 import { AuthorizationRepository } from './server/authorization/authorizationRepository';
+import { SchoolFinancePolicies, SchoolFinancePolicyError } from './server/db/schoolFinancePolicies';
+import { SchoolSettlementAccounts } from './server/db/schoolSettlementAccounts';
 import { createAuthorizationMiddleware } from './server/authorization/middleware';
 import { PERMISSIONS } from './server/authorization/permissions';
 import {
@@ -5767,6 +5769,139 @@ async function getCurrentSchoolId(req: Request, res: Response): Promise<string |
   }
   return school.id;
 }
+
+function schoolFinancePolicyFailure(res: Response, error: unknown): void {
+  if (error instanceof SchoolFinancePolicyError) {
+    const status = error.code === 'NOT_FOUND' ? 404 : error.code === 'CONFLICT' ? 409 : 400;
+    res.status(status).json({ success: false, code: error.code, error: error.message });
+    return;
+  }
+  if (error instanceof Error && error.message === 'FORBIDDEN') {
+    res.status(403).json({ success: false, code: 'FORBIDDEN', error: 'Permission denied.' });
+    return;
+  }
+  console.error('School finance policy operation failed.', error);
+  res.status(503).json({
+    success: false, code: 'SCHOOL_FINANCE_UNAVAILABLE',
+    error: 'School fee policies are temporarily unavailable.'
+  });
+}
+
+app.get('/api/v1/school-finance/schools',
+  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinancePoliciesRead),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await new SchoolFinancePolicies(postgresRuntime.getPool()).listSchools(
+        (req as any).authorizedPrincipal
+      );
+      res.json({ success: true, data });
+    } catch (error) {
+      schoolFinancePolicyFailure(res, error);
+    }
+  }
+);
+
+app.get('/api/v1/school-finance/schools/:schoolId/fee-policies',
+  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinancePoliciesRead),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await new SchoolFinancePolicies(postgresRuntime.getPool()).list(
+        (req as any).authorizedPrincipal, req.params.schoolId
+      );
+      res.json({ success: true, data });
+    } catch (error) {
+      schoolFinancePolicyFailure(res, error);
+    }
+  }
+);
+
+app.post('/api/v1/school-finance/schools/:schoolId/fee-policies',
+  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinancePoliciesCreate),
+  async (req: Request, res: Response) => {
+    try {
+      const id = await new SchoolFinancePolicies(postgresRuntime.getPool()).create(
+        (req as any).authorizedPrincipal, req.params.schoolId, req.body
+      );
+      res.status(201).json({ success: true, data: { id } });
+    } catch (error) {
+      schoolFinancePolicyFailure(res, error);
+    }
+  }
+);
+
+app.post('/api/v1/school-finance/schools/:schoolId/fee-policies/:policyId/approve',
+  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinancePoliciesApprove),
+  async (req: Request, res: Response) => {
+    try {
+      await new SchoolFinancePolicies(postgresRuntime.getPool()).approve(
+        (req as any).authorizedPrincipal, req.params.schoolId, req.params.policyId
+      );
+      res.json({ success: true });
+    } catch (error) {
+      schoolFinancePolicyFailure(res, error);
+    }
+  }
+);
+
+app.get('/api/v1/school-finance/schools/:schoolId/settlement-accounts',
+  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinanceSettlementRead),
+  async (req: Request, res: Response) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      const data = await new SchoolSettlementAccounts(postgresRuntime.getPool()).list(
+        (req as any).authorizedPrincipal, req.params.schoolId
+      );
+      res.json({ success: true, data });
+    } catch (error) {
+      schoolFinancePolicyFailure(res, error);
+    }
+  }
+);
+
+app.get('/api/v1/school-finance/schools/:schoolId/settlement-accounts/:requestId',
+  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinanceSettlementRead),
+  async (req: Request, res: Response) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      const data = await new SchoolSettlementAccounts(postgresRuntime.getPool()).details(
+        (req as any).authorizedPrincipal, req.params.schoolId, req.params.requestId
+      );
+      res.json({ success: true, data });
+    } catch (error) {
+      schoolFinancePolicyFailure(res, error);
+    }
+  }
+);
+
+app.post('/api/v1/school-finance/schools/:schoolId/settlement-accounts',
+  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinanceSettlementRequest),
+  async (req: Request, res: Response) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      const id = await new SchoolSettlementAccounts(postgresRuntime.getPool()).request(
+        (req as any).authorizedPrincipal, req.params.schoolId, req.body
+      );
+      res.status(201).json({ success: true, data: { id } });
+    } catch (error) {
+      schoolFinancePolicyFailure(res, error);
+    }
+  }
+);
+
+app.post('/api/v1/school-finance/schools/:schoolId/settlement-accounts/:requestId/approve',
+  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinanceSettlementApprove),
+  async (req: Request, res: Response) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      await new SchoolSettlementAccounts(postgresRuntime.getPool()).approve(
+        (req as any).authorizedPrincipal, req.params.schoolId, req.params.requestId
+      );
+      res.json({ success: true });
+    } catch (error) {
+      schoolFinancePolicyFailure(res, error);
+    }
+  }
+);
 
 app.get('/api/v1/schools/me/students', schoolAdministrationGuards.studentRead, async (req: Request, res: Response) => {
   try {

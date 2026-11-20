@@ -9,6 +9,8 @@ import { createProductionCapabilityGateMiddleware } from './productionCapability
 const notReady = [
   'central_iam',
   'school_provisioning',
+  'school_finance_fee_policies',
+  'school_finance_settlement_account_requests',
   'school_identity',
   'student_administration',
   'class_administration',
@@ -41,6 +43,14 @@ test('database-backed capabilities remain blocked until operational readiness is
 test('implemented administration handlers map to their canonical unready capability', () => {
   const cases = [
     ['GET', '/schools/me', 'school_identity'],
+    ['GET', '/school-finance/schools', 'school_finance_fee_policies'],
+    ['GET', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/fee-policies', 'school_finance_fee_policies'],
+    ['POST', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/fee-policies', 'school_finance_fee_policies'],
+    ['POST', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/fee-policies/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/approve', 'school_finance_fee_policies'],
+    ['GET', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/settlement-accounts', 'school_finance_settlement_account_requests'],
+    ['GET', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/settlement-accounts/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'school_finance_settlement_account_requests'],
+    ['POST', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/settlement-accounts', 'school_finance_settlement_account_requests'],
+    ['POST', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/settlement-accounts/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/approve', 'school_finance_settlement_account_requests'],
     ['PUT', '/schools/me/config', 'school_identity'],
     ['GET', '/schools/me/students', 'student_administration'],
     ['POST', '/schools/me/students', 'student_administration'],
