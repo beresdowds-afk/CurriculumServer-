@@ -51,7 +51,27 @@ export const PERMISSIONS = {
   schoolFinancePoliciesApprove: 'school_finance.policies.approve',
   schoolFinanceSettlementRead: 'school_finance.settlement.read',
   schoolFinanceSettlementRequest: 'school_finance.settlement.request',
-  schoolFinanceSettlementApprove: 'school_finance.settlement.approve'
+  schoolFinanceSettlementApprove: 'school_finance.settlement.approve',
+  attendanceConfigurationRead: 'attendance.configuration.read',
+  attendanceConfigurationManage: 'attendance.configuration.manage',
+  attendanceSessionsRead: 'attendance.sessions.read',
+  attendanceSessionsManage: 'attendance.sessions.manage',
+  attendanceStudentsRead: 'attendance.students.read',
+  attendanceStudentsOverride: 'attendance.students.override',
+  attendanceStaffRead: 'attendance.staff.read',
+  attendanceStaffSelfRead: 'attendance.staff.self.read',
+  attendanceStaffOverride: 'attendance.staff.override',
+  attendanceDevicesRead: 'attendance.devices.read',
+  attendanceDevicesManage: 'attendance.devices.manage',
+  attendanceDevicesEnroll: 'attendance.devices.enroll',
+  attendanceDevicesRevoke: 'attendance.devices.revoke',
+  attendanceBiometricEnroll: 'attendance.biometric.enroll',
+  attendanceBiometricManage: 'attendance.biometric.manage',
+  attendanceReportsRead: 'attendance.reports.read',
+  attendanceReportsExport: 'attendance.reports.export',
+  attendanceNotificationsRead: 'attendance.notifications.read',
+  attendanceNotificationsManage: 'attendance.notifications.manage',
+  attendanceExceptionsReview: 'attendance.exceptions.review'
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

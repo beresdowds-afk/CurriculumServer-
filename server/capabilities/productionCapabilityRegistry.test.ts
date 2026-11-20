@@ -5,9 +5,12 @@ import {
   PRODUCTION_CAPABILITIES, capabilityActivationProblems, evaluateProductionCapabilityGate
 } from './productionCapabilityRegistry';
 import { createProductionCapabilityGateMiddleware } from './productionCapabilityMiddleware';
+import { validateProvisionableFeatures } from '../../src/data/applicationRegistryData';
+import { PERMISSIONS } from '../authorization/permissions';
 
 const notReady = [
   'central_iam',
+  'biometric_attendance',
   'school_provisioning',
   'school_finance_fee_policies',
   'school_finance_settlement_account_requests',
@@ -29,6 +32,28 @@ test('legacy authentication endpoints remain blocked by central IAM readiness', 
     assert.equal(decision.reason, 'capability_not_ready', path);
     assert.equal(decision.capabilityId, 'central_iam', path);
   }
+});
+
+test('attendance stays blocked without exposing the legacy JSON-backed routes', () => {
+  const capability = PRODUCTION_CAPABILITIES.find(item => item.id === 'biometric_attendance')!;
+  assert.equal(capability.state, 'not_started');
+  assert.deepEqual(capability.routes, []);
+  for (const method of ['GET', 'POST']) {
+    assert.deepEqual(evaluateProductionCapabilityGate(method, '/flow/school/example/attendance'), {
+      allowed: false,
+      reason: 'unknown_route'
+    });
+  }
+  assert.equal(evaluateProductionCapabilityGate('POST', '/attendance/log').allowed, false);
+  assert.equal(validateProvisionableFeatures('app_curriculum_flow', ['feat_biometric_attendance']).valid, false);
+});
+
+test('attendance permission declarations match the ungranted canonical migration', () => {
+  const sql = readFileSync('src/db/migrations/031_attendance_permissions.sql', 'utf8');
+  const codes = Object.values(PERMISSIONS).filter(code => code.startsWith('attendance.'));
+  const migrated = [...sql.matchAll(/\('(attendance\.[a-z.]+)',/g)].map(match => match[1]);
+  assert.deepEqual([...migrated].sort(), [...codes].sort());
+  assert.doesNotMatch(sql, /INSERT\s+INTO\s+production\.role_permissions/i);
 });
 
 test('database-backed capabilities remain blocked until operational readiness is evidenced', () => {

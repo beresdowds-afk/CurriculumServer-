@@ -94,6 +94,31 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     state: 'not_started'
   },
   {
+    id: 'biometric_attendance',
+    description: 'Student and staff attendance; blocked until IAM, device authentication, persistence, notification integration and operational acceptance are verified.',
+    routes: [],
+    requiredRepositories: ['AttendanceRepository', 'AuthorizationRepository', 'NotificationService'],
+    requiredMigrations: [8, 10, 27, 31],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'database_permission_and_resource_scope_with_separate_device_authentication',
+      permissions: [
+        'attendance.configuration.read', 'attendance.configuration.manage',
+        'attendance.sessions.read', 'attendance.sessions.manage',
+        'attendance.students.read', 'attendance.students.override',
+        'attendance.staff.read', 'attendance.staff.self.read', 'attendance.staff.override',
+        'attendance.devices.read', 'attendance.devices.manage', 'attendance.devices.enroll',
+        'attendance.devices.revoke', 'attendance.biometric.enroll', 'attendance.biometric.manage',
+        'attendance.reports.read', 'attendance.reports.export',
+        'attendance.notifications.read', 'attendance.notifications.manage', 'attendance.exceptions.review'
+      ]
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: [],
+    readinessEvidence: [],
+    state: 'not_started'
+  },
+  {
     id: 'school_provisioning',
     description: 'Platform-administrator school provisioning and invitation activation.',
     routes: [

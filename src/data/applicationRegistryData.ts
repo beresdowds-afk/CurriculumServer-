@@ -297,17 +297,17 @@ export const INITIAL_REGISTERED_FEATURES: RegisteredFeature[] = [
   {
     featureId: 'feat_biometric_attendance',
     name: 'Biometric RFID Attendance & Gate Sync',
-    description: 'Real-time school gate attendance logging, RFID card check-in, and instant parent SMS/WhatsApp alert dispatch.',
+    description: 'Planned RFID and biometric attendance capability; device ingestion, registers and guardian notifications are not yet operational.',
     applicationAssociation: 'app_curriculum_flow',
     dependencies: ['feat_student_registration'],
-    requiredPermissions: ['view_attendance'],
-    apiDependencies: ['/api/v1/attendance/log'],
-    databaseRequirements: ['attendance_logs_table'],
+    requiredPermissions: ['attendance.students.read'],
+    apiDependencies: [],
+    databaseRequirements: [],
     storageRequirements: [],
-    configOptions: { autoNotifyParentsOnArrival: true },
+    configOptions: {},
     version: '1.5.0',
-    availabilityStatus: 'beta',
-    honestyStatus: 'simulated_ui'
+    availabilityStatus: 'experimental',
+    honestyStatus: 'partial_stub'
   },
   {
     featureId: 'feat_ai_curriculum_advisor',
