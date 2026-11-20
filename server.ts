@@ -3002,8 +3002,8 @@ app.post(
     try {
       const payload = req.body ?? {};
       const subjectReferenceId = payload.subjectReferenceId || payload.subjectId;
-      if (!payload.stem || !subjectReferenceId) {
-        res.status(400).json({ success: false, error: 'Missing required question parameters: stem, subjectId' });
+      if (!payload.stem || !subjectReferenceId || typeof payload.correctAnswer !== 'string' || !payload.correctAnswer.trim()) {
+        res.status(400).json({ success: false, error: 'Missing required question parameters: stem, subjectId, correctAnswer' });
         return;
       }
       const saved = await getInstanceQuestionBankService().createQuestion(
@@ -3020,7 +3020,7 @@ app.post(
           questionType: payload.questionType || 'objective',
           stem: payload.stem,
           options: payload.options,
-          correctAnswer: payload.correctAnswer || 'A',
+          correctAnswer: payload.correctAnswer,
           explanation: payload.explanation || '',
           markingRubric: payload.markingRubric,
           marks: payload.marks || 2,

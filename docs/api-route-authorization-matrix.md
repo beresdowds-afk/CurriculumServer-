@@ -55,3 +55,21 @@ The registry is the enforcement source of truth; tests in
 `server/capabilities/productionCapabilityRegistry.test.ts` verify that unready
 and unknown routes stay blocked and that the gate precedes API handler
 registration.
+
+New question-bank items, including starter imports, are created as drafts or
+pending review. Approval requires the separate `question_bank.review` route.
+This does not retroactively verify previously approved items, and does not
+make the existing examination or browser-only CBT prototypes production-ready.
+
+The versioned `adaptive-remedial-secure-cbt` feature template is a draft and
+cannot be provisioned. The Curriculum Flow question-bank and secure examination
+tabs show an unavailable notice rather than their mock prototypes. The remedial
+tab reads class-level flags from authenticated teaching evidence; it does not
+identify individual gaps or provide an intervention workflow. Automatic instance
+lookup uses the currently blocked school-profile route; an authorized user may
+enter an application instance ID, which remains subject to tenant and teacher
+scope checks on the teaching endpoints.
+Secure sessions, a release vault, marking, publication, and real intervention
+records remain unimplemented; managed kiosk integration is required for
+operating-system lockdown. Do not remove the question-bank write gate until
+resource-scoped authorization, review, audit, and acceptance evidence exist.

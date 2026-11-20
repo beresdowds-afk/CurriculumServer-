@@ -292,6 +292,12 @@ export class InstanceQuestionBankRepository {
     }
   ): Promise<InstanceQuestionItem> {
     this.assertValidScope(tenant, applicationInstanceId);
+    if (input.reviewStatus !== undefined && !['draft', 'pending_review'].includes(input.reviewStatus)) {
+      throw new InstanceQuestionBankError(
+        'VALIDATION_ERROR',
+        'New questions must be draft or pending review; approval requires a separate review.'
+      );
+    }
     const actor = tenant.email || tenant.userId || 'school_teacher';
     const hasCustomUuid = Boolean(input.id && UUID.test(input.id));
 
@@ -381,13 +387,16 @@ export class InstanceQuestionBankRepository {
     if (!UUID.test(questionId)) {
       throw new InstanceQuestionBankError('VALIDATION_ERROR', 'Invalid question ID UUID.');
     }
+    if (!['draft', 'pending_review', 'approved', 'rejected'].includes(reviewStatus)) {
+      throw new InstanceQuestionBankError('VALIDATION_ERROR', 'Invalid question review status.');
+    }
     const reviewerId = tenant.email || tenant.userId || 'school_reviewer';
     return withTenantTransaction(this.pool, tenant, async client => {
       const res = await client.query(
         `UPDATE production.instance_question_bank_items
          SET review_status = $4,
              reviewer_id = $5,
-             approval_timestamp = CASE WHEN $4 = 'approved' THEN now() ELSE approval_timestamp END,
+             approval_timestamp = CASE WHEN $4 = 'approved' THEN now() ELSE NULL END,
              updated_at = now()
          WHERE tenant_id = $1 AND application_instance_id = $2 AND id = $3
          RETURNING *`,

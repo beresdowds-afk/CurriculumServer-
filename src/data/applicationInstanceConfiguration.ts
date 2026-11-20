@@ -21,6 +21,7 @@ import {
   validateSchoolFinanceTemplateSettings
 } from './schoolFinanceFeatureTemplate';
 import { ACADEMIC_RECORDS_FEATURE_TEMPLATE } from './academicRecordsFeatureTemplate';
+import { ADAPTIVE_REMEDIAL_CBT_FEATURE_TEMPLATE } from './adaptiveRemedialCbtFeatureTemplate';
 
 export const APPLICATION_CONFIGURATION_CONTRACT_VERSION = 1;
 
@@ -98,6 +99,14 @@ export const APPLICATION_FEATURE_TEMPLATE_REGISTRY: readonly ApplicationFeatureT
     versions: [ACADEMIC_RECORDS_FEATURE_TEMPLATE.templateVersion],
     status: ACADEMIC_RECORDS_FEATURE_TEMPLATE.status,
     provisionable: ACADEMIC_RECORDS_FEATURE_TEMPLATE.provisionable
+  },
+  {
+    applicationId: ADAPTIVE_REMEDIAL_CBT_FEATURE_TEMPLATE.applicationId,
+    featureId: ADAPTIVE_REMEDIAL_CBT_FEATURE_TEMPLATE.featureId,
+    templateId: ADAPTIVE_REMEDIAL_CBT_FEATURE_TEMPLATE.templateId,
+    versions: [ADAPTIVE_REMEDIAL_CBT_FEATURE_TEMPLATE.templateVersion],
+    status: ADAPTIVE_REMEDIAL_CBT_FEATURE_TEMPLATE.status,
+    provisionable: ADAPTIVE_REMEDIAL_CBT_FEATURE_TEMPLATE.provisionable
   }
 ];
 
@@ -225,6 +234,10 @@ export function validateApplicationInstanceConfiguration(
     }
     if (featureId === ACADEMIC_RECORDS_FEATURE_TEMPLATE.featureId) {
       errors.push('Academic records template is registered but not provisionable.');
+      continue;
+    }
+    if (featureId === ADAPTIVE_REMEDIAL_CBT_FEATURE_TEMPLATE.featureId) {
+      errors.push('Adaptive remedial and secure CBT template is registered but not provisionable.');
       continue;
     }
     const logistics = validateLogisticsFeatureConfiguration(featureConfiguration.settings);
