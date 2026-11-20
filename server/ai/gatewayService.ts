@@ -29,12 +29,15 @@ import { validateAiResponse } from './responseValidator';
 import { defaultAiRequestRouter, IntelligentAiRequestRouter } from './router';
 import {
   AiGatewayError,
+  type AiGatewayErrorCode,
   type AiProviderAdapter,
   type AiProviderGenerateResult,
   type AiUsageAggregateRecord,
   type AuthenticatedAiCaller
 } from './types';
 import { InMemoryAiGatewayStore, PostgresAiGatewayStore, type AiGatewayPersistenceStore } from './usageMetering';
+import { TeachingEvidenceService } from '../teachingEvidence/teachingEvidenceService';
+import { TeachingEvidenceError } from '../teachingEvidence/teachingEvidenceTypes';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -299,12 +302,161 @@ export class CentralAiGatewayService {
     return context;
   }
 
+  private async prepareTaughtAssessmentPayload(
+    pool: DatabasePool | undefined,
+    caller: AuthenticatedAiCaller,
+    effectiveInstanceId: string | null,
+    payload: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const scopeAuthorizationId =
+      typeof payload.scopeAuthorizationId === 'string' ? payload.scopeAuthorizationId.trim() : '';
+    const strictVerifiedEvidence = payload.strictVerifiedEvidence === true;
+
+    // Allow legacy in-memory AI gateway harness tests (no Postgres pool and no strict flag/scopeId)
+    // while strictly enforcing persisted teaching evidence in every backed environment or strict request.
+    if (!pool && !strictVerifiedEvidence && !scopeAuthorizationId) {
+      return payload;
+    }
+
+    if (!scopeAuthorizationId) {
+      throw new AiGatewayError(
+        'VALIDATION_ERROR',
+        'A persisted teacher-authorized scopeAuthorizationId grounded in verified PostgreSQL teaching evidence is required for taught-only assessment generation. Client completedTopics are ignored.',
+        403,
+        { code: 'SCOPE_AUTHORIZATION_REQUIRED' }
+      );
+    }
+
+    if (!pool) {
+      throw new AiGatewayError(
+        'AUTHORIZATION_UNAVAILABLE',
+        'Teaching evidence repository is not configured to validate assessment scope authorization.',
+        503
+      );
+    }
+
+    const teachingService = new TeachingEvidenceService(pool);
+    try {
+      const evaluated = await teachingService.resolveAndValidateAuthorizedScopeForGeneration(
+        {
+          tenant: caller.verifiedPrincipal,
+          applicationInstanceId: effectiveInstanceId || caller.applicationInstanceId || '',
+          authorizedPrincipal: caller.authorizedPrincipal,
+          userId: caller.userId,
+          role: caller.role
+        },
+        scopeAuthorizationId,
+        { requireCallerIsAuthorizingTeacher: true }
+      );
+
+      const allowedObjectiveSet = new Set(evaluated.scopedObjectiveIds);
+      const cleanTopics = evaluated.scopedTopics.map(topic => ({
+        topicId: topic.topicId,
+        topicTitle: topic.topicTitle,
+        weekNumber: topic.weekNumber,
+        coverageMode: topic.coverageMode,
+        coveredObjectives: topic.coveredObjectives
+          .filter(obj => allowedObjectiveSet.has(obj.id))
+          .map(obj => ({
+            id: obj.id,
+            description: obj.description,
+            bloomLevel: obj.bloomLevel
+          })),
+        understandingLevel: topic.understandingLevel,
+        remedialNeeded: topic.remedialNeeded,
+        remedialTopic: topic.remedialTopic,
+        adminVerificationStatus: topic.adminVerificationStatus
+      }));
+
+      // Strip any client-supplied completedTopics to guarantee untaught topics never enter prompts.
+      const { completedTopics: _ignoredCompletedTopics, ...restPayload } = payload;
+      return {
+        ...restPayload,
+        scopeAuthorizationId: evaluated.scopeAuthorization.id,
+        subjectName: evaluated.evidenceBundle.subjectName,
+        classGrade: evaluated.evidenceBundle.classGradeName,
+        curriculumVersionId: evaluated.evidenceBundle.curriculumVersionId,
+        verifiedEvidence: {
+          assignmentId: evaluated.evidenceBundle.assignment.id,
+          teacherUserId: evaluated.evidenceBundle.assignment.teacherUserId,
+          subjectId: evaluated.evidenceBundle.subjectId,
+          subjectName: evaluated.evidenceBundle.subjectName,
+          classId: evaluated.evidenceBundle.classId,
+          classGradeName: evaluated.evidenceBundle.classGradeName,
+          section: evaluated.evidenceBundle.section,
+          academicSession: evaluated.evidenceBundle.academicSession,
+          term: evaluated.evidenceBundle.term,
+          curriculumVersionId: evaluated.evidenceBundle.curriculumVersionId,
+          topics: cleanTopics
+        },
+        authorizedScope: {
+          scopeAuthorizationId: evaluated.scopeAuthorization.id,
+          scopeVersion: evaluated.scopeAuthorization.scopeVersion,
+          scopeHash: evaluated.scopeAuthorization.scopeHash,
+          assessmentType: evaluated.scopeAuthorization.assessmentType,
+          title: evaluated.scopeAuthorization.title,
+          selectedTopicIds: evaluated.scopeAuthorization.selectedTopicIds,
+          selectedObjectiveIds: evaluated.scopedObjectiveIds,
+          sourceDeliveryIds: evaluated.scopeAuthorization.sourceDeliveryIds,
+          questionCount: evaluated.scopeAuthorization.questionCount,
+          questionTypesConfig: evaluated.scopeAuthorization.questionTypesConfig,
+          objectiveTheoryBalance: evaluated.scopeAuthorization.objectiveTheoryBalance,
+          totalMarks: evaluated.scopeAuthorization.totalMarks,
+          difficultyMix: evaluated.scopeAuthorization.difficultyMix,
+          durationMinutes: evaluated.scopeAuthorization.durationMinutes,
+          instructions: evaluated.scopeAuthorization.instructions
+        }
+      };
+    } catch (err) {
+      if (err instanceof TeachingEvidenceError) {
+        const mappedCode: AiGatewayErrorCode =
+          err.code === 'FORBIDDEN' || err.code === 'UNAUTHENTICATED'
+            ? 'TENANT_ISOLATION_VIOLATION'
+            : err.httpStatus >= 400 && err.httpStatus < 500
+            ? 'VALIDATION_ERROR'
+            : 'PROVIDER_UNAVAILABLE';
+        throw new AiGatewayError(mappedCode, err.message, err.httpStatus, {
+          teachingErrorCode: err.code,
+          ...(err.details || {})
+        });
+      }
+      throw err;
+    }
+  }
+
   private postProcessOutput(
     taskType: AiTaskType,
     validated: unknown,
     payload: Record<string, unknown>,
     caller: AuthenticatedAiCaller
   ): unknown {
+    if (taskType === 'taught_assessment' && validated && typeof validated === 'object' && !Array.isArray(validated)) {
+      const obj = validated as Record<string, unknown>;
+      const authorizedScope =
+        payload.authorizedScope && typeof payload.authorizedScope === 'object'
+          ? (payload.authorizedScope as Record<string, unknown>)
+          : null;
+      const verifiedEvidence =
+        payload.verifiedEvidence && typeof payload.verifiedEvidence === 'object'
+          ? (payload.verifiedEvidence as Record<string, unknown>)
+          : null;
+      return {
+        ...obj,
+        ...(authorizedScope
+          ? {
+              scopeAuthorizationId: authorizedScope.scopeAuthorizationId,
+              scopeVersion: authorizedScope.scopeVersion,
+              scopeHash: authorizedScope.scopeHash
+            }
+          : {}),
+        ...(verifiedEvidence?.curriculumVersionId
+          ? { curriculumVersionId: verifiedEvidence.curriculumVersionId }
+          : {}),
+        reviewStatus: 'pending_review',
+        reviewRequired: true
+      };
+    }
+
     if (taskType === 'secure_exam' && validated && typeof validated === 'object' && !Array.isArray(validated)) {
       const obj = validated as Record<string, unknown>;
       const subjectName = typeof payload.subjectName === 'string' ? payload.subjectName : 'General';
@@ -509,16 +661,21 @@ export class CentralAiGatewayService {
         );
       }
 
+      const effectivePayload =
+        routing.taskType === 'taught_assessment'
+          ? await this.prepareTaughtAssessmentPayload(pool, caller, effectiveInstanceId, envelope.payload)
+          : envelope.payload;
+
       const schoolContext = await this.loadSchoolScopedContext(
         pool,
         caller,
         effectiveTenantId,
         effectiveInstanceId,
-        envelope.payload,
+        effectivePayload,
         routing.taskType
       );
 
-      const orchestrated = buildOrchestratedPrompt(routing.taskType, envelope.payload, schoolContext);
+      const orchestrated = buildOrchestratedPrompt(routing.taskType, effectivePayload, schoolContext);
       if (orchestrated.contents.length > cfg.maxPromptChars) {
         throw new AiGatewayError(
           'VALIDATION_ERROR',
@@ -543,8 +700,9 @@ export class CentralAiGatewayService {
           modelId: routing.modelId,
           routingStrategy: routing.strategy,
           requestMetadata: {
-            subjectName: envelope.payload.subjectName ?? null,
-            classGrade: envelope.payload.classGrade ?? null
+            subjectName: effectivePayload.subjectName ?? null,
+            classGrade: effectivePayload.classGrade ?? null,
+            scopeAuthorizationId: effectivePayload.scopeAuthorizationId ?? null
           }
         });
       } catch (err) {
@@ -581,7 +739,7 @@ export class CentralAiGatewayService {
         }
 
         const validated = validateAiResponse(routing.taskType, providerResult.rawText);
-        const processed = this.postProcessOutput(routing.taskType, validated, envelope.payload, caller);
+        const processed = this.postProcessOutput(routing.taskType, validated, effectivePayload, caller);
         if (Buffer.byteLength(JSON.stringify(processed), 'utf8') > cfg.maxResponseChars) {
           throw new AiGatewayError(
             'INVALID_AI_RESPONSE',

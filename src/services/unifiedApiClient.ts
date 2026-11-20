@@ -262,6 +262,21 @@ class UnifiedApiClient {
     return this.request<T>(endpoint, options, 'school_flow');
   }
 
+  public async requestSchoolFlow<T>(
+    endpoint: string,
+    options: RequestInit = {},
+    applicationInstanceId?: string
+  ): Promise<T> {
+    const existingHeaders = (options.headers as Record<string, string>) || {};
+    const mergedHeaders = applicationInstanceId
+      ? { ...existingHeaders, ...this.buildSharedServiceHeaders(applicationInstanceId) }
+      : existingHeaders;
+    return this.requestAuthenticatedSchoolFlow<T>(endpoint, {
+      ...options,
+      headers: mergedHeaders
+    });
+  }
+
   /**
    * Generic GET request with automatic token injection based on endpoint
    */

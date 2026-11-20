@@ -114,7 +114,7 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     id: 'question_bank_scoped_writes',
     description: 'Question Bank and assessment writes requiring principal-bound repositories and item-level scope enforcement.',
     routes: [
-      { method: 'POST', path: /^\/(?:question-bank(?:\/.*)?|assessment-blueprints|assessments(?:\/.*)?)$/ },
+      { method: 'POST', path: /^\/(?:question-bank(?:\/.*)?|assessment-blueprints|assessments(?:\/(?!scope-authorizations(?:\/.*)?$|taught-generate$).*?)?)$/ },
       { method: 'DELETE', path: /^\/question-bank\/items\/[0-9a-f-]+$/i }
     ],
     requiredRepositories: ['InstanceQuestionBankRepository', 'AuthorizationRepository'],

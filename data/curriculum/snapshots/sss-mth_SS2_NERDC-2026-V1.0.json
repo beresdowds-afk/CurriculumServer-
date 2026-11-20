@@ -42,7 +42,7 @@
             "Official NERDC Approved Textbooks Series"
           ],
           "provenance": {
-            "documentId": "doc_evid_1795017276369_duqww",
+            "documentId": "doc_evid_1795170862040_aqwvg",
             "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16",
             "pageNumber": 1
           }
@@ -78,7 +78,7 @@
             "Official NERDC Approved Textbooks Series"
           ],
           "provenance": {
-            "documentId": "doc_evid_1795017276369_duqww",
+            "documentId": "doc_evid_1795170862040_aqwvg",
             "sectionReference": "NERDC Gazette 2026 Chapter 4 p.35",
             "pageNumber": 1
           }
@@ -86,8 +86,8 @@
       ]
     }
   ],
-  "documentId": "doc_evid_1795017276369_duqww",
-  "extractedAt": "2026-11-18T15:54:36.377Z",
+  "documentId": "doc_evid_1795170862040_aqwvg",
+  "extractedAt": "2026-11-20T10:34:22.048Z",
   "aiAssisted": false,
   "humanValidationStatus": "VALIDATED"
 }
