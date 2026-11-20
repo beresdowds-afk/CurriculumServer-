@@ -264,17 +264,18 @@ export const INITIAL_REGISTERED_FEATURES: RegisteredFeature[] = [
   {
     featureId: 'feat_results_processing',
     name: 'Results Processing & Terminal Grading',
-    description: 'Continuous assessment aggregation, psychomotor scoring, affective rating, and cumulative GPA calculation.',
+    description: 'Academic records and results template under development; official score capture, approval and reporting are not yet operational.',
     applicationAssociation: 'app_curriculum_flow',
     dependencies: ['feat_student_registration', 'feat_exam_management'],
     requiredPermissions: ['process_results'],
     apiDependencies: ['/api/v1/flow/grades'],
     databaseRequirements: ['term_results_table', 'cumulative_transcripts_table'],
     storageRequirements: ['pdf_report_cards_bucket'],
-    configOptions: { gradingSystem: 'nigerian_waec_scale', includeQrVerification: true },
+    configOptions: { templateId: 'academic-records-results', templateVersion: '0.1.0' },
     version: '2.4.0',
-    availabilityStatus: 'available',
-    honestyStatus: 'fully_implemented'
+    availabilityStatus: 'beta',
+    honestyStatus: 'partial_stub',
+    readiness: ['designed']
   },
   {
     featureId: 'feat_bursary_billing',

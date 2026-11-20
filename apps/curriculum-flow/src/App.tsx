@@ -12,7 +12,7 @@ import { QuestionBankTab } from '../../../src/components/QuestionBankTab';
 import { SecureExaminationTab } from '../../../src/components/SecureExaminationTab';
 import { TaughtAssessmentTab } from '../../../src/components/TaughtAssessmentTab';
 import { AdaptiveRemedialTab } from '../../../src/components/AdaptiveRemedialTab';
-import { AcademicRecordsTab } from '../../../src/components/AcademicRecordsTab';
+import { AcademicRecordsWorkspace } from '../../../src/components/AcademicRecordsWorkspace';
 import { AcademicAnalyticsTab } from '../../../src/components/AcademicAnalyticsTab';
 import { StudentRegistersTab } from '../../../src/components/StudentRegistersTab';
 import { BiometricAttendanceTab } from '../../../src/components/BiometricAttendanceTab';
@@ -296,7 +296,7 @@ const handleHash = () => {
             )}
 
             {activeTab === 'academic_records' && (
-              <AcademicRecordsTab />
+              <AcademicRecordsWorkspace />
             )}
 
             {activeTab === 'academic_analytics' && (
