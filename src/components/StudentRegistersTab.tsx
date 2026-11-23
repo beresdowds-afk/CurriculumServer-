@@ -1,850 +1,736 @@
-import React, { useState, useMemo } from 'react';
-import { 
-  UserProfile, 
-  Student, 
-  ClassGroup, 
-  Teacher, 
-  ClassAttendanceRegister, 
-  StudentAttendanceEntry, 
-  AttendanceStatus,
-  ClassGrade 
-} from '../types';
-import { 
-  Users, 
-  UserCheck, 
-  ClipboardList, 
-  Search, 
-  Filter, 
-  UserPlus, 
-  Check, 
-  X, 
-  Clock, 
-  AlertCircle, 
-  Send, 
-  Phone, 
-  Mail, 
-  CheckCircle2, 
-  Download, 
-  Printer, 
-  Calendar, 
-  ChevronRight, 
-  Edit3,
-  ShieldCheck,
-  ScanFace,
-  Fingerprint,
-  Zap
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  CheckCircle2,
+  ClipboardList,
+  HeartPulse,
+  IdCard,
+  Lock,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  UserPlus,
+  Users,
+  X
 } from 'lucide-react';
-import { BiometricMovementLog } from '../types';
-import { INITIAL_CLASS_GROUPS, INITIAL_STUDENTS, INITIAL_TEACHERS } from '../data/schoolManagementData';
-import { MOCK_USERS } from '../data/curriculumFlowData';
+import type {
+  SchoolAdministrationClass,
+  SchoolAdministrationStudent,
+  StudentAdmissionRecord,
+  StudentDigitalIdCardRecord,
+  StudentMedicalProfileRecord
+} from '../../packages/shared-types/src/apiContracts';
+import type { UserProfile } from '../types';
+import { unifiedApiClient } from '../services/unifiedApiClient';
 
 interface StudentRegistersTabProps {
   currentUser?: UserProfile;
-  students?: Student[];
-  classGroups?: ClassGroup[];
-  teachers?: Teacher[];
-  attendanceRegisters?: ClassAttendanceRegister[];
-  movementLogs?: BiometricMovementLog[];
-  onAddStudent?: (student: Student) => void;
-  onUpdateStudent?: (student: Student) => void;
-  onSaveAttendanceRegister?: (register: ClassAttendanceRegister) => void;
   initialSelectedClassGroupId?: string;
   onNavigateTab?: (tab: any) => void;
 }
 
 export const StudentRegistersTab: React.FC<StudentRegistersTabProps> = ({
-  currentUser = MOCK_USERS[0],
-  students = INITIAL_STUDENTS,
-  classGroups = INITIAL_CLASS_GROUPS,
-  teachers = INITIAL_TEACHERS,
-  attendanceRegisters = [],
-  movementLogs = [],
-  onAddStudent = (_s: Student) => {},
-  onUpdateStudent = (_s: Student) => {},
-  onSaveAttendanceRegister = (_r: ClassAttendanceRegister) => {},
-  initialSelectedClassGroupId,
-  onNavigateTab = (_tab: any) => {}
+  initialSelectedClassGroupId
 }) => {
-  const [activeTab, setActiveTab] = useState<'class_registers' | 'general_roster'>('class_registers');
-  const [selectedClassId, setSelectedClassId] = useState<string>(
-    initialSelectedClassGroupId || classGroups[0]?.id || ''
-  );
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
+  const isAuthenticated = unifiedApiClient.isAuthenticated('school_flow');
+  const [activeTab, setActiveTab] = useState<'general_roster' | 'admissions'>('general_roster');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const [students, setStudents] = useState<SchoolAdministrationStudent[]>([]);
+  const [classes, setClasses] = useState<SchoolAdministrationClass[]>([]);
+  const [admissions, setAdmissions] = useState<StudentAdmissionRecord[]>([]);
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedGradeFilter, setSelectedGradeFilter] = useState('all');
+  const [selectedClassFilter, setSelectedClassFilter] = useState(initialSelectedClassGroupId || 'all');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState('all');
 
-  // Enrol Student Modal State
   const [isEnrolModalOpen, setIsEnrolModalOpen] = useState(false);
-  const [enrolFormData, setEnrolFormData] = useState({
-    fullName: '',
-    admissionNumber: `CF/2026/${String(students.length + 101).padStart(4, '0')}`,
-    gender: 'Female' as 'Male' | 'Female',
-    dateOfBirth: '2009-05-15',
-    classGroupId: classGroups[0]?.id || '',
-    parentName: '',
-    parentPhone: '+234 ',
-    parentEmail: '',
-    residentialAddress: 'Lagos, Nigeria'
+  const [studentForm, setStudentForm] = useState({
+    admissionNumber: '',
+    firstName: '',
+    lastName: '',
+    gender: 'female' as 'male' | 'female' | 'other' | 'prefer_not_to_say',
+    dateOfBirth: '',
+    nationality: 'Nigerian',
+    stateOfOrigin: '',
+    residentialAddress: ''
   });
 
-  // Current Class Group & its Form Master
-  const currentClassGroup = useMemo(() => {
-    return classGroups.find(cg => cg.id === selectedClassId) || classGroups[0];
-  }, [classGroups, selectedClassId]);
+  const [isAdmissionModalOpen, setIsAdmissionModalOpen] = useState(false);
+  const [admissionForm, setAdmissionForm] = useState({
+    applicationNumber: '',
+    firstName: '',
+    lastName: '',
+    targetGradeLevel: 'JSS 1',
+    previousSchoolName: ''
+  });
 
-  const currentFormTeacher = useMemo(() => {
-    return teachers.find(t => t.id === currentClassGroup?.formTeacherId);
-  }, [teachers, currentClassGroup]);
+  // Active Student Dossier Modal (Medical, Digital ID, Class Allocation, Lifecycle, History)
+  const [selectedStudent, setSelectedStudent] = useState<SchoolAdministrationStudent | null>(null);
+  const [medicalProfile, setMedicalProfile] = useState<StudentMedicalProfileRecord | null>(null);
+  const [medicalDraft, setMedicalDraft] = useState({
+    bloodGroup: 'unknown',
+    genotype: 'unknown',
+    allergies: '',
+    physicianName: '',
+    physicianPhone: '',
+    consentForEmergencyCare: false
+  });
+  const [digitalId, setDigitalId] = useState<StudentDigitalIdCardRecord | null>(null);
+  const [issuedQrToken, setIssuedQrToken] = useState<string>('');
+  const [historyRows, setHistoryRows] = useState<any[]>([]);
+  const [assignClassId, setAssignClassId] = useState('');
 
-  // Students belonging to the active Class Group (Derived strictly from General Students Register)
-  const classStudents = useMemo(() => {
-    return students.filter(s => s.classGroupId === selectedClassId);
-  }, [students, selectedClassId]);
+  const showNotice = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 4000);
+  };
 
-  // Load existing register or create fresh entries from General Students DB
-  const existingRegister = useMemo(() => {
-    return attendanceRegisters.find(r => r.classGroupId === selectedClassId && r.date === selectedDate);
-  }, [attendanceRegisters, selectedClassId, selectedDate]);
+  const loadData = useCallback(async () => {
+    if (!unifiedApiClient.isAuthenticated('school_flow')) return;
+    setLoading(true);
+    setError('');
+    try {
+      const [studentsRes, classesRes, admissionsRes] = await Promise.allSettled([
+        unifiedApiClient.listStudents({ page: 1, pageSize: 100 }),
+        unifiedApiClient.listClasses({ page: 1, pageSize: 100 }),
+        unifiedApiClient.listAdmissions()
+      ]);
 
-  // Live Register state
-  const [liveEntries, setLiveEntries] = useState<Record<string, StudentAttendanceEntry>>({});
-  const [generalRemarks, setGeneralRemarks] = useState(existingRegister?.generalRemarks || '');
-  const [isSubmittedNotice, setIsSubmittedNotice] = useState<string | null>(null);
+      if (studentsRes.status === 'fulfilled') setStudents(studentsRes.value.records);
+      if (classesRes.status === 'fulfilled') setClasses(classesRes.value.records);
+      if (admissionsRes.status === 'fulfilled') setAdmissions(admissionsRes.value);
 
-  // Synchronize live entries whenever classStudents or existingRegister changes
-  React.useEffect(() => {
-    const entryMap: Record<string, StudentAttendanceEntry> = {};
-    if (existingRegister) {
-      existingRegister.entries.forEach(e => {
-        entryMap[e.studentId] = { ...e };
+      if (studentsRes.status === 'rejected') {
+        setError((studentsRes.reason as { error?: string })?.error || 'Unable to load students.');
+      }
+    } catch (err) {
+      setError((err as { error?: string })?.error || 'Unable to load student administration records.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const openStudentDossier = async (student: SchoolAdministrationStudent) => {
+    setSelectedStudent(student);
+    setAssignClassId(student.class_id || classes[0]?.id || '');
+    setIssuedQrToken('');
+    setError('');
+
+    const [medRes, cardRes, histRes] = await Promise.allSettled([
+      unifiedApiClient.getStudentMedicalProfile(student.id),
+      unifiedApiClient.getStudentDigitalId(student.id),
+      unifiedApiClient.getStudentHistory(student.id)
+    ]);
+
+    if (medRes.status === 'fulfilled') {
+      const med = medRes.value;
+      setMedicalProfile(med);
+      setMedicalDraft({
+        bloodGroup: med?.blood_group || 'unknown',
+        genotype: med?.genotype || 'unknown',
+        allergies: Array.isArray(med?.allergies) ? med.allergies.join(', ') : '',
+        physicianName: med?.physician_name || '',
+        physicianPhone: med?.physician_phone || '',
+        consentForEmergencyCare: Boolean(med?.consent_for_emergency_care)
       });
-      setGeneralRemarks(existingRegister.generalRemarks || '');
     } else {
-      classStudents.forEach(stu => {
-        entryMap[stu.id] = {
-          studentId: stu.id,
-          studentName: stu.fullName,
-          admissionNumber: stu.admissionNumber,
-          gender: stu.gender,
-          status: 'present',
-          arrivalTime: '07:45 AM',
-          remarks: ''
-        };
-      });
-      setGeneralRemarks('Daily morning roll call register taken by Form Master.');
+      setMedicalProfile(null);
     }
-    setLiveEntries(entryMap);
-  }, [selectedClassId, selectedDate, existingRegister, classStudents]);
 
-  // Stats calculation
-  const stats = useMemo(() => {
-    const entries = Object.values(liveEntries) as StudentAttendanceEntry[];
-    const total = classStudents.length;
-    const present = entries.filter(e => e.status === 'present').length;
-    const absent = entries.filter(e => e.status === 'absent').length;
-    const late = entries.filter(e => e.status === 'late').length;
-    const excused = entries.filter(e => e.status === 'excused').length;
-    const rate = total > 0 ? Math.round(((present + late) / total) * 100) : 100;
-    return { total, present, absent, late, excused, rate };
-  }, [liveEntries, classStudents]);
+    if (cardRes.status === 'fulfilled') {
+      setDigitalId(cardRes.value);
+    } else {
+      setDigitalId(null);
+    }
 
-  const handleSetStatus = (studentId: string, status: AttendanceStatus) => {
-    setLiveEntries(prev => ({
-      ...prev,
-      [studentId]: {
-        ...prev[studentId],
-        status,
-        arrivalTime: status === 'present' ? '07:45 AM' : status === 'late' ? '08:15 AM' : undefined
+    if (histRes.status === 'fulfilled') {
+      setHistoryRows(histRes.value);
+    } else {
+      setHistoryRows([]);
+    }
+  };
+
+  const filteredStudents = useMemo(() => {
+    return students.filter(stu => {
+      if (selectedClassFilter !== 'all' && stu.class_id !== selectedClassFilter) return false;
+      if (selectedStatusFilter !== 'all' && stu.lifecycle_status !== selectedStatusFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const full = `${stu.first_name} ${stu.last_name}`.toLowerCase();
+        return full.includes(q) || stu.admission_number.toLowerCase().includes(q);
       }
-    }));
-  };
-
-  const handleSetRemarks = (studentId: string, remarks: string) => {
-    setLiveEntries(prev => ({
-      ...prev,
-      [studentId]: {
-        ...prev[studentId],
-        remarks
-      }
-    }));
-  };
-
-  const handleMarkAllPresent = () => {
-    setLiveEntries(prev => {
-      const next = { ...prev };
-      Object.keys(next).forEach(sid => {
-        next[sid] = { ...next[sid], status: 'present', arrivalTime: '07:45 AM' };
-      });
-      return next;
+      return true;
     });
-  };
+  }, [students, selectedClassFilter, selectedStatusFilter, searchQuery]);
 
-  const handleSyncBiometricLogs = () => {
-    // Sync current register entries with biometric logs
-    let matchedCount = 0;
-    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+  const classNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    classes.forEach(c => map.set(c.id, c.name));
+    return map;
+  }, [classes]);
 
-    setLiveEntries(prev => {
-      const next = { ...prev };
-      classStudents.forEach(student => {
-        // Find matching movement log for student
-        const studentLog = movementLogs.find(
-          log => (log.personId === student.id || log.personAdmissionNo === student.admissionNumber) &&
-                 log.movementType === 'inbound_entry'
-        );
-
-        if (studentLog) {
-          matchedCount++;
-          const status = studentLog.punctualityStatus === 'late' ? 'late' : 'present';
-          next[student.id] = {
-            ...next[student.id],
-            status,
-            arrivalTime: studentLog.timeFormatted,
-            remarks: `Biometric ${studentLog.verificationMethod.toUpperCase()} at ${studentLog.deviceName} (${studentLog.timeFormatted})`
-          };
-        } else {
-          // If no biometric log found, default keep or mark absent with device note
-          if (!next[student.id]?.arrivalTime) {
-            next[student.id] = {
-              ...next[student.id],
-              remarks: next[student.id]?.remarks || 'No Gate/Biometric Terminal scan detected'
-            };
-          }
-        }
-      });
-      return next;
-    });
-
-    setIsSubmittedNotice(
-      `Biometric Hardware Sync: Matched ${matchedCount} verified scans across gate turnstiles & classroom terminals at ${nowTime}.`
+  if (!isAuthenticated) {
+    return (
+      <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8 text-center space-y-4">
+        <ShieldAlert className="w-10 h-10 text-amber-400 mx-auto" />
+        <h2 className="text-xl font-bold text-white">Authenticated School Session Required</h2>
+        <p className="text-sm text-slate-400 max-w-lg mx-auto">
+          Sign in to access student admissions, biodata registers, medical profiles, digital identity cards, and lifecycle workflows.
+        </p>
+        <a
+          href="?school_admin=login"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
+        >
+          <Lock className="w-4 h-4" />
+          <span>Sign In to School Portal</span>
+        </a>
+      </div>
     );
-    setTimeout(() => setIsSubmittedNotice(null), 6000);
-  };
-
-  const handleSaveRegister = () => {
-    const entriesArray = Object.values(liveEntries) as StudentAttendanceEntry[];
-    const newReg: ClassAttendanceRegister = {
-      id: existingRegister?.id || `reg-${selectedClassId}-${selectedDate}`,
-      date: selectedDate,
-      classGroupId: currentClassGroup.id,
-      classGroupName: currentClassGroup.name,
-      classGrade: currentClassGroup.grade,
-      term: currentClassGroup.term,
-      week: 5,
-      session: 'Full Day',
-      takenById: currentFormTeacher?.id || currentUser.id,
-      takenByName: currentFormTeacher?.fullName || currentUser.name,
-      takenAt: new Date().toISOString(),
-      entries: entriesArray,
-      totalEnrolled: stats.total,
-      totalPresent: stats.present,
-      totalAbsent: stats.absent,
-      totalLate: stats.late,
-      totalExcused: stats.excused,
-      attendanceRatePercentage: stats.rate,
-      generalRemarks,
-      isSubmitted: true
-    };
-
-    onSaveAttendanceRegister(newReg);
-    setIsSubmittedNotice(`Daily Attendance Register for ${currentClassGroup.name} on ${selectedDate} has been locked & saved. Attendance: ${stats.rate}%.`);
-    setTimeout(() => setIsSubmittedNotice(null), 6000);
-  };
-
-  const handleEnrolStudent = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!enrolFormData.fullName.trim() || !enrolFormData.parentName.trim() || !enrolFormData.parentPhone.trim()) {
-      alert('Please fill all required student and parent fields.');
-      return;
-    }
-
-    const matchedGroup = classGroups.find(cg => cg.id === enrolFormData.classGroupId) || classGroups[0];
-
-    const newStudent: Student = {
-      id: `stu-${Date.now()}`,
-      admissionNumber: enrolFormData.admissionNumber,
-      fullName: enrolFormData.fullName,
-      gender: enrolFormData.gender,
-      dateOfBirth: enrolFormData.dateOfBirth,
-      classGroupId: matchedGroup.id,
-      classGroupName: matchedGroup.name,
-      classGrade: matchedGroup.grade,
-      parentName: enrolFormData.parentName,
-      parentPhone: enrolFormData.parentPhone,
-      parentEmail: enrolFormData.parentEmail || `${enrolFormData.fullName.toLowerCase().replace(/\s+/g, '.')}@parents.curriculumflow.ng`,
-      residentialAddress: enrolFormData.residentialAddress,
-      enrollmentStatus: 'active',
-      termAttendanceRate: 100,
-      totalDaysPresent: 1,
-      totalDaysAbsent: 0,
-      totalDaysLate: 0
-    };
-
-    onAddStudent(newStudent);
-    setIsEnrolModalOpen(false);
-  };
-
-  // General Roster Filtered
-  const filteredGeneralStudents = students.filter(s => {
-    if (selectedGradeFilter !== 'all' && s.classGrade !== selectedGradeFilter) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchName = s.fullName.toLowerCase().includes(q);
-      const matchAdm = s.admissionNumber.toLowerCase().includes(q);
-      const matchClass = s.classGroupName.toLowerCase().includes(q);
-      const matchParent = s.parentName.toLowerCase().includes(q);
-      if (!matchName && !matchAdm && !matchClass && !matchParent) return false;
-    }
-    return true;
-  });
+  }
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Top Banner */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 relative overflow-hidden shadow-xl">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+    <div className="space-y-6 pb-12">
+      {notice && (
+        <div className="rounded-2xl border border-emerald-600/40 bg-emerald-950/80 px-4 py-3 text-xs font-semibold text-emerald-200 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{notice}</span>
+        </div>
+      )}
+      {error && (
+        <div role="alert" className="rounded-2xl border border-rose-600/40 bg-rose-950/70 px-4 py-3 text-xs text-rose-200 flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-xs font-bold text-emerald-400 uppercase tracking-wider mb-1">
               <ClipboardList className="w-4 h-4" />
-              <span>Institutional Student Registers & Daily Attendance</span>
+              <span>Student Lifecycle, Admissions & Identity Registry</span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-extrabold text-white">
-              Student Register & Class Group Attendance Portal
-            </h1>
-            <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-              Unified roll-call registers derived dynamically from the school's general student database. Track student presence, automated parent communication, and punctuality records.
+            <h1 className="text-2xl font-extrabold text-white">Student Master Register & Admissions Pipeline</h1>
+            <p className="text-xs text-slate-400 mt-1">
+              Authoritative PostgreSQL records for student biodata, admissions review, class allocation, medical care consent, and signed digital ID cards.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
-              onClick={() => setIsEnrolModalOpen(true)}
-              className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs transition-all shadow-lg shadow-emerald-950/40 flex items-center gap-2"
+              type="button"
+              onClick={loadData}
+              disabled={loading}
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAdmissionModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5"
             >
               <UserPlus className="w-4 h-4" />
-              <span>Enrol Student to Master DB</span>
+              <span>New Admission Application</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsEnrolModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>Register Student</span>
             </button>
           </div>
         </div>
 
-        {/* Sub-Nav Switcher */}
-        <div className="flex items-center gap-2 p-1 bg-slate-800/90 rounded-2xl border border-slate-700 w-fit mt-6">
+        <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
           <button
-            onClick={() => setActiveTab('class_registers')}
-            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === 'class_registers'
-                ? 'bg-emerald-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <ClipboardList className="w-3.5 h-3.5" />
-            <span>Class Group Registers (Daily Roll Call)</span>
-          </button>
-
-          <button
+            type="button"
             onClick={() => setActiveTab('general_roster')}
-            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === 'general_roster'
-                ? 'bg-emerald-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white'
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 ${
+              activeTab === 'general_roster' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300'
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>General Students Master Register ({students.length})</span>
+            <span>Student Master Register ({students.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('admissions')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 ${
+              activeTab === 'admissions' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300'
+            }`}
+          >
+            <ClipboardList className="w-3.5 h-3.5" />
+            <span>Admissions Queue ({admissions.length})</span>
           </button>
         </div>
       </div>
 
-      {/* SUB-VIEW 1: CLASS GROUP DAILY ATTENDANCE REGISTER */}
-      {activeTab === 'class_registers' && (
-        <div className="space-y-6">
-          {/* Class & Date Selector Controls */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-4 text-xs">
-              <div>
-                <label className="text-slate-400 font-semibold block mb-1">Target Class Arm:</label>
-                <select
-                  value={selectedClassId}
-                  onChange={(e) => setSelectedClassId(e.target.value)}
-                  className="bg-slate-800 text-white font-bold py-2 px-3.5 rounded-xl border border-slate-700 focus:ring-2 focus:ring-emerald-500"
-                >
-                  {classGroups.map(cg => (
-                    <option key={cg.id} value={cg.id}>
-                      {cg.name} ({cg.grade})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-slate-400 font-semibold block mb-1">Register Date:</label>
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-slate-800 text-white font-mono font-bold py-2 px-3 rounded-xl border border-slate-700 focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div className="self-end pb-0.5">
-                <span className="text-[11px] text-slate-400 block">
-                  Form Master: <strong className="text-emerald-400">{currentFormTeacher?.fullName || 'Assigned Master'}</strong>
-                </span>
-                <span className="text-[10px] text-slate-500">
-                  {currentClassGroup.roomNumber} • Term 1
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={handleSyncBiometricLogs}
-                className="px-3.5 py-2 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border border-indigo-700/60 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
-                title="Sync attendance directly from facial recognition and fingerprint gate devices"
-              >
-                <ScanFace className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Sync Biometric Hardware</span>
-              </button>
-
-              <button
-                onClick={handleMarkAllPresent}
-                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-all"
-              >
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Mark All Present</span>
-              </button>
-
-              <button
-                onClick={handleSaveRegister}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-950/40 flex items-center gap-1.5 transition-all"
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>Save & Submit Register</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Submission Notice */}
-          {isSubmittedNotice && (
-            <div className="p-3 rounded-2xl bg-emerald-950 border border-emerald-700 text-emerald-200 text-xs flex items-center gap-2 animate-fadeIn">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>{isSubmittedNotice}</span>
-            </div>
-          )}
-
-          {/* Attendance KPI Statistics */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
-            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
-              <span className="text-slate-400 text-[10px] uppercase font-bold">Enrolled in Arm</span>
-              <span className="text-xl font-extrabold text-white mt-1 block font-mono">{stats.total}</span>
-              <span className="text-[10px] text-slate-500">Derived from General DB</span>
-            </div>
-
-            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
-              <span className="text-slate-400 text-[10px] uppercase font-bold">Present (P)</span>
-              <span className="text-xl font-extrabold text-emerald-400 mt-1 block font-mono">{stats.present}</span>
-              <span className="text-[10px] text-emerald-500">In class session</span>
-            </div>
-
-            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
-              <span className="text-slate-400 text-[10px] uppercase font-bold">Late (L)</span>
-              <span className="text-xl font-extrabold text-amber-400 mt-1 block font-mono">{stats.late}</span>
-              <span className="text-[10px] text-amber-500">Arrived after 08:00 AM</span>
-            </div>
-
-            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
-              <span className="text-slate-400 text-[10px] uppercase font-bold">Absent (A)</span>
-              <span className="text-xl font-extrabold text-rose-400 mt-1 block font-mono">{stats.absent}</span>
-              <span className="text-[10px] text-rose-500">Parent alert generated</span>
-            </div>
-
-            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
-              <span className="text-slate-400 text-[10px] uppercase font-bold">Daily Rate</span>
-              <span className="text-xl font-extrabold text-teal-400 mt-1 block font-mono">{stats.rate}%</span>
-              <span className="text-[10px] text-teal-500">Attendance Index</span>
-            </div>
-          </div>
-
-          {/* Roll Call Attendance Table */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 overflow-x-auto space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div>
-                <h3 className="text-sm font-extrabold text-white">
-                  Class Roll Call: {currentClassGroup.name}
-                </h3>
-                <span className="text-[11px] text-slate-400">
-                  {classStudents.length} Students strictly synchronized with General Students Database
-                </span>
-              </div>
-              <span className="text-xs font-mono text-emerald-400 font-bold">
-                Date: {selectedDate}
-              </span>
-            </div>
-
-            {classStudents.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-400">
-                No students currently enrolled under this Class Group. Switch to the <strong>General Students Master Register</strong> tab to enrol students into {currentClassGroup.name}.
-              </div>
-            ) : (
-              <div className="min-w-[700px] space-y-2">
-                <div className="grid grid-cols-12 gap-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider pb-2 border-b border-slate-800 px-2">
-                  <div className="col-span-1">No.</div>
-                  <div className="col-span-4">Student Name & Admission ID</div>
-                  <div className="col-span-4 text-center">Daily Status</div>
-                  <div className="col-span-3">Remarks / Time</div>
-                </div>
-
-                {classStudents.map((stu, index) => {
-                  const entry = liveEntries[stu.id] || {
-                    studentId: stu.id,
-                    studentName: stu.fullName,
-                    admissionNumber: stu.admissionNumber,
-                    gender: stu.gender,
-                    status: 'present'
-                  };
-
-                  return (
-                    <div
-                      key={stu.id}
-                      className="grid grid-cols-12 gap-3 items-center p-3 rounded-2xl bg-slate-850/60 border border-slate-800 hover:bg-slate-800/80 transition-all text-xs"
-                    >
-                      <div className="col-span-1 font-mono text-slate-500">
-                        {index + 1}.
-                      </div>
-
-                      <div className="col-span-4">
-                        <span className="font-bold text-white block">{stu.fullName}</span>
-                        <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
-                          <span>{stu.admissionNumber}</span>
-                          <span>•</span>
-                          <span>{stu.gender}</span>
-                          <span>•</span>
-                          <span className="text-emerald-400">{stu.termAttendanceRate}% Term Att.</span>
-                        </div>
-                      </div>
-
-                      <div className="col-span-4 flex items-center justify-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleSetStatus(stu.id, 'present')}
-                          className={`px-3 py-1.5 rounded-xl font-bold transition-all text-[11px] flex items-center gap-1 ${
-                            entry.status === 'present'
-                              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
-                              : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          <Check className="w-3 h-3" />
-                          <span>Present</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSetStatus(stu.id, 'late')}
-                          className={`px-3 py-1.5 rounded-xl font-bold transition-all text-[11px] flex items-center gap-1 ${
-                            entry.status === 'late'
-                              ? 'bg-amber-600 text-white shadow-md shadow-amber-950/40'
-                              : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          <Clock className="w-3 h-3" />
-                          <span>Late</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSetStatus(stu.id, 'absent')}
-                          className={`px-3 py-1.5 rounded-xl font-bold transition-all text-[11px] flex items-center gap-1 ${
-                            entry.status === 'absent'
-                              ? 'bg-rose-600 text-white shadow-md shadow-rose-950/40'
-                              : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          <X className="w-3 h-3" />
-                          <span>Absent</span>
-                        </button>
-                      </div>
-
-                      <div className="col-span-3">
-                        <input
-                          type="text"
-                          value={entry.remarks || ''}
-                          onChange={(e) => handleSetRemarks(stu.id, e.target.value)}
-                          placeholder={entry.status === 'late' ? 'Time / Reason' : 'Remarks (Optional)'}
-                          className="w-full bg-slate-900 text-slate-200 px-2.5 py-1.5 rounded-xl border border-slate-700 text-[11px] focus:ring-1 focus:ring-emerald-500"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* General Remarks Box */}
-            <div className="pt-4 border-t border-slate-800 space-y-2 text-xs">
-              <label className="text-slate-400 font-semibold block">Form Master's Daily Roll-Call Remarks & Sign-off:</label>
-              <textarea
-                rows={2}
-                value={generalRemarks}
-                onChange={(e) => setGeneralRemarks(e.target.value)}
-                placeholder="Notes on morning assembly, health cases, weather delays, or clinic referrals..."
-                className="w-full bg-slate-800 text-slate-200 p-3 rounded-2xl border border-slate-700 focus:ring-2 focus:ring-emerald-500"
+      {activeTab === 'general_roster' && (
+        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+              <input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search student name or admission number…"
+                className="w-full bg-slate-950 text-slate-200 pl-9 pr-3 py-2 rounded-xl border border-slate-800"
               />
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* SUB-VIEW 2: GENERAL STUDENTS MASTER DATABASE */}
-      {activeTab === 'general_roster' && (
-        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
-            <div>
-              <h2 className="text-lg font-extrabold text-white">General Students Master Register</h2>
-              <p className="text-xs text-slate-400 mt-1">
-                Centralized student repository containing student biodata, parent contact details, assigned Class Groups, and cumulative attendance rates.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="px-3.5 py-2 rounded-2xl bg-emerald-950/80 border border-emerald-800 text-emerald-300 text-xs font-mono font-bold">
-                {students.length} Total Enrolled Students
-              </div>
-            </div>
+            <select
+              value={selectedClassFilter}
+              onChange={e => setSelectedClassFilter(e.target.value)}
+              className="bg-slate-950 text-slate-200 px-3 py-2 rounded-xl border border-slate-800"
+            >
+              <option value="all">All Class Groups</option>
+              {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <select
+              value={selectedStatusFilter}
+              onChange={e => setSelectedStatusFilter(e.target.value)}
+              className="bg-slate-950 text-slate-200 px-3 py-2 rounded-xl border border-slate-800"
+            >
+              <option value="all">All Lifecycle Statuses</option>
+              {['applicant', 'admitted', 'enrolled', 'active', 'suspended', 'transferred', 'graduated', 'withdrawn'].map(st => (
+                <option key={st} value={st}>{st}</option>
+              ))}
+            </select>
           </div>
 
-          {/* Filter Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            <div>
-              <label className="text-slate-400 font-medium block mb-1">Search Master Register</label>
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by student name, admission number, parent name..."
-                  className="w-full bg-slate-800 text-slate-200 pl-9 pr-3 py-2 rounded-xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
+          {filteredStudents.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-400">
+              No persisted students match the active filter.
             </div>
-
-            <div>
-              <label className="text-slate-400 font-medium block mb-1">Filter by Class Grade</label>
-              <select
-                value={selectedGradeFilter}
-                onChange={(e) => setSelectedGradeFilter(e.target.value)}
-                className="w-full bg-slate-800 text-slate-200 py-2 px-3 rounded-xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value="all">All Grades (JSS 1 - SS 3)</option>
-                <option value="JSS 1">JSS 1</option>
-                <option value="JSS 2">JSS 2</option>
-                <option value="JSS 3">JSS 3</option>
-                <option value="SS 1">SS 1</option>
-                <option value="SS 2">SS 2</option>
-                <option value="SS 3">SS 3</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Master Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse min-w-[800px]">
-              <thead>
-                <tr className="border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="py-3 px-3">Admission No.</th>
-                  <th className="py-3 px-3">Student Name</th>
-                  <th className="py-3 px-3">Class Group</th>
-                  <th className="py-3 px-3">Gender</th>
-                  <th className="py-3 px-3">Parent / Guardian</th>
-                  <th className="py-3 px-3">Parent Phone</th>
-                  <th className="py-3 px-3 text-right">Attendance Rate</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {filteredGeneralStudents.map((stu) => (
-                  <tr key={stu.id} className="hover:bg-slate-850/60 transition-colors">
-                    <td className="py-3 px-3 font-mono font-bold text-emerald-400">
-                      {stu.admissionNumber}
-                    </td>
-                    <td className="py-3 px-3 font-bold text-white">
-                      {stu.fullName}
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold border border-slate-700">
-                        {stu.classGroupName}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-slate-400">
-                      {stu.gender}
-                    </td>
-                    <td className="py-3 px-3 text-slate-300 font-medium">
-                      {stu.parentName}
-                    </td>
-                    <td className="py-3 px-3 font-mono text-slate-400">
-                      <a 
-                        href={`tel:${stu.parentPhone.replace(/\s+/g, '')}`} 
-                        className="hover:text-emerald-400 flex items-center gap-1"
-                      >
-                        <Phone className="w-3 h-3 text-emerald-400" />
-                        <span>{stu.parentPhone}</span>
-                      </a>
-                    </td>
-                    <td className="py-3 px-3 text-right font-mono font-bold text-emerald-400">
-                      <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800">
-                        {stu.termAttendanceRate}%
-                      </span>
-                    </td>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse min-w-[700px]">
+                <thead>
+                  <tr className="border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase">
+                    <th className="py-3 px-3">Admission No.</th>
+                    <th className="py-3 px-3">Student Name</th>
+                    <th className="py-3 px-3">Class</th>
+                    <th className="py-3 px-3">Status</th>
+                    <th className="py-3 px-3">Gender</th>
+                    <th className="py-3 px-3 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {filteredStudents.map(stu => (
+                    <tr key={stu.id} className="hover:bg-slate-850/60">
+                      <td className="py-3 px-3 font-mono font-bold text-emerald-400">{stu.admission_number}</td>
+                      <td className="py-3 px-3 font-bold text-white">{stu.first_name} {stu.last_name}</td>
+                      <td className="py-3 px-3 text-slate-300">{stu.class_id ? (classNameById.get(stu.class_id) || stu.class_id) : 'Unassigned'}</td>
+                      <td className="py-3 px-3">
+                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 font-semibold">
+                          {stu.lifecycle_status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-slate-400">{stu.gender || '—'}</td>
+                      <td className="py-3 px-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => openStudentDossier(stu)}
+                          className="px-3 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 font-semibold"
+                        >
+                          Manage Dossier
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Enrol Student Modal */}
-      {isEnrolModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 sm:p-8 max-w-xl w-full max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl space-y-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <UserPlus className="w-5 h-5 text-emerald-400" />
-                <h2 className="text-lg font-bold text-white">Enrol Student to Master Register</h2>
+      {activeTab === 'admissions' && (
+        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 space-y-4">
+          <h2 className="text-sm font-bold text-white">Admission Applications ({admissions.length})</h2>
+          {admissions.length === 0 ? (
+            <p className="text-xs text-slate-400">No admission applications recorded yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {admissions.map(app => (
+                <div key={app.id} className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div>
+                    <div className="font-bold text-white">{app.first_name} {app.last_name} · <span className="font-mono text-emerald-400">{app.application_number}</span></div>
+                    <div className="text-slate-400">Target Grade: {app.target_grade_level} · Status: <strong className="text-indigo-300">{app.status}</strong></div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {app.status !== 'approved' && app.status !== 'enrolled' && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setError('');
+                          try {
+                            await unifiedApiClient.reviewAdmission(app.id, { decision: 'approved', reviewNotes: 'Approved via Student Register console' });
+                            showNotice(`Approved admission ${app.application_number}.`);
+                            await loadData();
+                          } catch (err) {
+                            setError((err as { error?: string })?.error || 'Review failed.');
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold"
+                      >
+                        Approve
+                      </button>
+                    )}
+                    {app.status === 'approved' && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setError('');
+                          try {
+                            await unifiedApiClient.enrollAdmission(app.id, {
+                              admissionNumber: `ADM-${app.application_number}`,
+                              classId: app.target_class_id || classes[0]?.id || null
+                            });
+                            showNotice(`Enrolled applicant ${app.first_name} ${app.last_name}.`);
+                            await loadData();
+                          } catch (err) {
+                            setError((err as { error?: string })?.error || 'Enrollment failed.');
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+                      >
+                        Enroll Student
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {selectedStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto space-y-6 text-xs">
+            <div className="flex items-start justify-between pb-4 border-b border-slate-800">
+              <div>
+                <span className="font-mono text-emerald-400 font-bold">{selectedStudent.admission_number}</span>
+                <h2 className="text-lg font-extrabold text-white">{selectedStudent.first_name} {selectedStudent.last_name}</h2>
+                <p className="text-slate-400">Lifecycle Status: <strong className="text-white">{selectedStudent.lifecycle_status}</strong></p>
               </div>
-              <button 
-                onClick={() => setIsEnrolModalOpen(false)}
-                className="p-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
+              <button type="button" onClick={() => setSelectedStudent(null)} className="p-2 rounded-xl bg-slate-800 text-slate-300">
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleEnrolStudent} className="space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">Student Full Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={enrolFormData.fullName}
-                    onChange={(e) => setEnrolFormData({ ...enrolFormData, fullName: e.target.value })}
-                    placeholder="e.g. Fatima Garba"
-                    className="w-full bg-slate-800 text-slate-200 px-3 py-2 rounded-xl border border-slate-700 focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">Admission Number *</label>
-                  <input
-                    type="text"
-                    required
-                    value={enrolFormData.admissionNumber}
-                    onChange={(e) => setEnrolFormData({ ...enrolFormData, admissionNumber: e.target.value })}
-                    placeholder="CF/2026/0145"
-                    className="w-full bg-slate-800 text-slate-200 px-3 py-2 rounded-xl border border-slate-700 focus:ring-2 focus:ring-emerald-500 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">Gender *</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <h3 className="font-bold text-white">Class & Lifecycle</h3>
+                <div className="flex gap-2">
                   <select
-                    value={enrolFormData.gender}
-                    onChange={(e) => setEnrolFormData({ ...enrolFormData, gender: e.target.value as any })}
-                    className="w-full bg-slate-800 text-slate-200 px-3 py-2 rounded-xl border border-slate-700 focus:ring-2 focus:ring-emerald-500"
+                    value={assignClassId}
+                    onChange={e => setAssignClassId(e.target.value)}
+                    className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white"
                   >
-                    <option value="Female">Female</option>
-                    <option value="Male">Male</option>
+                    <option value="">Select class…</option>
+                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
+                  <button
+                    type="button"
+                    disabled={!assignClassId}
+                    onClick={async () => {
+                      setError('');
+                      try {
+                        const updated = await unifiedApiClient.assignStudentClass(selectedStudent.id, assignClassId);
+                        setSelectedStudent(updated);
+                        showNotice('Class assignment updated.');
+                        await loadData();
+                      } catch (err) {
+                        setError((err as { error?: string })?.error || 'Class assignment failed.');
+                      }
+                    }}
+                    className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold"
+                  >
+                    Assign
+                  </button>
                 </div>
 
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">Date of Birth</label>
-                  <input
-                    type="date"
-                    value={enrolFormData.dateOfBirth}
-                    onChange={(e) => setEnrolFormData({ ...enrolFormData, dateOfBirth: e.target.value })}
-                    className="w-full bg-slate-800 text-slate-200 px-3 py-2 rounded-xl border border-slate-700 focus:ring-2 focus:ring-emerald-500 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">Assigned Class Arm *</label>
-                  <select
-                    value={enrolFormData.classGroupId}
-                    onChange={(e) => setEnrolFormData({ ...enrolFormData, classGroupId: e.target.value })}
-                    className="w-full bg-slate-800 text-slate-200 px-3 py-2 rounded-xl border border-slate-700 focus:ring-2 focus:ring-emerald-500"
-                  >
-                    {classGroups.map(cg => (
-                      <option key={cg.id} value={cg.id}>
-                        {cg.name} ({cg.code})
-                      </option>
-                    ))}
-                  </select>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {(['admit', 'enroll', 'activate', 'suspend', 'graduate'] as const).map(action => (
+                    <button
+                      key={action}
+                      type="button"
+                      onClick={async () => {
+                        setError('');
+                        try {
+                          const updated = await unifiedApiClient.transitionStudentLifecycle(selectedStudent.id, {
+                            type: action,
+                            ...(action === 'suspend' ? { reason: 'Administrative review' } : {})
+                          });
+                          setSelectedStudent(updated);
+                          showNotice(`Student transitioned via ${action}.`);
+                          await loadData();
+                        } catch (err) {
+                          setError((err as { error?: string })?.error || `Lifecycle action ${action} is not valid from current status.`);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold capitalize"
+                    >
+                      {action}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-800 space-y-3">
-                <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider block">
-                  Parent / Guardian Details
-                </span>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-slate-300 font-semibold block mb-1">Parent Full Name *</label>
-                    <input
-                      type="text"
-                      required
-                      value={enrolFormData.parentName}
-                      onChange={(e) => setEnrolFormData({ ...enrolFormData, parentName: e.target.value })}
-                      placeholder="e.g. Alhaji Garba Danladi"
-                      className="w-full bg-slate-800 text-slate-200 px-3 py-2 rounded-xl border border-slate-700 focus:ring-2 focus:ring-emerald-500"
-                    />
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <h3 className="font-bold text-white flex items-center gap-1.5">
+                  <IdCard className="w-4 h-4 text-purple-400" />
+                  <span>Digital Identity Card</span>
+                </h3>
+                {digitalId ? (
+                  <div className="space-y-1">
+                    <div className="font-mono text-purple-300 font-bold">{digitalId.card_number}</div>
+                    <div className="text-slate-400">Status: {digitalId.status} · Expires: {digitalId.expires_at}</div>
+                    {issuedQrToken && <div className="text-[11px] font-mono text-emerald-300 break-all">QR Token: {issuedQrToken}</div>}
+                    {digitalId.status === 'active' && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setError('');
+                          try {
+                            const revoked = await unifiedApiClient.revokeStudentDigitalId(selectedStudent.id, 'Reissue requested');
+                            setDigitalId(revoked);
+                            showNotice('Digital ID revoked.');
+                          } catch (err) {
+                            setError((err as { error?: string })?.error || 'Could not revoke ID card.');
+                          }
+                        }}
+                        className="mt-2 px-3 py-1 rounded-lg bg-rose-950 text-rose-300 border border-rose-800 font-semibold"
+                      >
+                        Revoke Card
+                      </button>
+                    )}
                   </div>
-
-                  <div>
-                    <label className="text-slate-300 font-semibold block mb-1">Parent Phone Number *</label>
-                    <input
-                      type="text"
-                      required
-                      value={enrolFormData.parentPhone}
-                      onChange={(e) => setEnrolFormData({ ...enrolFormData, parentPhone: e.target.value })}
-                      placeholder="+234 803 111 2233"
-                      className="w-full bg-slate-800 text-slate-200 px-3 py-2 rounded-xl border border-slate-700 focus:ring-2 focus:ring-emerald-500 font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">Parent Email Address</label>
-                  <input
-                    type="email"
-                    value={enrolFormData.parentEmail}
-                    onChange={(e) => setEnrolFormData({ ...enrolFormData, parentEmail: e.target.value })}
-                    placeholder="parent@consulting.ng"
-                    className="w-full bg-slate-800 text-slate-200 px-3 py-2 rounded-xl border border-slate-700 focus:ring-2 focus:ring-emerald-500 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                ) : (
+                  <p className="text-slate-400">No active digital ID issued yet.</p>
+                )}
                 <button
                   type="button"
-                  onClick={() => setIsEnrolModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs"
+                  onClick={async () => {
+                    setError('');
+                    try {
+                      const issued = await unifiedApiClient.issueStudentDigitalId(selectedStudent.id, 365);
+                      setDigitalId(issued.card);
+                      setIssuedQrToken(issued.qrToken);
+                      showNotice('Signed digital ID card issued.');
+                    } catch (err) {
+                      setError((err as { error?: string })?.error || 'Failed to issue digital ID card.');
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-950/40"
-                >
-                  Complete Enrolment
+                  Issue Digital ID Card
                 </button>
               </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+              <h3 className="font-bold text-white flex items-center gap-1.5">
+                <HeartPulse className="w-4 h-4 text-rose-400" />
+                <span>Restricted Medical Profile</span>
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <select
+                  value={medicalDraft.bloodGroup}
+                  onChange={e => setMedicalDraft(prev => ({ ...prev, bloodGroup: e.target.value }))}
+                  className="rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white"
+                >
+                  {['unknown', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
+                    <option key={bg} value={bg}>Blood: {bg}</option>
+                  ))}
+                </select>
+                <select
+                  value={medicalDraft.genotype}
+                  onChange={e => setMedicalDraft(prev => ({ ...prev, genotype: e.target.value }))}
+                  className="rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white"
+                >
+                  {['unknown', 'AA', 'AS', 'SS', 'AC', 'SC'].map(g => (
+                    <option key={g} value={g}>Genotype: {g}</option>
+                  ))}
+                </select>
+                <input
+                  placeholder="Allergies (comma-separated)"
+                  value={medicalDraft.allergies}
+                  onChange={e => setMedicalDraft(prev => ({ ...prev, allergies: e.target.value }))}
+                  className="rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  placeholder="Physician Name"
+                  value={medicalDraft.physicianName}
+                  onChange={e => setMedicalDraft(prev => ({ ...prev, physicianName: e.target.value }))}
+                  className="rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white"
+                />
+                <input
+                  placeholder="Physician Phone"
+                  value={medicalDraft.physicianPhone}
+                  onChange={e => setMedicalDraft(prev => ({ ...prev, physicianPhone: e.target.value }))}
+                  className="rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-white"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={medicalDraft.consentForEmergencyCare}
+                    onChange={e => setMedicalDraft(prev => ({ ...prev, consentForEmergencyCare: e.target.checked }))}
+                  />
+                  <span>Guardian consent for emergency medical care</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setError('');
+                    try {
+                      const saved = await unifiedApiClient.upsertStudentMedicalProfile(selectedStudent.id, {
+                        bloodGroup: medicalDraft.bloodGroup as any,
+                        genotype: medicalDraft.genotype as any,
+                        allergies: medicalDraft.allergies.split(',').map(s => s.trim()).filter(Boolean),
+                        physicianName: medicalDraft.physicianName || null,
+                        physicianPhone: medicalDraft.physicianPhone || null,
+                        consentForEmergencyCare: medicalDraft.consentForEmergencyCare
+                      });
+                      setMedicalProfile(saved);
+                      showNotice('Medical profile saved.');
+                    } catch (err) {
+                      setError((err as { error?: string })?.error || 'Could not update medical profile (check medical permission).');
+                    }
+                  }}
+                  className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold"
+                >
+                  Save Medical Profile ({medicalProfile ? 'Update' : 'Create'})
+                </button>
+              </div>
+            </div>
+
+            {historyRows.length > 0 && (
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                <h3 className="font-bold text-white">Academic & Lifecycle History</h3>
+                {historyRows.map((h, i) => (
+                  <div key={i} className="text-[11px] text-slate-300 border-b border-slate-800/60 pb-1">
+                    {JSON.stringify(h)}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {isEnrolModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-lg w-full space-y-4 text-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h2 className="text-base font-bold text-white">Register New Student</h2>
+              <button type="button" onClick={() => setIsEnrolModalOpen(false)} className="p-1.5 rounded-lg bg-slate-800 text-slate-300">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form
+              onSubmit={async e => {
+                e.preventDefault();
+                setError('');
+                try {
+                  await unifiedApiClient.createStudent({
+                    admissionNumber: studentForm.admissionNumber,
+                    firstName: studentForm.firstName,
+                    lastName: studentForm.lastName,
+                    gender: studentForm.gender,
+                    dateOfBirth: studentForm.dateOfBirth || null,
+                    nationality: studentForm.nationality || null,
+                    stateOfOrigin: studentForm.stateOfOrigin || null,
+                    residentialAddress: studentForm.residentialAddress || null
+                  });
+                  setIsEnrolModalOpen(false);
+                  setStudentForm({ admissionNumber: '', firstName: '', lastName: '', gender: 'female', dateOfBirth: '', nationality: 'Nigerian', stateOfOrigin: '', residentialAddress: '' });
+                  showNotice('Student created in master register.');
+                  await loadData();
+                } catch (err) {
+                  setError((err as { error?: string })?.error || 'Could not register student.');
+                }
+              }}
+              className="space-y-3"
+            >
+              <input required placeholder="Admission Number *" value={studentForm.admissionNumber} onChange={e => setStudentForm(p => ({ ...p, admissionNumber: e.target.value }))} className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-white font-mono" />
+              <div className="grid grid-cols-2 gap-3">
+                <input required placeholder="First Name *" value={studentForm.firstName} onChange={e => setStudentForm(p => ({ ...p, firstName: e.target.value }))} className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-white" />
+                <input required placeholder="Last Name *" value={studentForm.lastName} onChange={e => setStudentForm(p => ({ ...p, lastName: e.target.value }))} className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <select value={studentForm.gender} onChange={e => setStudentForm(p => ({ ...p, gender: e.target.value as any }))} className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-white">
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                  <option value="other">Other</option>
+                </select>
+                <input type="date" value={studentForm.dateOfBirth} onChange={e => setStudentForm(p => ({ ...p, dateOfBirth: e.target.value }))} className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-white" />
+              </div>
+              <input placeholder="Residential Address" value={studentForm.residentialAddress} onChange={e => setStudentForm(p => ({ ...p, residentialAddress: e.target.value }))} className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-white" />
+              <button type="submit" className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
+                Save Student Record
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isAdmissionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-lg w-full space-y-4 text-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h2 className="text-base font-bold text-white">Submit Admission Application</h2>
+              <button type="button" onClick={() => setIsAdmissionModalOpen(false)} className="p-1.5 rounded-lg bg-slate-800 text-slate-300">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form
+              onSubmit={async e => {
+                e.preventDefault();
+                setError('');
+                try {
+                  await unifiedApiClient.createAdmission({
+                    applicationNumber: admissionForm.applicationNumber,
+                    firstName: admissionForm.firstName,
+                    lastName: admissionForm.lastName,
+                    targetGradeLevel: admissionForm.targetGradeLevel,
+                    previousSchoolName: admissionForm.previousSchoolName || null
+                  });
+                  setIsAdmissionModalOpen(false);
+                  setAdmissionForm({ applicationNumber: '', firstName: '', lastName: '', targetGradeLevel: 'JSS 1', previousSchoolName: '' });
+                  showNotice('Admission application recorded.');
+                  await loadData();
+                } catch (err) {
+                  setError((err as { error?: string })?.error || 'Could not submit admission application.');
+                }
+              }}
+              className="space-y-3"
+            >
+              <input required placeholder="Application Number *" value={admissionForm.applicationNumber} onChange={e => setAdmissionForm(p => ({ ...p, applicationNumber: e.target.value }))} className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-white font-mono" />
+              <div className="grid grid-cols-2 gap-3">
+                <input required placeholder="First Name *" value={admissionForm.firstName} onChange={e => setAdmissionForm(p => ({ ...p, firstName: e.target.value }))} className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-white" />
+                <input required placeholder="Last Name *" value={admissionForm.lastName} onChange={e => setAdmissionForm(p => ({ ...p, lastName: e.target.value }))} className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-white" />
+              </div>
+              <input required placeholder="Target Grade Level (e.g. JSS 1) *" value={admissionForm.targetGradeLevel} onChange={e => setAdmissionForm(p => ({ ...p, targetGradeLevel: e.target.value }))} className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-white" />
+              <input placeholder="Previous School Name" value={admissionForm.previousSchoolName} onChange={e => setAdmissionForm(p => ({ ...p, previousSchoolName: e.target.value }))} className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-white" />
+              <button type="submit" className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold">
+                Submit Application
+              </button>
             </form>
           </div>
         </div>

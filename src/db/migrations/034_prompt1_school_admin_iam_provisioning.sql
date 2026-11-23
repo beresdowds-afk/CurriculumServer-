@@ -1,6 +1,6 @@
 -- Prompt 1: Complete School Administration, Institutional Directories,
 -- Student Lifecycle, Guardian Management, Central IAM, and Provisioning Suite.
--- Forward-only migration; preserves all prior migrations (001-025).
+-- Forward-only migration; preserves all prior migrations (001-033).
 
 -- Utility trigger function to prevent mutation of tenant_id on child tables.
 CREATE OR REPLACE FUNCTION production.prevent_tenant_column_change()

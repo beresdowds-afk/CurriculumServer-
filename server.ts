@@ -75,6 +75,7 @@ import {
   type StudentLifecycleStatus,
   type StudentTransition
 } from './server/db/schoolAdministrationRepository';
+import { ApplicationTemplateRepository } from './server/db/applicationTemplateRepository';
 import { createApiCapabilityGateMiddleware } from './server/capabilities/productionCapabilityMiddleware';
 import { AttendanceProvisioningRepository } from './server/attendance/attendanceProvisioningRepository';
 import { createAttendanceProvisioningRouter } from './server/attendance/provisioningRoutes';
@@ -4726,12 +4727,33 @@ app.post('/api/v1/schools/auth/login', authLoginRateLimiter, async (req: Request
       return;
     }
     // The token role claim is informational; PostgreSQL decides roles and permissions.
+    const authRepo = new AuthorizationRepository(postgresRuntime.getPool());
+    const challenge = await authRepo.createLoginMfaChallenge(account.tenantId, account.email, account.userId);
+    if (challenge) {
+      res.json({
+        success: true,
+        data: {
+          mfaRequired: true,
+          challengeId: challenge.challengeId,
+          challengeToken: challenge.challengeToken,
+          expiresAt: challenge.expiresAt.toISOString(),
+          tenantId: account.tenantId,
+          schoolName: account.schoolName
+        },
+        correlationId: (req as any).correlationId,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
     const loginPrincipal = createVerifiedTenantPrincipal({
       valid: true,
       context: { tenantId: account.tenantId, role: account.role, email: account.email } as any
     });
-    const session = await new AuthorizationRepository(postgresRuntime.getPool())
-      .createSession(loginPrincipal, account.userId, 12 * 60 * 60);
+    const session = await authRepo.createSession(loginPrincipal, account.userId, 12 * 60 * 60, {
+      authMethod: 'password',
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent')
+    });
     const token = ServerTenantTokenService.issueTenantToken({
       id: account.tenantId,
       appId: 'curriculum-school-application',
@@ -4756,13 +4778,214 @@ app.post('/api/v1/schools/auth/login', authLoginRateLimiter, async (req: Request
   }
 });
 
-app.get('/api/v1/application-templates', requireProvisioningPlatformAdmin, (_req: Request, res: Response) => {
-  res.json({
-    success: true,
-    data: APPLICATION_TEMPLATE_REGISTRY,
-    correlationId: (_req as any).correlationId,
-    timestamp: new Date().toISOString()
-  });
+app.post('/api/v1/schools/auth/mfa/verify', authLoginRateLimiter, async (req: Request, res: Response) => {
+  const tenantId = typeof req.body?.tenantId === 'string' ? req.body.tenantId : '';
+  const challengeId = typeof req.body?.challengeId === 'string' ? req.body.challengeId : '';
+  const challengeToken = typeof req.body?.challengeToken === 'string' ? req.body.challengeToken : '';
+  const code = typeof req.body?.code === 'string' ? req.body.code : '';
+  if (!tenantId || !challengeId || !challengeToken || !code) {
+    res.status(400).json({ success: false, error: 'MFA challenge details and verification code are required.', code: 'VALIDATION_FAILED' });
+    return;
+  }
+  try {
+    const verified = await new AuthorizationRepository(postgresRuntime.getPool()).verifyLoginMfaChallenge(
+      tenantId,
+      challengeId,
+      challengeToken,
+      code,
+      12 * 60 * 60,
+      { ipAddress: req.ip, userAgent: req.get('user-agent') }
+    );
+    const token = ServerTenantTokenService.issueTenantToken({
+      id: tenantId,
+      appId: 'curriculum-school-application',
+      schoolName: verified.schoolName,
+      subscriptionTier: 'standard',
+      status: 'active'
+    } as any, verified.role, 12 * 60 * 60, verified.email, verified.userId, verified.sessionId);
+    res.json({
+      success: true,
+      data: {
+        token,
+        tenantId,
+        schoolName: verified.schoolName,
+        user: { id: verified.userId, name: verified.fullName, email: verified.email, role: verified.role },
+        expiresIn: 12 * 60 * 60
+      },
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/auth/logout', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const actor = (req as any).authorizedPrincipal as AuthorizedPrincipal;
+    await new AuthorizationRepository(postgresRuntime.getPool()).revokeOwnOrTenantSession(
+      actor, actor.sessionId, 'User signed out'
+    );
+    res.json({ success: true, data: { revoked: true }, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/auth/oidc/google/start', async (req: Request, res: Response) => {
+  const tenantId = typeof req.query.tenantId === 'string' ? req.query.tenantId : '';
+  const redirectUri = typeof req.query.redirectUri === 'string' ? req.query.redirectUri : '';
+  if (!tenantId || !redirectUri) {
+    res.status(400).json({ success: false, error: 'tenantId and redirectUri are required.', code: 'VALIDATION_FAILED' });
+    return;
+  }
+  try {
+    const result = await new AuthorizationRepository(postgresRuntime.getPool()).createOidcAuthState(tenantId, redirectUri);
+    res.json({
+      success: true,
+      data: {
+        state: result.state,
+        codeChallenge: result.codeChallenge,
+        authorizationUrl: result.authorizationUrl,
+        expiresAt: result.expiresAt.toISOString()
+      },
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/auth/oidc/google/callback', authLoginRateLimiter, async (req: Request, res: Response) => {
+  const tenantId = typeof req.body?.tenantId === 'string' ? req.body.tenantId : '';
+  const state = typeof req.body?.state === 'string' ? req.body.state : '';
+  const code = typeof req.body?.code === 'string' ? req.body.code : '';
+  const redirectUri = typeof req.body?.redirectUri === 'string' ? req.body.redirectUri : '';
+  if (!tenantId || !state || !code || !redirectUri) {
+    res.status(400).json({ success: false, error: 'OIDC tenantId, state, code, and redirectUri are required.', code: 'VALIDATION_FAILED' });
+    return;
+  }
+  try {
+    const signedIn = await new AuthorizationRepository(postgresRuntime.getPool()).consumeOidcAuthStateAndSignIn({
+      tenantId,
+      state,
+      code,
+      redirectUri,
+      ttlSeconds: 12 * 60 * 60,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent')
+    });
+    const token = ServerTenantTokenService.issueTenantToken({
+      id: tenantId,
+      appId: 'curriculum-school-application',
+      schoolName: signedIn.schoolName,
+      subscriptionTier: 'standard',
+      status: 'active'
+    } as any, signedIn.role, 12 * 60 * 60, signedIn.email, signedIn.userId, signedIn.sessionId);
+    res.json({
+      success: true,
+      data: {
+        token,
+        tenantId,
+        schoolName: signedIn.schoolName,
+        user: { id: signedIn.userId, name: signedIn.fullName, email: signedIn.email, role: signedIn.role },
+        expiresIn: 12 * 60 * 60
+      },
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/invitations/preview', async (req: Request, res: Response) => {
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+  if (!/^[A-Za-z0-9_-]{40,80}$/.test(token)) {
+    res.status(400).json({ success: false, error: 'A valid invitation token is required.', code: 'VALIDATION_FAILED' });
+    return;
+  }
+  try {
+    const invitation = await new AuthorizationRepository(postgresRuntime.getPool()).getMemberInvitation(
+      hashInvitationToken(token)
+    );
+    if (!invitation) {
+      res.status(404).json({ success: false, error: 'Invitation is invalid or expired.', code: 'INVITATION_INVALID' });
+      return;
+    }
+    res.json({
+      success: true,
+      data: {
+        ...invitation,
+        expiresAt: invitation.expiresAt.toISOString()
+      },
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch {
+    res.status(503).json({ success: false, error: 'Invitation lookup is unavailable.', code: 'DATABASE_UNAVAILABLE' });
+  }
+});
+
+app.post('/api/v1/schools/invitations/accept', async (req: Request, res: Response) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!/^[A-Za-z0-9_-]{40,80}$/.test(token) || password.length < 12 || password.length > 256) {
+    res.status(400).json({ success: false, error: 'A valid invitation token and password (min 12 chars) are required.', code: 'VALIDATION_FAILED' });
+    return;
+  }
+  try {
+    const accepted = await new AuthorizationRepository(postgresRuntime.getPool()).acceptMemberInvitation(
+      hashInvitationToken(token),
+      password
+    );
+    res.json({
+      success: true,
+      data: accepted,
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/provision/:operationId/steps', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const steps = await getSchoolProvisioningRepository().getProvisioningWorkflowSteps(
+      req.params.operationId,
+      (req as any).trustedTenantContext
+    );
+    res.json({
+      success: true,
+      data: steps,
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch {
+    res.status(503).json({ success: false, error: 'Provisioning workflow steps are unavailable.', code: 'DATABASE_UNAVAILABLE' });
+  }
+});
+
+app.get('/api/v1/application-templates', requireProvisioningPlatformAdmin, async (req: Request, res: Response) => {
+  try {
+    const templates = await new ApplicationTemplateRepository(postgresRuntime.getPool()).listTemplates(
+      {
+        provisionableOnly: req.query.provisionable === 'true',
+        category: typeof req.query.category === 'string' ? req.query.category : undefined
+      },
+      (req as any).trustedTenantContext
+    );
+    res.json({
+      success: true,
+      data: templates,
+      correlationId: (req as any).correlationId,
+      timestamp: new Date().toISOString()
+    });
+  } catch {
+    res.status(503).json({ success: false, error: 'Application templates are unavailable.', code: 'DATABASE_UNAVAILABLE' });
+  }
 });
 
 app.use('/api/v1/shared', sharedServiceRateLimiter);
@@ -5622,36 +5845,47 @@ app.post('/api/v1/platform/shared-services/entitlements/:entitlementId/revoke', 
 app.get('/api/v1/schools/me', authorizationMiddleware.requirePermission(PERMISSIONS.schoolProfileRead), async (req: Request, res: Response) => {
   try {
     const principal = (req as any).trustedTenantContext;
+    const actor = (req as any).authorizedPrincipal as AuthorizedPrincipal;
     const school = await getSchoolProvisioningRepository().getSchool(principal);
     if (!school) {
       res.status(404).json({ success: false, error: 'School instance was not found.', code: 'RESOURCE_NOT_FOUND' });
       return;
     }
+    const identity = await getSchoolAdministrationRepository().getSchoolIdentity(actor, school.id).catch(() => null);
     const data = {
       schoolId: school.id,
       tenantId: school.tenant_id,
       slug: school.school_slug,
-      name: school.name,
-      shortName: school.short_name,
+      name: identity?.name ?? school.name,
+      shortName: identity?.short_name ?? school.short_name,
       displayName: school.display_name,
-      schoolType: school.school_type,
-      country: school.country,
-      stateProvince: school.state_province,
-      city: school.city,
-      physicalAddress: school.physical_address,
-      officialContactEmail: school.official_contact_email,
-      telephone: school.telephone,
-      website: school.website,
-      motto: school.motto,
-      principalName: school.principal_name,
-      principalEmail: school.principal_email,
-      principalPhone: school.principal_phone,
-      ictAdministratorName: school.ict_administrator_name,
-      ictAdministratorEmail: school.ict_administrator_email,
-      ictAdministratorPhone: school.ict_administrator_phone,
-      logoUrl: school.logo_url,
-      primaryBrandColor: school.primary_brand_color,
-      accentBrandColor: school.accent_brand_color,
+      legalName: identity?.legal_name ?? school.name,
+      registeredIdentity: identity?.registered_identity ?? null,
+      schoolType: identity?.school_type ?? school.school_type,
+      ownership: identity?.ownership ?? 'private',
+      educationalClassification: identity?.educational_classification ?? 'k12',
+      country: identity?.country ?? school.country,
+      stateProvince: identity?.state_province ?? school.state_province,
+      city: identity?.city ?? school.city,
+      physicalAddress: identity?.physical_address ?? school.physical_address,
+      administrativeAddress: identity?.administrative_address ?? null,
+      postalCode: identity?.postal_code ?? null,
+      officialContactEmail: identity?.official_contact_email ?? school.official_contact_email,
+      telephone: identity?.telephone ?? school.telephone,
+      website: identity?.website ?? school.website,
+      motto: identity?.motto ?? school.motto,
+      principalName: identity?.principal_name ?? school.principal_name,
+      principalEmail: identity?.principal_email ?? school.principal_email,
+      principalPhone: identity?.principal_phone ?? school.principal_phone,
+      ictAdministratorName: identity?.ict_administrator_name ?? school.ict_administrator_name,
+      ictAdministratorEmail: identity?.ict_administrator_email ?? school.ict_administrator_email,
+      ictAdministratorPhone: identity?.ict_administrator_phone ?? school.ict_administrator_phone,
+      logoUrl: identity?.logo_url ?? school.logo_url,
+      primaryBrandColor: identity?.primary_brand_color ?? school.primary_brand_color,
+      accentBrandColor: identity?.accent_brand_color ?? school.accent_brand_color,
+      operationalPolicies: identity?.operational_policies ?? {},
+      institutionalStatus: identity?.institutional_status ?? 'active',
+      activatedAt: identity?.activated_at instanceof Date ? identity.activated_at.toISOString() : (school.activated_at?.toISOString() || null),
       timeZone: school.time_zone,
       currency: school.currency,
       language: school.default_language,
@@ -5669,6 +5903,146 @@ app.get('/api/v1/schools/me', authorizationMiddleware.requirePermission(PERMISSI
     res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
   } catch {
     res.status(503).json({ success: false, error: 'School details are unavailable.', code: 'DATABASE_UNAVAILABLE' });
+  }
+});
+
+const handleUpdateSchoolProfile = async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const updated = await getSchoolAdministrationRepository().updateSchoolProfile(
+      (req as any).authorizedPrincipal, schoolId, req.body || {}
+    );
+    res.json({ success: true, data: updated, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+};
+app.patch('/api/v1/schools/me', schoolAdministrationGuards.schoolProfileUpdate, handleUpdateSchoolProfile);
+app.put('/api/v1/schools/me', schoolAdministrationGuards.schoolProfileUpdate, handleUpdateSchoolProfile);
+
+app.post('/api/v1/schools/me/status', authorizationMiddleware.requirePermission(PERMISSIONS.schoolConfigurationManage), async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const { toStatus, reason, evidence } = req.body || {};
+    if (typeof toStatus !== 'string' || typeof reason !== 'string' || !reason.trim()) {
+      res.status(400).json({ success: false, error: 'toStatus and reason are required.', code: 'VALIDATION_FAILED' });
+      return;
+    }
+    const updated = await getSchoolAdministrationRepository().transitionSchoolStatus(
+      (req as any).authorizedPrincipal, schoolId, toStatus as any, reason, evidence || {}
+    );
+    res.json({ success: true, data: updated, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/status-history', schoolAdministrationGuards.schoolStatusRead, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().getSchoolStatusHistory((req as any).authorizedPrincipal, schoolId);
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/departments', schoolAdministrationGuards.departmentsRead, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().listDepartments((req as any).authorizedPrincipal, schoolId);
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/departments', schoolAdministrationGuards.departmentsManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().createDepartment((req as any).authorizedPrincipal, schoolId, req.body || {});
+    res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.patch('/api/v1/schools/me/departments/:departmentId', schoolAdministrationGuards.departmentsManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().updateDepartment(
+      (req as any).authorizedPrincipal, schoolId, req.params.departmentId, req.body || {}
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/academic-sessions', schoolAdministrationGuards.sessionsRead, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().listAcademicSessions((req as any).authorizedPrincipal, schoolId);
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/academic-sessions', schoolAdministrationGuards.sessionsManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().createAcademicSession((req as any).authorizedPrincipal, schoolId, req.body || {});
+    res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/academic-sessions/:sessionId/activate', schoolAdministrationGuards.sessionsManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().activateAcademicSession(
+      (req as any).authorizedPrincipal, schoolId, req.params.sessionId
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/academic-sessions/:sessionId/terms', schoolAdministrationGuards.sessionsManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().createAcademicTerm(
+      (req as any).authorizedPrincipal, schoolId, req.params.sessionId, req.body || {}
+    );
+    res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/academic-terms/:termId/activate', schoolAdministrationGuards.sessionsManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().activateAcademicTerm(
+      (req as any).authorizedPrincipal, schoolId, req.params.termId
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
   }
 });
 
@@ -5728,6 +6102,27 @@ app.put('/api/v1/schools/me/config', authorizationMiddleware.requirePermission(P
   }
 });
 
+function iamAuthorizationFailure(req: Request, res: Response, error: unknown): void {
+  const code = error instanceof Error ? error.message : 'DATABASE_UNAVAILABLE';
+  const status =
+    code === 'FORBIDDEN' || code === 'MEMBERSHIP_INACTIVE' ? 403
+      : ['MEMBERSHIP_NOT_FOUND', 'ROLE_NOT_FOUND', 'ROLE_ASSIGNMENT_NOT_FOUND', 'INVITATION_NOT_FOUND', 'SESSION_NOT_FOUND', 'MFA_FACTOR_NOT_FOUND', 'TENANT_NOT_FOUND'].includes(code) ? 404
+        : ['ROLE_ALREADY_ASSIGNED', 'INVALID_MEMBERSHIP_TRANSITION'].includes(code) ? 409
+          : ['INVALID_MFA_CHALLENGE', 'INVALID_MFA_CODE', 'OIDC_STATE_INVALID', 'OIDC_EMAIL_UNVERIFIED'].includes(code) ? 401
+            : ['TENANT_ROLE_INVALID', 'INVALID_INVITATION_NAME', 'INVALID_INVITATION_EMAIL', 'INVALID_INVITATION_REVOCATION', 'INVALID_SESSION_REVOCATION', 'INVALID_MEMBERSHIP_SUSPENSION', 'INVALID_MEMBERSHIP_REACTIVATION', 'INVALID_MEMBERSHIP_REVOCATION', 'INVALID_ROLE_REVOCATION', 'INVALID_REDIRECT_URI', 'INVITATION_INVALID_OR_EXPIRED', 'ACCOUNT_INACTIVE'].includes(code) ? 400
+              : 503;
+  const userMessage = status === 503
+    ? (code === 'OIDC_NOT_CONFIGURED' ? 'Google OIDC authentication is not configured.' : 'Identity service is temporarily unavailable.')
+    : code.replace(/_/g, ' ').toLowerCase();
+  res.status(status).json({
+    success: false,
+    error: userMessage,
+    code: status === 503 && code !== 'OIDC_NOT_CONFIGURED' ? 'DATABASE_UNAVAILABLE' : code,
+    correlationId: (req as any).correlationId,
+    timestamp: new Date().toISOString()
+  });
+}
+
 function schoolAdministrationFailure(req: Request, res: Response, error: unknown): void {
   const databaseCode = (error as { code?: string })?.code;
   const forbidden = error instanceof Error && error.message === 'FORBIDDEN';
@@ -5741,8 +6136,13 @@ function schoolAdministrationFailure(req: Request, res: Response, error: unknown
         ? 'VALIDATION_FAILED'
         : 'DATABASE_UNAVAILABLE';
   const status = code === 'FORBIDDEN' ? 403
-    : code === 'STUDENT_NOT_FOUND' || code === 'CLASS_NOT_FOUND' || code === 'STAFF_NOT_FOUND' ? 404
-      : code === 'CONFLICT' || code === 'INVALID_STUDENT_TRANSITION' ? 409
+    : [
+        'STUDENT_NOT_FOUND', 'CLASS_NOT_FOUND', 'STAFF_NOT_FOUND',
+        'DEPARTMENT_NOT_FOUND', 'SESSION_NOT_FOUND', 'TERM_NOT_FOUND',
+        'ADMISSION_NOT_FOUND', 'GUARDIAN_NOT_FOUND', 'MEDICAL_PROFILE_NOT_FOUND',
+        'DIGITAL_ID_NOT_FOUND', 'ALLOCATION_NOT_FOUND'
+      ].includes(code) ? 404
+      : code === 'CONFLICT' || code === 'INVALID_STUDENT_TRANSITION' || code === 'INVALID_STATUS_TRANSITION' ? 409
         : code === 'VALIDATION_FAILED' || code === 'INVALID_INPUT' ? 400
           : 503;
   const message = error instanceof SchoolAdministrationError
@@ -5915,7 +6315,7 @@ app.get('/api/v1/schools/me/students', schoolAdministrationGuards.studentRead, a
     if (!schoolId) return;
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
     const lifecycleStatuses = new Set<StudentLifecycleStatus>([
-      'applicant', 'admitted', 'active', 'transferred', 'graduated', 'withdrawn', 'legacy_unverified'
+      'applicant', 'admitted', 'enrolled', 'active', 'suspended', 'transferred', 'graduated', 'withdrawn', 'legacy_unverified'
     ]);
     if (status && !lifecycleStatuses.has(status as StudentLifecycleStatus)) {
       res.status(400).json({
@@ -5973,7 +6373,18 @@ app.post('/api/v1/schools/me/students', schoolAdministrationGuards.studentCreate
         schoolId,
         admissionNumber: typeof body?.admissionNumber === 'string' ? body.admissionNumber : '',
         firstName: typeof body?.firstName === 'string' ? body.firstName : '',
-        lastName: typeof body?.lastName === 'string' ? body.lastName : ''
+        lastName: typeof body?.lastName === 'string' ? body.lastName : '',
+        ...(typeof body?.dateOfBirth === 'string' || body?.dateOfBirth === null ? { dateOfBirth: body.dateOfBirth as string | null } : {}),
+        ...(typeof body?.gender === 'string' || body?.gender === null ? { gender: body.gender as any } : {}),
+        ...(typeof body?.nationality === 'string' || body?.nationality === null ? { nationality: body.nationality as string | null } : {}),
+        ...(typeof body?.stateOfOrigin === 'string' || body?.stateOfOrigin === null ? { stateOfOrigin: body.stateOfOrigin as string | null } : {}),
+        ...(typeof body?.lgaOfOrigin === 'string' || body?.lgaOfOrigin === null ? { lgaOfOrigin: body.lgaOfOrigin as string | null } : {}),
+        ...(typeof body?.residentialAddress === 'string' || body?.residentialAddress === null ? { residentialAddress: body.residentialAddress as string | null } : {}),
+        ...(Array.isArray(body?.previousSchoolHistory) ? { previousSchoolHistory: body.previousSchoolHistory as any } : {}),
+        ...(body?.academicHistorySummary && typeof body.academicHistorySummary === 'object' && !Array.isArray(body.academicHistorySummary) ? { academicHistorySummary: body.academicHistorySummary as any } : {}),
+        ...(Array.isArray(body?.emergencyContacts) ? { emergencyContacts: body.emergencyContacts as any } : {}),
+        ...(typeof body?.photoUrl === 'string' || body?.photoUrl === null ? { photoUrl: body.photoUrl as string | null } : {}),
+        ...(typeof body?.rfidCardUid === 'string' || body?.rfidCardUid === null ? { rfidCardUid: body.rfidCardUid as string | null } : {})
       }
     );
     res.status(201).json({
@@ -6021,6 +6432,36 @@ app.patch('/api/v1/schools/me/students/:studentId', schoolAdministrationGuards.s
         data[field] = body[field];
       }
     }
+    for (const field of ['dateOfBirth', 'gender', 'nationality', 'stateOfOrigin', 'lgaOfOrigin', 'residentialAddress', 'photoUrl', 'rfidCardUid'] as const) {
+      if (body && Object.hasOwn(body, field)) {
+        if (typeof body[field] !== 'string' && body[field] !== null) {
+          res.status(400).json({ success: false, error: 'Student update data is invalid.', code: 'VALIDATION_FAILED' });
+          return;
+        }
+        (data as any)[field] = body[field];
+      }
+    }
+    if (body && Object.hasOwn(body, 'previousSchoolHistory')) {
+      if (!Array.isArray(body.previousSchoolHistory)) {
+        res.status(400).json({ success: false, error: 'previousSchoolHistory must be an array.', code: 'VALIDATION_FAILED' });
+        return;
+      }
+      data.previousSchoolHistory = body.previousSchoolHistory as any;
+    }
+    if (body && Object.hasOwn(body, 'academicHistorySummary')) {
+      if (!body.academicHistorySummary || typeof body.academicHistorySummary !== 'object' || Array.isArray(body.academicHistorySummary)) {
+        res.status(400).json({ success: false, error: 'academicHistorySummary must be an object.', code: 'VALIDATION_FAILED' });
+        return;
+      }
+      data.academicHistorySummary = body.academicHistorySummary as any;
+    }
+    if (body && Object.hasOwn(body, 'emergencyContacts')) {
+      if (!Array.isArray(body.emergencyContacts)) {
+        res.status(400).json({ success: false, error: 'emergencyContacts must be an array.', code: 'VALIDATION_FAILED' });
+        return;
+      }
+      data.emergencyContacts = body.emergencyContacts as any;
+    }
     const result = await getSchoolAdministrationRepository().updateStudent(
       (req as any).authorizedPrincipal, schoolId, req.params.studentId, data
     );
@@ -6036,11 +6477,11 @@ app.post('/api/v1/schools/me/students/:studentId/lifecycle', schoolAdministratio
     if (!schoolId) return;
     const body = req.body as Record<string, unknown> | undefined;
     let transition: StudentTransition | undefined;
-    if (body?.type === 'admit' || body?.type === 'activate' || body?.type === 'graduate') {
+    if (body?.type === 'admit' || body?.type === 'enroll' || body?.type === 'activate' || body?.type === 'graduate') {
       transition = { type: body.type };
     } else if (body?.type === 'external_transfer' && typeof body.destination === 'string') {
       transition = { type: 'external_transfer', destination: body.destination };
-    } else if ((body?.type === 'withdraw' || body?.type === 'reinstate') &&
+    } else if ((body?.type === 'withdraw' || body?.type === 'reinstate' || body?.type === 'suspend') &&
         typeof body.reason === 'string') {
       transition = { type: body.type, reason: body.reason };
     }
@@ -6108,6 +6549,216 @@ app.get('/api/v1/schools/me/students/:studentId/history', schoolAdministrationGu
   }
 });
 
+app.get('/api/v1/schools/me/students/:studentId/medical', schoolAdministrationGuards.studentMedicalRead, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().getStudentMedicalProfile(
+      (req as any).authorizedPrincipal, schoolId, req.params.studentId
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.put('/api/v1/schools/me/students/:studentId/medical', schoolAdministrationGuards.studentMedicalManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().upsertStudentMedicalProfile(
+      (req as any).authorizedPrincipal, schoolId, req.params.studentId, req.body || {}
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/students/:studentId/digital-id', schoolAdministrationGuards.studentDigitalIdRead, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().getStudentDigitalIdCard(
+      (req as any).authorizedPrincipal, schoolId, req.params.studentId
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/students/:studentId/digital-id', schoolAdministrationGuards.studentDigitalIdManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const expiresInDays = typeof req.body?.expiresInDays === 'number' ? req.body.expiresInDays : 365;
+    const data = await getSchoolAdministrationRepository().issueStudentDigitalIdCard(
+      (req as any).authorizedPrincipal, schoolId, req.params.studentId, expiresInDays
+    );
+    res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/students/:studentId/digital-id/revoke', schoolAdministrationGuards.studentDigitalIdManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().revokeStudentDigitalIdCard(
+      (req as any).authorizedPrincipal, schoolId, req.params.studentId, typeof req.body?.reason === 'string' ? req.body.reason : ''
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/admissions', schoolAdministrationGuards.admissionsRead, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    if (status && !['submitted', 'under_review', 'waitlisted', 'approved', 'rejected', 'enrolled'].includes(status)) {
+      res.status(400).json({ success: false, error: 'Admission status filter is invalid.', code: 'VALIDATION_FAILED' });
+      return;
+    }
+    const data = await getSchoolAdministrationRepository().listAdmissions(
+      (req as any).authorizedPrincipal, schoolId, status as any
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/admissions', schoolAdministrationGuards.admissionsManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().createAdmissionApplication(
+      (req as any).authorizedPrincipal, schoolId, req.body || {}
+    );
+    res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/admissions/:admissionId/review', schoolAdministrationGuards.admissionsManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().reviewAdmission(
+      (req as any).authorizedPrincipal, schoolId, req.params.admissionId, req.body || {}
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/admissions/:admissionId/enroll', schoolAdministrationGuards.admissionsManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().enrollAdmission(
+      (req as any).authorizedPrincipal, schoolId, req.params.admissionId, req.body || {}
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/guardians/my-wards', schoolAdministrationGuards.guardianSelfRead, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().listMyWards((req as any).authorizedPrincipal, schoolId);
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/guardians', schoolAdministrationGuards.guardiansRead, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().listGuardians(
+      (req as any).authorizedPrincipal, schoolId, typeof req.query.search === 'string' ? req.query.search : undefined
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/guardians', schoolAdministrationGuards.guardiansManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().createGuardian((req as any).authorizedPrincipal, schoolId, req.body || {});
+    res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.patch('/api/v1/schools/me/guardians/:guardianId', schoolAdministrationGuards.guardiansManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().updateGuardian(
+      (req as any).authorizedPrincipal, schoolId, req.params.guardianId, req.body || {}
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/guardians/:guardianId/verify', schoolAdministrationGuards.guardiansVerify, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().verifyGuardian(
+      (req as any).authorizedPrincipal, schoolId, req.params.guardianId, req.body?.status
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/guardians/:guardianId/students', schoolAdministrationGuards.guardiansManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().linkStudentGuardian(
+      (req as any).authorizedPrincipal, schoolId, req.params.guardianId, req.body || {}
+    );
+    res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.delete('/api/v1/schools/me/guardians/:guardianId/students/:studentId', schoolAdministrationGuards.guardiansManage, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    await getSchoolAdministrationRepository().unlinkStudentGuardian(
+      (req as any).authorizedPrincipal, schoolId, req.params.guardianId, req.params.studentId
+    );
+    res.json({ success: true, data: { unlinked: true }, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
 app.post('/api/v1/schools/me/classes', schoolAdministrationGuards.classCreate, async (req: Request, res: Response) => {
   try {
     const schoolId = await getCurrentSchoolId(req, res);
@@ -6119,7 +6770,14 @@ app.post('/api/v1/schools/me/classes', schoolAdministrationGuards.classCreate, a
         schoolId,
         name: typeof body?.name === 'string' ? body.name : '',
         academicYear: typeof body?.academicYear === 'string' ? body.academicYear : '',
-        section: typeof body?.section === 'string' ? body.section : 'General'
+        section: typeof body?.section === 'string' ? body.section : 'General',
+        ...(typeof body?.departmentId === 'string' || body?.departmentId === null ? { departmentId: body.departmentId as string | null } : {}),
+        ...(typeof body?.academicSessionId === 'string' || body?.academicSessionId === null ? { academicSessionId: body.academicSessionId as string | null } : {}),
+        ...(typeof body?.gradeLevel === 'string' ? { gradeLevel: body.gradeLevel } : {}),
+        ...(typeof body?.arm === 'string' ? { arm: body.arm } : {}),
+        ...(typeof body?.roomNumber === 'string' ? { roomNumber: body.roomNumber } : {}),
+        ...(typeof body?.capacity === 'number' ? { capacity: body.capacity } : {}),
+        ...(typeof body?.classTeacherStaffId === 'string' || body?.classTeacherStaffId === null ? { classTeacherStaffId: body.classTeacherStaffId as string | null } : {})
       }
     );
     res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
@@ -6169,7 +6827,7 @@ app.patch('/api/v1/schools/me/classes/:classId', schoolAdministrationGuards.clas
     if (!schoolId) return;
     const body = req.body as Record<string, unknown> | undefined;
     const data: UpdateClassInput = {};
-    for (const field of ['name', 'academicYear', 'section'] as const) {
+    for (const field of ['name', 'academicYear', 'section', 'gradeLevel', 'arm', 'roomNumber', 'status'] as const) {
       if (body && Object.hasOwn(body, field)) {
         if (typeof body[field] !== 'string') {
           res.status(400).json({
@@ -6181,8 +6839,24 @@ app.patch('/api/v1/schools/me/classes/:classId', schoolAdministrationGuards.clas
           });
           return;
         }
-        data[field] = body[field];
+        (data as any)[field] = body[field];
       }
+    }
+    for (const field of ['departmentId', 'academicSessionId', 'classTeacherStaffId'] as const) {
+      if (body && Object.hasOwn(body, field)) {
+        if (typeof body[field] !== 'string' && body[field] !== null) {
+          res.status(400).json({ success: false, error: 'Class update data is invalid.', code: 'VALIDATION_FAILED' });
+          return;
+        }
+        (data as any)[field] = body[field];
+      }
+    }
+    if (body && Object.hasOwn(body, 'capacity')) {
+      if (typeof body.capacity !== 'number') {
+        res.status(400).json({ success: false, error: 'Class capacity must be a number.', code: 'VALIDATION_FAILED' });
+        return;
+      }
+      data.capacity = body.capacity;
     }
     const result = await getSchoolAdministrationRepository().updateClass(
       (req as any).authorizedPrincipal, schoolId, req.params.classId, data
@@ -6202,7 +6876,7 @@ app.get('/api/v1/schools/me/staff', schoolAdministrationGuards.staffRead, async 
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
     if ((page !== undefined && (!Number.isInteger(page) || page < 1)) ||
         (pageSize !== undefined && (!Number.isInteger(pageSize) || pageSize < 1)) ||
-        (status !== undefined && !['active', 'suspended', 'departed'].includes(status))) {
+        (status !== undefined && !['active', 'on_leave', 'suspended', 'retired', 'departed'].includes(status))) {
       res.status(400).json({
         success: false,
         error: 'Staff filters are invalid.',
@@ -6219,7 +6893,7 @@ app.get('/api/v1/schools/me/staff', schoolAdministrationGuards.staffRead, async 
         page,
         pageSize,
         search: typeof req.query.search === 'string' ? req.query.search : undefined,
-        status: status as 'active' | 'suspended' | 'departed' | undefined
+        status: status as any
       }
     );
     res.json({
@@ -6238,7 +6912,7 @@ app.post('/api/v1/schools/me/staff', schoolAdministrationGuards.staffCreate, asy
     const schoolId = await getCurrentSchoolId(req, res);
     if (!schoolId) return;
     const body = req.body as Record<string, unknown> | undefined;
-    if (body?.email !== undefined && typeof body.email !== 'string' ||
+    if (body?.email !== undefined && body.email !== null && typeof body.email !== 'string' ||
         body?.departmentId !== undefined && body.departmentId !== null && typeof body.departmentId !== 'string') {
       res.status(400).json({
         success: false,
@@ -6258,7 +6932,19 @@ app.post('/api/v1/schools/me/staff', schoolAdministrationGuards.staffCreate, asy
         lastName: typeof body?.lastName === 'string' ? body.lastName : '',
         designation: typeof body?.designation === 'string' ? body.designation : '',
         email: typeof body?.email === 'string' ? body.email : null,
-        departmentId: typeof body?.departmentId === 'string' ? body.departmentId : null
+        departmentId: typeof body?.departmentId === 'string' ? body.departmentId : null,
+        ...(typeof body?.staffCategory === 'string' ? { staffCategory: body.staffCategory as any } : {}),
+        ...(typeof body?.employmentType === 'string' ? { employmentType: body.employmentType as any } : {}),
+        ...(typeof body?.phone === 'string' || body?.phone === null ? { phone: body.phone as string | null } : {}),
+        ...(typeof body?.photoUrl === 'string' || body?.photoUrl === null ? { photoUrl: body.photoUrl as string | null } : {}),
+        ...(typeof body?.qualification === 'string' || body?.qualification === null ? { qualification: body.qualification as string | null } : {}),
+        ...(Array.isArray(body?.certifications) ? { certifications: body.certifications as string[] } : {}),
+        ...(typeof body?.trcnNumber === 'string' || body?.trcnNumber === null ? { trcnNumber: body.trcnNumber as string | null } : {}),
+        ...(typeof body?.trcnVerified === 'boolean' ? { trcnVerified: body.trcnVerified } : {}),
+        ...(typeof body?.biometricId === 'string' || body?.biometricId === null ? { biometricId: body.biometricId as string | null } : {}),
+        ...(typeof body?.maxPeriodsPerWeek === 'number' ? { maxPeriodsPerWeek: body.maxPeriodsPerWeek } : {}),
+        ...(typeof body?.hireDate === 'string' || body?.hireDate === null ? { hireDate: body.hireDate as string | null } : {}),
+        ...(typeof body?.specializationNotes === 'string' || body?.specializationNotes === null ? { specializationNotes: body.specializationNotes as string | null } : {})
       }
     );
     res.status(201).json({
@@ -6297,7 +6983,19 @@ app.patch('/api/v1/schools/me/staff/:staffId', schoolAdministrationGuards.staffU
       ['lastName', (value: unknown) => typeof value === 'string'],
       ['email', (value: unknown) => typeof value === 'string' || value === null],
       ['designation', (value: unknown) => typeof value === 'string'],
-      ['departmentId', (value: unknown) => typeof value === 'string' || value === null]
+      ['departmentId', (value: unknown) => typeof value === 'string' || value === null],
+      ['staffCategory', (value: unknown) => typeof value === 'string'],
+      ['employmentType', (value: unknown) => typeof value === 'string'],
+      ['phone', (value: unknown) => typeof value === 'string' || value === null],
+      ['photoUrl', (value: unknown) => typeof value === 'string' || value === null],
+      ['qualification', (value: unknown) => typeof value === 'string' || value === null],
+      ['certifications', (value: unknown) => Array.isArray(value)],
+      ['trcnNumber', (value: unknown) => typeof value === 'string' || value === null],
+      ['trcnVerified', (value: unknown) => typeof value === 'boolean'],
+      ['biometricId', (value: unknown) => typeof value === 'string' || value === null],
+      ['maxPeriodsPerWeek', (value: unknown) => typeof value === 'number'],
+      ['hireDate', (value: unknown) => typeof value === 'string' || value === null],
+      ['specializationNotes', (value: unknown) => typeof value === 'string' || value === null]
     ] as const) {
       if (body && Object.hasOwn(body, field)) {
         if (!valid(body[field])) {
@@ -6319,6 +7017,317 @@ app.patch('/api/v1/schools/me/staff/:staffId', schoolAdministrationGuards.staffU
     res.json({ success: true, data: result, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
   } catch (error) {
     schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/staff/:staffId/link-user', schoolAdministrationGuards.staffLinkAccount, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().linkStaffUserAccount(
+      (req as any).authorizedPrincipal, schoolId, req.params.staffId, req.body?.userId
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/staff/:staffId/unlink-user', schoolAdministrationGuards.staffLinkAccount, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().unlinkStaffUserAccount(
+      (req as any).authorizedPrincipal, schoolId, req.params.staffId, typeof req.body?.reason === 'string' ? req.body.reason : ''
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/staff/:staffId/appointments', schoolAdministrationGuards.staffAppoint, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().appointStaffRole(
+      (req as any).authorizedPrincipal, schoolId, req.params.staffId, typeof req.body?.roleCode === 'string' ? req.body.roleCode : ''
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/staff/:staffId/subject-allocations', schoolAdministrationGuards.staffRecordRead, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().listStaffSubjectAllocations(
+      (req as any).authorizedPrincipal, schoolId, req.params.staffId
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/staff/:staffId/subject-allocations', schoolAdministrationGuards.staffUpdate, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().allocateStaffSubject(
+      (req as any).authorizedPrincipal, schoolId, req.params.staffId, req.body || {}
+    );
+    res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.delete('/api/v1/schools/me/staff/:staffId/subject-allocations/:allocationId', schoolAdministrationGuards.staffUpdate, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    await getSchoolAdministrationRepository().revokeStaffSubjectAllocation(
+      (req as any).authorizedPrincipal, schoolId, req.params.staffId, req.params.allocationId
+    );
+    res.json({ success: true, data: { revoked: true }, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/staff/:staffId/status', schoolAdministrationGuards.staffUpdate, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await getSchoolAdministrationRepository().transitionStaffStatus(
+      (req as any).authorizedPrincipal, schoolId, req.params.staffId, req.body?.toStatus, typeof req.body?.reason === 'string' ? req.body.reason : ''
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    schoolAdministrationFailure(req, res, error);
+  }
+});
+
+// Central IAM Roles, Permissions, Memberships, Invitations, Sessions, MFA & Audit Events
+app.get('/api/v1/schools/me/roles', schoolAdministrationGuards.rolesRead, async (req: Request, res: Response) => {
+  try {
+    const result = await new AuthorizationRepository(postgresRuntime.getPool()).listRolesAndPermissions(
+      (req as any).authorizedPrincipal
+    );
+    res.json({ success: true, data: result.roles, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/permissions', schoolAdministrationGuards.permissionsRead, async (req: Request, res: Response) => {
+  try {
+    const result = await new AuthorizationRepository(postgresRuntime.getPool()).listRolesAndPermissions(
+      (req as any).authorizedPrincipal
+    );
+    res.json({ success: true, data: result.permissions, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/memberships', schoolAdministrationGuards.membershipRead, async (req: Request, res: Response) => {
+  try {
+    const data = await new AuthorizationRepository(postgresRuntime.getPool()).listMemberships(
+      (req as any).authorizedPrincipal
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/memberships/roles', schoolAdministrationGuards.membershipRolesAssign, async (req: Request, res: Response) => {
+  try {
+    await new AuthorizationRepository(postgresRuntime.getPool()).assignRole(
+      (req as any).authorizedPrincipal,
+      typeof req.body?.userId === 'string' ? req.body.userId : '',
+      typeof req.body?.roleCode === 'string' ? req.body.roleCode : ''
+    );
+    res.json({ success: true, data: { assigned: true }, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.delete('/api/v1/schools/me/memberships/roles', schoolAdministrationGuards.membershipRolesAssign, async (req: Request, res: Response) => {
+  try {
+    await new AuthorizationRepository(postgresRuntime.getPool()).revokeRole(
+      (req as any).authorizedPrincipal,
+      typeof req.body?.userId === 'string' ? req.body.userId : '',
+      typeof req.body?.roleCode === 'string' ? req.body.roleCode : '',
+      typeof req.body?.reason === 'string' ? req.body.reason : ''
+    );
+    res.json({ success: true, data: { revoked: true }, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/memberships/:userId/suspend', schoolAdministrationGuards.membershipRolesAssign, async (req: Request, res: Response) => {
+  try {
+    await new AuthorizationRepository(postgresRuntime.getPool()).suspendMembership(
+      (req as any).authorizedPrincipal, req.params.userId, typeof req.body?.reason === 'string' ? req.body.reason : ''
+    );
+    res.json({ success: true, data: { suspended: true }, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/memberships/:userId/reactivate', schoolAdministrationGuards.membershipRolesAssign, async (req: Request, res: Response) => {
+  try {
+    await new AuthorizationRepository(postgresRuntime.getPool()).reactivateMembership(
+      (req as any).authorizedPrincipal, req.params.userId, typeof req.body?.reason === 'string' ? req.body.reason : ''
+    );
+    res.json({ success: true, data: { reactivated: true }, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/memberships/:userId/revoke', schoolAdministrationGuards.membershipRolesAssign, async (req: Request, res: Response) => {
+  try {
+    await new AuthorizationRepository(postgresRuntime.getPool()).revokeMembership(
+      (req as any).authorizedPrincipal, req.params.userId, typeof req.body?.reason === 'string' ? req.body.reason : ''
+    );
+    res.json({ success: true, data: { revoked: true }, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/invitations', schoolAdministrationGuards.identityInvite, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await new AuthorizationRepository(postgresRuntime.getPool()).listInvitations(
+      (req as any).authorizedPrincipal, schoolId
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/invitations', schoolAdministrationGuards.identityInvite, async (req: Request, res: Response) => {
+  try {
+    const schoolId = await getCurrentSchoolId(req, res);
+    if (!schoolId) return;
+    const data = await new AuthorizationRepository(postgresRuntime.getPool()).createMemberInvitation(
+      (req as any).authorizedPrincipal,
+      { schoolId, ...(req.body || {}) }
+    );
+    res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/invitations/:invitationId/revoke', schoolAdministrationGuards.identityInvite, async (req: Request, res: Response) => {
+  try {
+    await new AuthorizationRepository(postgresRuntime.getPool()).revokeMemberInvitation(
+      (req as any).authorizedPrincipal, req.params.invitationId, typeof req.body?.reason === 'string' ? req.body.reason : ''
+    );
+    res.json({ success: true, data: { revoked: true }, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/sessions', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    const userIdFilter = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+    const data = await new AuthorizationRepository(postgresRuntime.getPool()).listSessions(
+      (req as any).authorizedPrincipal, userIdFilter
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/sessions/:sessionId/revoke', authorizationMiddleware.activeMembership, async (req: Request, res: Response) => {
+  try {
+    await new AuthorizationRepository(postgresRuntime.getPool()).revokeOwnOrTenantSession(
+      (req as any).authorizedPrincipal,
+      req.params.sessionId,
+      typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason : 'Revoked by user or administrator'
+    );
+    res.json({ success: true, data: { revoked: true }, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/audit-events', schoolAdministrationGuards.auditRead, async (req: Request, res: Response) => {
+  try {
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    const data = await new AuthorizationRepository(postgresRuntime.getPool()).queryAuditEvents(
+      (req as any).authorizedPrincipal,
+      {
+        action: typeof req.query.action === 'string' ? req.query.action : undefined,
+        limit: Number.isFinite(limit) ? limit : undefined
+      }
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.get('/api/v1/schools/me/mfa/totp', schoolAdministrationGuards.mfaManage, async (req: Request, res: Response) => {
+  try {
+    const data = await new AuthorizationRepository(postgresRuntime.getPool()).listMfaFactors(
+      (req as any).authorizedPrincipal
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/mfa/totp', schoolAdministrationGuards.mfaManage, async (req: Request, res: Response) => {
+  try {
+    const data = await new AuthorizationRepository(postgresRuntime.getPool()).createMfaTotpEnrollment(
+      (req as any).authorizedPrincipal,
+      typeof req.body?.friendlyName === 'string' ? req.body.friendlyName : undefined
+    );
+    res.status(201).json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.post('/api/v1/schools/me/mfa/totp/:factorId/verify', schoolAdministrationGuards.mfaManage, async (req: Request, res: Response) => {
+  try {
+    const data = await new AuthorizationRepository(postgresRuntime.getPool()).verifyMfaTotpEnrollment(
+      (req as any).authorizedPrincipal,
+      req.params.factorId,
+      typeof req.body?.code === 'string' ? req.body.code : ''
+    );
+    res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
+  }
+});
+
+app.delete('/api/v1/schools/me/mfa/totp/:factorId', schoolAdministrationGuards.mfaManage, async (req: Request, res: Response) => {
+  try {
+    await new AuthorizationRepository(postgresRuntime.getPool()).disableMfaFactor(
+      (req as any).authorizedPrincipal, req.params.factorId
+    );
+    res.json({ success: true, data: { disabled: true }, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
+  } catch (error) {
+    iamAuthorizationFailure(req, res, error);
   }
 });
 

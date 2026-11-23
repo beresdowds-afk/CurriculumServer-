@@ -45,8 +45,6 @@ const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const uuidPath = (suffix = '') => new RegExp(`^/schools/me/students/${uuid}${suffix}$`, 'i');
 const classUuidPath = () => new RegExp(`^/schools/me/classes/${uuid}$`, 'i');
 const staffUuidPath = () => new RegExp(`^/schools/me/staff/${uuid}$`, 'i');
-const unavailableAdministrationRoute = (resource: string) =>
-  new RegExp(`^/schools/me/${resource}(?:/.*)?$`);
 
 export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
   {
@@ -80,18 +78,27 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
   },
   {
     id: 'central_iam',
-    description: 'Centralized identity, Google OIDC, MFA, and session management.',
+    description: 'Centralized identity, Google OIDC, MFA, and public invitation activation endpoints.',
     routes: [
-      { method: 'POST', path: exact('/server/auth/login', '/server/auth/verify', '/schools/auth/login', '/flow/auth/login') }
+      { method: 'GET', path: exact('/schools/auth/oidc/google/start', '/schools/invitations/preview') },
+      { method: 'POST', path: exact(
+        '/server/auth/login',
+        '/server/auth/verify',
+        '/schools/auth/login',
+        '/schools/auth/mfa/verify',
+        '/schools/auth/oidc/google/callback',
+        '/schools/invitations/accept',
+        '/flow/auth/login'
+      ) }
     ],
     requiredRepositories: ['AuthorizationRepository', 'SchoolProvisioningRepository'],
-    requiredMigrations: [5, 6, 7, 8, 9, 10],
+    requiredMigrations: [5, 6, 7, 8, 9, 10, 34],
     authentication: 'none',
-    authorization: { rule: 'identity_and_session_verification_required', permissions: [] },
+    authorization: { rule: 'public', permissions: [] },
     tenantContext: 'none',
-    acceptanceTests: [],
-    readinessEvidence: [],
-    state: 'not_started'
+    acceptanceTests: ['server/authorization/iamLifecycle.test.ts', 'server/db/prompt1Administration.test.ts'],
+    readinessEvidence: ['postgresql_user_sessions', 'totp_mfa_and_oidc_pkce', 'member_invitation_tokens'],
+    state: 'ready'
   },
   {
     id: 'school_provisioning',
@@ -99,16 +106,16 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     routes: [
       { method: 'POST', path: exact('/schools/provision', '/schools/activation') },
       { method: 'POST', path: new RegExp(`^/schools/provision/${uuid}/retry$`, 'i') },
-      { method: 'GET', path: new RegExp(`^/schools/provision/${uuid}$`, 'i') }
+      { method: 'GET', path: new RegExp(`^/schools/provision/${uuid}(?:/steps)?$`, 'i') }
     ],
     requiredRepositories: ['SchoolProvisioningRepository', 'AuthorizationRepository'],
-    requiredMigrations: [5, 6, 7, 8],
+    requiredMigrations: [5, 6, 7, 8, 34],
     authentication: 'platform_administrator',
     authorization: { rule: 'platform_administrator_or_invitation_token', permissions: [] },
     tenantContext: 'control_plane_transaction',
-    acceptanceTests: ['server/db/postgres.integration.test.ts'],
-    readinessEvidence: [],
-    state: 'implemented'
+    acceptanceTests: ['server/schoolProvisioning.test.ts', 'server/db/prompt1Administration.test.ts'],
+    readinessEvidence: ['idempotent_transactional_provisioning', 'durable_workflow_steps', 'outbox_invitation_delivery'],
+    state: 'ready'
   },
   {
     id: 'question_bank_scoped_writes',
@@ -170,40 +177,85 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
   },
   {
     id: 'school_identity',
-    description: 'Tenant-scoped school profile, configuration, and membership APIs.',
+    description: 'Tenant-scoped school institutional identity, profile, status history, departments, academic calendar, configuration, and membership APIs.',
     routes: [
-      { method: 'GET', path: exact('/schools/me', '/schools/me/config', '/schools/me/membership') },
-      { method: 'PUT', path: exact('/schools/me/config') }
+      { method: 'GET', path: exact(
+        '/schools/me',
+        '/schools/me/config',
+        '/schools/me/membership',
+        '/schools/me/status-history',
+        '/schools/me/departments',
+        '/schools/me/academic-sessions'
+      ) },
+      { method: 'PUT', path: exact('/schools/me', '/schools/me/config') },
+      { method: 'PATCH', path: exact('/schools/me') },
+      { method: 'PATCH', path: new RegExp(`^/schools/me/departments/${uuid}$`, 'i') },
+      { method: 'POST', path: exact('/schools/me/status', '/schools/me/departments', '/schools/me/academic-sessions') },
+      { method: 'POST', path: new RegExp(`^/schools/me/academic-sessions/${uuid}/(?:activate|terms)$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/schools/me/academic-terms/${uuid}/activate$`, 'i') }
     ],
-    requiredRepositories: ['SchoolProvisioningRepository', 'AuthorizationRepository'],
-    requiredMigrations: [5, 6, 7, 8],
+    requiredRepositories: ['SchoolProvisioningRepository', 'SchoolAdministrationRepository', 'AuthorizationRepository'],
+    requiredMigrations: [5, 6, 7, 8, 9, 34],
     authentication: 'tenant_user_session',
     authorization: {
       rule: 'database_permission',
-      permissions: ['school.profile.read', 'school.configuration.read', 'school.configuration.manage', 'membership.read']
+      permissions: [
+        'school.profile.read',
+        'school.profile.update',
+        'school.configuration.read',
+        'school.configuration.manage',
+        'membership.read',
+        'departments.read',
+        'departments.manage',
+        'sessions.read',
+        'sessions.manage'
+      ]
     },
     tenantContext: 'transaction_local_tenant',
-    acceptanceTests: ['server/db/postgres.integration.test.ts', 'server/authorization/middleware.test.ts'],
-    readinessEvidence: [],
-    state: 'implemented'
+    acceptanceTests: ['server/db/prompt1Administration.test.ts', 'server/authorization/middleware.test.ts'],
+    readinessEvidence: ['postgresql_school_identity_and_status_history', 'departments_and_academic_calendar_rls'],
+    state: 'ready'
   },
   {
     id: 'student_administration',
-    description: 'Student directory and record APIs.',
+    description: 'Student directory, admissions workflow, medical profiles, digital ID cards, and guardian management APIs.',
     routes: [
-      { method: 'GET', path: exact('/schools/me/students') },
-      { method: 'POST', path: exact('/schools/me/students') },
+      { method: 'GET', path: exact('/schools/me/students', '/schools/me/admissions', '/schools/me/guardians', '/schools/me/guardians/my-wards') },
+      { method: 'POST', path: exact('/schools/me/students', '/schools/me/admissions', '/schools/me/guardians') },
+      { method: 'POST', path: new RegExp(`^/schools/me/admissions/${uuid}/(?:review|enroll)$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/schools/me/guardians/${uuid}/(?:verify|students)$`, 'i') },
+      { method: 'PATCH', path: new RegExp(`^/schools/me/guardians/${uuid}$`, 'i') },
+      { method: 'DELETE', path: new RegExp(`^/schools/me/guardians/${uuid}/students/${uuid}$`, 'i') },
       { method: 'GET', path: uuidPath() },
-      { method: 'PATCH', path: uuidPath() }
+      { method: 'PATCH', path: uuidPath() },
+      { method: 'GET', path: uuidPath('/medical') },
+      { method: 'PUT', path: uuidPath('/medical') },
+      { method: 'GET', path: uuidPath('/digital-id') },
+      { method: 'POST', path: uuidPath('/digital-id') },
+      { method: 'POST', path: uuidPath('/digital-id/revoke') }
     ],
     requiredRepositories: ['SchoolAdministrationRepository'],
-    requiredMigrations: [9],
+    requiredMigrations: [9, 34],
     authentication: 'tenant_user_session',
-    authorization: { rule: 'database_permission', permissions: ['students.read', 'students.create'] },
+    authorization: {
+      rule: 'database_permission',
+      permissions: [
+        'students.read',
+        'students.create',
+        'students.update',
+        'students.medical.read',
+        'students.medical.manage',
+        'admissions.read',
+        'admissions.manage',
+        'guardians.read',
+        'guardians.manage',
+        'guardians.verify'
+      ]
+    },
     tenantContext: 'transaction_local_tenant',
-    acceptanceTests: ['server/db/schoolAdministration.integration.test.ts'],
-    readinessEvidence: [],
-    state: 'implemented'
+    acceptanceTests: ['server/db/prompt1Administration.test.ts'],
+    readinessEvidence: ['postgresql_student_admissions_medical_digital_id', 'guardian_verification_and_ward_scoping'],
+    state: 'ready'
   },
   {
     id: 'class_administration',
@@ -215,34 +267,37 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
       { method: 'POST', path: uuidPath('/class') }
     ],
     requiredRepositories: ['SchoolAdministrationRepository'],
-    requiredMigrations: [9],
+    requiredMigrations: [9, 34],
     authentication: 'tenant_user_session',
-    authorization: { rule: 'database_permission', permissions: ['classes.create', 'classes.update'] },
+    authorization: { rule: 'database_permission', permissions: ['classes.read', 'classes.create', 'classes.update'] },
     tenantContext: 'transaction_local_tenant',
-    acceptanceTests: ['server/db/schoolAdministration.integration.test.ts'],
-    readinessEvidence: [],
-    state: 'implemented'
+    acceptanceTests: ['server/db/prompt1Administration.test.ts'],
+    readinessEvidence: ['postgresql_classes_and_assignments'],
+    state: 'ready'
   },
   {
     id: 'staff_administration',
-    description: 'School staff records and directory.',
+    description: 'School staff directory, account linking, role appointments, subject allocations, and status transitions.',
     routes: [
       { method: 'GET', path: exact('/schools/me/staff') },
       { method: 'GET', path: staffUuidPath() },
       { method: 'POST', path: exact('/schools/me/staff') },
-      { method: 'PATCH', path: staffUuidPath() }
+      { method: 'PATCH', path: staffUuidPath() },
+      { method: 'GET', path: new RegExp(`^/schools/me/staff/${uuid}/subject-allocations$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/schools/me/staff/${uuid}/(?:link-user|unlink-user|appointments|subject-allocations|status)$`, 'i') },
+      { method: 'DELETE', path: new RegExp(`^/schools/me/staff/${uuid}/subject-allocations/${uuid}$`, 'i') }
     ],
     requiredRepositories: ['SchoolAdministrationRepository', 'AuthorizationRepository'],
-    requiredMigrations: [9],
+    requiredMigrations: [9, 34],
     authentication: 'tenant_user_session',
     authorization: {
       rule: 'database_permission',
-      permissions: ['staff.read', 'staff.create', 'staff.update']
+      permissions: ['staff.read', 'staff.create', 'staff.update', 'staff.appoint']
     },
     tenantContext: 'transaction_local_tenant',
-    acceptanceTests: ['server/db/schoolAdministration.integration.test.ts'],
-    readinessEvidence: [],
-    state: 'implemented'
+    acceptanceTests: ['server/db/prompt1Administration.test.ts'],
+    readinessEvidence: ['postgresql_staff_linking_appointments_allocations'],
+    state: 'ready'
   },
   {
     id: 'attendance_platform_device_provisioning',
@@ -306,23 +361,50 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
   },
   {
     id: 'administrative_permissions',
-    description: 'School role assignment and permission administration.',
+    description: 'School role assignment, permission governance, member invitations, sessions, TOTP MFA, and audit administration.',
     routes: [
-      { method: 'GET', path: unavailableAdministrationRoute('roles') },
-      { method: 'GET', path: unavailableAdministrationRoute('permissions') },
-      { method: 'GET', path: unavailableAdministrationRoute('memberships') },
-      { method: 'POST', path: unavailableAdministrationRoute('roles') },
-      { method: 'PATCH', path: unavailableAdministrationRoute('memberships') },
-      { method: 'DELETE', path: unavailableAdministrationRoute('memberships') }
+      { method: 'GET', path: exact(
+        '/schools/me/roles',
+        '/schools/me/permissions',
+        '/schools/me/memberships',
+        '/schools/me/invitations',
+        '/schools/me/sessions',
+        '/schools/me/audit-events',
+        '/schools/me/mfa/totp'
+      ) },
+      { method: 'POST', path: exact(
+        '/schools/auth/logout',
+        '/schools/me/memberships/roles',
+        '/schools/me/invitations',
+        '/schools/me/mfa/totp'
+      ) },
+      { method: 'POST', path: new RegExp(`^/schools/me/memberships/${uuid}/(?:suspend|reactivate|revoke)$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/schools/me/invitations/${uuid}/revoke$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/schools/me/sessions/${uuid}/revoke$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/schools/me/mfa/totp/${uuid}/verify$`, 'i') },
+      { method: 'DELETE', path: exact('/schools/me/memberships/roles') },
+      { method: 'DELETE', path: new RegExp(`^/schools/me/mfa/totp/${uuid}$`, 'i') }
     ],
     requiredRepositories: ['AuthorizationRepository'],
-    requiredMigrations: [8, 9],
+    requiredMigrations: [8, 9, 34],
     authentication: 'tenant_user_session',
-    authorization: { rule: 'database_permission', permissions: ['membership.roles.assign', 'permissions.manage'] },
+    authorization: {
+      rule: 'database_permission',
+      permissions: [
+        'membership.read',
+        'membership.roles.assign',
+        'permissions.manage',
+        'identity.invite',
+        'identity.manage',
+        'identity.sessions.manage',
+        'identity.mfa.manage',
+        'audit.read'
+      ]
+    },
     tenantContext: 'transaction_local_tenant',
-    acceptanceTests: [],
-    readinessEvidence: [],
-    state: 'not_started'
+    acceptanceTests: ['server/authorization/iamLifecycle.test.ts', 'server/db/prompt1Administration.test.ts'],
+    readinessEvidence: ['database_rbac_and_privilege_escalation_prevention', 'session_mfa_and_audit_governance'],
+    state: 'ready'
   },
   {
     id: 'student_lifecycle',
@@ -332,13 +414,13 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
       { method: 'GET', path: uuidPath('/history') }
     ],
     requiredRepositories: ['SchoolAdministrationRepository'],
-    requiredMigrations: [9],
+    requiredMigrations: [9, 34],
     authentication: 'tenant_user_session',
     authorization: { rule: 'database_permission', permissions: ['student_lifecycle.manage'] },
     tenantContext: 'transaction_local_tenant',
-    acceptanceTests: ['server/db/schoolAdministration.integration.test.ts'],
-    readinessEvidence: [],
-    state: 'implemented'
+    acceptanceTests: ['server/db/prompt1Administration.test.ts'],
+    readinessEvidence: ['postgresql_student_lifecycle_state_machine'],
+    state: 'ready'
   },
   {
     id: 'campus_logistics',
@@ -430,13 +512,13 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     description: 'Discover provisionable school-application templates.',
     routes: [{ method: 'GET', path: exact('/application-templates') }],
     requiredRepositories: ['ApplicationTemplateRepository'],
-    requiredMigrations: [7, 10],
+    requiredMigrations: [7, 10, 34],
     authentication: 'platform_administrator',
     authorization: { rule: 'platform_template_discovery', permissions: [] },
     tenantContext: 'control_plane_transaction',
-    acceptanceTests: [],
-    readinessEvidence: [],
-    state: 'not_started'
+    acceptanceTests: ['server/db/prompt1Administration.test.ts'],
+    readinessEvidence: ['postgresql_application_templates_catalogue'],
+    state: 'ready'
   },
   {
     id: 'central_shared_service_foundation',

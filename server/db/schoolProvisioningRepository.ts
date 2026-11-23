@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { QueryResultRow } from 'pg';
 import type {
+  ProvisioningWorkflowStepRecord,
   SchoolProvisioningConfirmation,
   SchoolProvisioningOperationResponse,
   SchoolProvisioningRequest
@@ -314,6 +315,15 @@ export class SchoolProvisioningRepository {
         );
         if (existing.rows[0]) return mapProvisioningRow(existing.rows[0], true);
 
+        await this.recordWorkflowStep(client, {
+          operationId,
+          stepOrder: 1,
+          stepCode: 'validate_request',
+          stepName: 'Validate Provisioning Request',
+          status: 'completed',
+          details: { applicationId: input.applicationId, templateId: input.templateId, templateVersion: input.templateVersion }
+        });
+
         const tenantResult = await client.query<{ id: string; created_at: Date }>(
           `INSERT INTO production.tenants (display_name, status, created_by, tenant_slug)
            VALUES ($1, 'pending', $2, $3) RETURNING id, created_at`,
@@ -369,6 +379,16 @@ export class SchoolProvisioningRepository {
            VALUES ($1, $2, 1, $3::jsonb, $4)`,
           [tenant.id, schoolId, JSON.stringify(input.configuration), initiatedBy]
         );
+        await this.recordWorkflowStep(client, {
+          operationId,
+          tenantId: tenant.id,
+          schoolId,
+          stepOrder: 2,
+          stepCode: 'allocate_tenant_school',
+          stepName: 'Allocate Tenant & School Record',
+          status: 'completed',
+          details: { tenantId: tenant.id, schoolId }
+        });
         const application = INITIAL_REGISTERED_APPLICATIONS.find(item => item.appId === input.applicationId);
         if (!application) throw new Error('APPLICATION_REGISTRY_ENTRY_UNAVAILABLE');
         const applicationConfiguration = input.applicationConfiguration ??
@@ -496,6 +516,16 @@ export class SchoolProvisioningRepository {
            VALUES ($1, $2, $3, $4, $5, $6)`,
           [idempotencyKey, requestHash, tenant.id, schoolId, instanceId, initiatedBy]
         );
+        await this.recordWorkflowStep(client, {
+          operationId,
+          tenantId: tenant.id,
+          schoolId,
+          stepOrder: 3,
+          stepCode: 'configure_instance',
+          stepName: 'Configure Application Instance',
+          status: 'completed',
+          details: { instanceId, architecture: input.architecture }
+        });
         const invitationToken = createInvitationToken();
         const invitationResult = await client.query<{ id: string }>(
           `INSERT INTO production.school_admin_invitations
@@ -510,6 +540,16 @@ export class SchoolProvisioningRepository {
            VALUES ($1, $2)`,
           [tenant.id, invitationResult.rows[0].id]
         );
+        await this.recordWorkflowStep(client, {
+          operationId,
+          tenantId: tenant.id,
+          schoolId,
+          stepOrder: 4,
+          stepCode: 'queue_admin_invitation',
+          stepName: 'Queue Administrator Invitation',
+          status: 'completed',
+          details: { invitationId: invitationResult.rows[0].id }
+        });
         await client.query(
           `UPDATE production.application_instances
            SET status = 'ready_for_activation', provisioning_status = 'ready', updated_at = now()
@@ -520,6 +560,16 @@ export class SchoolProvisioningRepository {
           templateId: input.templateId,
           templateVersion: input.templateVersion,
           validatedAgainst: 'application_registry'
+        });
+        await this.recordWorkflowStep(client, {
+          operationId,
+          tenantId: tenant.id,
+          schoolId,
+          stepOrder: 5,
+          stepCode: 'verify_template_readiness',
+          stepName: 'Verify Template & Feature Readiness',
+          status: 'completed',
+          details: { templateId: input.templateId, templateVersion: input.templateVersion }
         });
         await client.query(
           `UPDATE production.school_provisioning_operations
@@ -1348,5 +1398,98 @@ export class SchoolProvisioningRepository {
       requestPayload: operation.request_payload,
       initiatedBy: operation.initiated_by
     };
+  }
+
+  async getProvisioningWorkflowSteps(
+    operationId: string,
+    principal: VerifiedTenantPrincipal
+  ): Promise<ProvisioningWorkflowStepRecord[]> {
+    return withControlPlaneTransaction(this.pool, principal, async client => {
+      const result = await client.query<{
+        id: string;
+        operation_id: string;
+        tenant_id: string | null;
+        school_id: string | null;
+        step_order: number;
+        step_code: string;
+        step_name: string;
+        status: ProvisioningWorkflowStepRecord['status'];
+        details: Record<string, unknown>;
+        error_message: string | null;
+        started_at: Date | null;
+        completed_at: Date | null;
+        updated_at: Date;
+      }>(
+        `SELECT id, operation_id, tenant_id, school_id, step_order, step_code,
+                step_name, status, details, error_message, started_at, completed_at, updated_at
+         FROM production.school_provisioning_workflow_steps
+         WHERE operation_id = $1
+         ORDER BY step_order ASC`,
+        [operationId]
+      );
+      return result.rows.map(row => ({
+        id: row.id,
+        operationId: row.operation_id,
+        tenantId: row.tenant_id,
+        schoolId: row.school_id,
+        stepOrder: row.step_order,
+        stepCode: row.step_code,
+        stepName: row.step_name,
+        status: row.status,
+        details: row.details ?? {},
+        errorMessage: row.error_message,
+        startedAt: row.started_at?.toISOString() ?? null,
+        completedAt: row.completed_at?.toISOString() ?? null,
+        updatedAt: row.updated_at.toISOString()
+      }));
+    });
+  }
+
+  private async recordWorkflowStep(
+    client: DatabaseClient,
+    input: {
+      operationId: string;
+      tenantId?: string | null;
+      schoolId?: string | null;
+      stepOrder: number;
+      stepCode: string;
+      stepName: string;
+      status: ProvisioningWorkflowStepRecord['status'];
+      details?: Record<string, unknown>;
+      errorMessage?: string | null;
+    }
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO production.school_provisioning_workflow_steps
+         (operation_id, tenant_id, school_id, step_order, step_code, step_name,
+          status, details, error_message, started_at, completed_at)
+       VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9,
+         now(),
+         CASE WHEN $7 IN ('completed', 'skipped') THEN now() ELSE NULL END
+       )
+       ON CONFLICT (operation_id, step_code) DO UPDATE SET
+         tenant_id = COALESCE(EXCLUDED.tenant_id, production.school_provisioning_workflow_steps.tenant_id),
+         school_id = COALESCE(EXCLUDED.school_id, production.school_provisioning_workflow_steps.school_id),
+         status = EXCLUDED.status,
+         details = EXCLUDED.details,
+         error_message = EXCLUDED.error_message,
+         completed_at = CASE
+           WHEN EXCLUDED.status IN ('completed', 'skipped') THEN COALESCE(production.school_provisioning_workflow_steps.completed_at, now())
+           ELSE production.school_provisioning_workflow_steps.completed_at
+         END,
+         updated_at = now()`,
+      [
+        input.operationId,
+        input.tenantId ?? null,
+        input.schoolId ?? null,
+        input.stepOrder,
+        input.stepCode,
+        input.stepName,
+        input.status,
+        JSON.stringify(input.details ?? {}),
+        input.errorMessage ?? null
+      ]
+    );
   }
 }

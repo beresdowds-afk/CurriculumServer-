@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type {
+  ApplicationTemplateRecord,
+  ProvisioningWorkflowStepRecord,
   SchoolProvisioningOperationResponse,
   SchoolProvisioningConfirmation,
   SchoolProvisioningRequest
@@ -100,18 +102,34 @@ export const SchoolRegistrationWizard: React.FC<SchoolRegistrationWizardProps> =
   const [error, setError] = useState('');
   const [result, setResult] = useState<SchoolProvisioningConfirmation | null>(null);
   const [operation, setOperation] = useState<SchoolProvisioningOperationResponse | null>(null);
+  const [workflowSteps, setWorkflowSteps] = useState<ProvisioningWorkflowStepRecord[]>([]);
+  const [templates, setTemplates] = useState<ApplicationTemplateRecord[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('school-standard');
   const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey);
 
   useEffect(() => {
     if (!isOpen || !unifiedApiClient.isAuthenticated('control_plane')) return;
+    unifiedApiClient.getApplicationTemplates({ provisionable: true })
+      .then(list => {
+        setTemplates(list);
+        if (list.length > 0 && !list.some(t => t.templateId === selectedTemplateId)) {
+          setSelectedTemplateId(list[0].templateId);
+        }
+      })
+      .catch(() => {});
+
     const operationId = new URLSearchParams(window.location.search).get('provisioning_operation');
     if (!operationId) return;
     setStep(5);
     setIsSubmitting(true);
-    unifiedApiClient.getSchoolProvisioningOperation(operationId)
-      .then(record => {
+    Promise.all([
+      unifiedApiClient.getSchoolProvisioningOperation(operationId),
+      unifiedApiClient.getProvisioningWorkflowSteps(operationId).catch(() => [] as ProvisioningWorkflowStepRecord[])
+    ])
+      .then(([record, steps]) => {
         setOperation(record);
         setResult(record.provisioning || null);
+        setWorkflowSteps(steps);
       })
       .catch(error => setError(getErrorDetails(error).message))
       .finally(() => setIsSubmitting(false));
@@ -137,14 +155,15 @@ export const SchoolRegistrationWizard: React.FC<SchoolRegistrationWizardProps> =
     }
   };
 
+  const activeTemplate = templates.find(t => t.templateId === selectedTemplateId);
   const payload: SchoolProvisioningRequest = {
     school,
     configuration,
     administrator,
     applicationId,
     architecture: 'shared_database',
-    templateId: 'school-standard',
-    templateVersion: '1',
+    templateId: activeTemplate?.templateId || 'school-standard',
+    templateVersion: activeTemplate?.templateVersion || '1',
     enabledFeatures: selectedFeatures,
     commercial: {
       commercialModel,
@@ -177,7 +196,12 @@ export const SchoolRegistrationWizard: React.FC<SchoolRegistrationWizardProps> =
       window.history.replaceState(null, '', url);
       setIdempotencyKey(newIdempotencyKey());
       try {
-        setOperation(await unifiedApiClient.getSchoolProvisioningOperation(confirmation.operationId));
+        const [op, steps] = await Promise.all([
+          unifiedApiClient.getSchoolProvisioningOperation(confirmation.operationId),
+          unifiedApiClient.getProvisioningWorkflowSteps(confirmation.operationId).catch(() => [] as ProvisioningWorkflowStepRecord[])
+        ]);
+        setOperation(op);
+        setWorkflowSteps(steps);
       } catch {
         setError('School state was saved, but status refresh is temporarily unavailable.');
       }
@@ -210,9 +234,13 @@ export const SchoolRegistrationWizard: React.FC<SchoolRegistrationWizardProps> =
     setIsSubmitting(true);
     setError('');
     try {
-      const refreshed = await unifiedApiClient.getSchoolProvisioningOperation(operationId);
+      const [refreshed, steps] = await Promise.all([
+        unifiedApiClient.getSchoolProvisioningOperation(operationId),
+        unifiedApiClient.getProvisioningWorkflowSteps(operationId).catch(() => [] as ProvisioningWorkflowStepRecord[])
+      ]);
       setOperation(refreshed);
       setResult(refreshed.provisioning || null);
+      setWorkflowSteps(steps);
     } catch (requestError) {
       setError(getErrorDetails(requestError).message);
     } finally {
@@ -229,6 +257,8 @@ export const SchoolRegistrationWizard: React.FC<SchoolRegistrationWizardProps> =
       const refreshed = await unifiedApiClient.retrySchoolProvisioning(operationId);
       setOperation(refreshed);
       setResult(refreshed.provisioning || null);
+      const steps = await unifiedApiClient.getProvisioningWorkflowSteps(operationId).catch(() => [] as ProvisioningWorkflowStepRecord[]);
+      setWorkflowSteps(steps);
     } catch (requestError) {
       const details = getErrorDetails(requestError);
       setError(details.message);
@@ -342,6 +372,29 @@ export const SchoolRegistrationWizard: React.FC<SchoolRegistrationWizardProps> =
                 )}
               </select>
             </label>
+            {templates.length > 0 && (
+              <label className="block text-sm text-slate-300">
+                <span className="mb-1.5 block">Provisionable application template (PostgreSQL catalog)</span>
+                <select
+                  value={selectedTemplateId}
+                  onChange={event => {
+                    const nextId = event.target.value;
+                    setSelectedTemplateId(nextId);
+                    const matched = templates.find(t => t.templateId === nextId);
+                    if (matched?.defaultFeatures?.length) {
+                      setSelectedFeatures(matched.defaultFeatures);
+                    }
+                  }}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5"
+                >
+                  {templates.map(tpl => (
+                    <option key={`${tpl.templateId}-${tpl.templateVersion}`} value={tpl.templateId}>
+                      {tpl.displayName} (v{tpl.templateVersion} • {tpl.category})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="sm:col-span-2 rounded-xl border border-slate-700 p-4">
               <h3 className="font-semibold text-white">Production-approved features</h3>
               <p className="mb-3 mt-1 text-xs text-slate-400">
@@ -455,6 +508,35 @@ export const SchoolRegistrationWizard: React.FC<SchoolRegistrationWizardProps> =
                 <p className="mt-3 text-xs text-amber-300">Requested DNS/TLS configuration is recorded for manual follow-up; no external deployment is claimed.</p>
               )}
               {operation?.error && <p role="alert" className="mt-3 text-sm text-rose-300">{operation.error.code}: {operation.error.message}</p>}
+              {workflowSteps.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-slate-800 space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    Persisted provisioning workflow timeline
+                  </h4>
+                  <ol className="space-y-1.5 text-xs">
+                    {workflowSteps.map(wfStep => (
+                      <li
+                        key={wfStep.id}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2"
+                      >
+                        <span className="text-slate-200">
+                          <span className="font-mono text-slate-400 mr-2">{wfStep.stepOrder}.</span>
+                          {wfStep.stepName}
+                        </span>
+                        <span className={`font-mono uppercase px-2 py-0.5 rounded text-[10px] ${
+                          wfStep.status === 'completed'
+                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                            : wfStep.status === 'failed'
+                            ? 'bg-rose-950 text-rose-300 border border-rose-700'
+                            : 'bg-slate-800 text-slate-300 border border-slate-700'
+                        }`}>
+                          {wfStep.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
             </div>
             {error && <p role="alert" className="text-sm text-amber-200">{error}</p>}
             <div className="flex justify-end gap-3">

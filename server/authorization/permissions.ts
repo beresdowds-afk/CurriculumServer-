@@ -16,6 +16,17 @@ export const PERMISSIONS = {
   studentsTransfer: 'students.transfer',
   studentsPromote: 'students.promote',
   studentsGraduate: 'students.graduate',
+  studentsMedicalRead: 'students.medical.read',
+  studentsMedicalManage: 'students.medical.manage',
+  admissionsRead: 'admissions.read',
+  admissionsManage: 'admissions.manage',
+  guardiansRead: 'guardians.read',
+  guardiansManage: 'guardians.manage',
+  guardiansVerify: 'guardians.verify',
+  departmentsRead: 'departments.read',
+  departmentsManage: 'departments.manage',
+  sessionsRead: 'sessions.read',
+  sessionsManage: 'sessions.manage',
   classesRead: 'classes.read',
   classesManage: 'classes.manage',
   classesCreate: 'classes.create',
@@ -27,7 +38,10 @@ export const PERMISSIONS = {
   staffAppoint: 'staff.appoint',
   identityInvite: 'identity.invite',
   identityManage: 'identity.manage',
+  identitySessionsManage: 'identity.sessions.manage',
+  identityMfaManage: 'identity.mfa.manage',
   permissionsManage: 'permissions.manage',
+  auditRead: 'audit.read',
   studentLifecycleManage: 'student_lifecycle.manage',
   questionBankRead: 'question_bank.read',
   questionBankManage: 'question_bank.manage',
@@ -58,11 +72,37 @@ export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];
 
 export const TENANT_ROLES = {
   tenantAdmin: 'tenant_admin',
+  proprietor: 'proprietor',
+  principal: 'principal',
+  principalAdministrator: 'principal_administrator',
+  vicePrincipalAcademic: 'vice_principal_academic',
+  vicePrincipalAdministration: 'vice_principal_administration',
+  academicCoordinator: 'academic_coordinator',
+  administrativeAssistant: 'administrative_assistant',
+  departmentHead: 'department_head',
+  examinationOfficer: 'examination_officer',
+  bursar: 'bursar',
+  deanStudentAffairs: 'dean_student_affairs',
+  ictSystemAdministrator: 'ict_system_administrator',
+  ictTechnician: 'ict_technician',
   teacher: 'teacher',
+  subjectTeacher: 'subject_teacher',
   examiner: 'examiner',
   staff: 'staff',
-  readOnly: 'read_only'
+  readOnly: 'read_only',
+  student: 'student',
+  parent: 'parent',
+  securityOfficer: 'security_officer',
+  housemaster: 'housemaster',
+  hostelAssistant: 'hostel_assistant',
+  diningOfficer: 'dining_officer',
+  transportManager: 'transport_manager',
+  libraryAdministrator: 'library_administrator'
 } as const;
+
+export type TenantRoleCode = typeof TENANT_ROLES[keyof typeof TENANT_ROLES];
+
+export const SCHOOL_ROLE_CODES: readonly TenantRoleCode[] = Object.values(TENANT_ROLES);
 
 // Platform administration is deliberately not a tenant role.
 export const PLATFORM_ADMIN_ROLE = 'super_admin';

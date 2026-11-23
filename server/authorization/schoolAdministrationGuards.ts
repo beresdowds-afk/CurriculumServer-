@@ -28,10 +28,10 @@ export function createSchoolAdministrationGuards(auth: AuthorizationMiddleware) 
   const lifecycle: RequestHandler = (req, res, next) => {
     auth.requireResourcePermission(PERMISSIONS.studentLifecycleManage, studentResource)(req, res, () => {
       const type = req.body?.type;
-      const permission = type === 'admit' || type === 'activate' ? PERMISSIONS.studentsAdmit
+      const permission = type === 'admit' || type === 'activate' || type === 'enroll' ? PERMISSIONS.studentsAdmit
         : type === 'external_transfer' ? PERMISSIONS.studentsTransfer
           : type === 'graduate' ? PERMISSIONS.studentsGraduate
-            : type === 'withdraw' || type === 'reinstate' ? PERMISSIONS.studentsUpdate : undefined;
+            : type === 'withdraw' || type === 'reinstate' || type === 'suspend' ? PERMISSIONS.studentsUpdate : undefined;
       if (!permission) {
         res.status(400).json({ success: false, code: 'VALIDATION_FAILED', error: 'Unsupported lifecycle action.' });
         return;
@@ -66,11 +66,29 @@ export function createSchoolAdministrationGuards(auth: AuthorizationMiddleware) 
     });
   };
 
+  const staffResource = (req: Request) => ({ resourceType: 'staff', resourceId: req.params.staffId });
+
   return {
+    schoolProfileUpdate: auth.requirePermission(PERMISSIONS.schoolProfileUpdate),
+    schoolStatusRead: auth.requirePermission(PERMISSIONS.schoolProfileRead),
+    departmentsRead: auth.requirePermission(PERMISSIONS.departmentsRead),
+    departmentsManage: auth.requirePermission(PERMISSIONS.departmentsManage),
+    sessionsRead: auth.requirePermission(PERMISSIONS.sessionsRead),
+    sessionsManage: auth.requirePermission(PERMISSIONS.sessionsManage),
     studentRead,
     studentRecordRead,
     studentCreate: auth.requirePermission(PERMISSIONS.studentsCreate),
     studentUpdate: auth.requireResourcePermission(PERMISSIONS.studentsUpdate, studentResource),
+    studentMedicalRead: auth.requireResourcePermission(PERMISSIONS.studentsMedicalRead, studentResource),
+    studentMedicalManage: auth.requireResourcePermission(PERMISSIONS.studentsMedicalManage, studentResource),
+    studentDigitalIdRead: studentRecordRead,
+    studentDigitalIdManage: auth.requireResourcePermission(PERMISSIONS.studentsUpdate, studentResource),
+    admissionsRead: auth.requirePermission(PERMISSIONS.admissionsRead),
+    admissionsManage: auth.requirePermission(PERMISSIONS.admissionsManage),
+    guardiansRead: auth.requirePermission(PERMISSIONS.guardiansRead),
+    guardiansManage: auth.requirePermission(PERMISSIONS.guardiansManage),
+    guardiansVerify: auth.requirePermission(PERMISSIONS.guardiansVerify),
+    guardianSelfRead: auth.activeMembership,
     lifecycle,
     assignClass,
     classRead: auth.requirePermission(PERMISSIONS.classesRead),
@@ -80,11 +98,18 @@ export function createSchoolAdministrationGuards(auth: AuthorizationMiddleware) 
     })),
     staffRead: auth.requirePermission(PERMISSIONS.staffRead),
     staffCreate: auth.requirePermission(PERMISSIONS.staffCreate),
-    staffRecordRead: auth.requireResourcePermission(PERMISSIONS.staffRead, req => ({
-      resourceType: 'staff', resourceId: req.params.staffId
-    })),
-    staffUpdate: auth.requireResourcePermission(PERMISSIONS.staffUpdate, req => ({
-      resourceType: 'staff', resourceId: req.params.staffId
-    }))
+    staffRecordRead: auth.requireResourcePermission(PERMISSIONS.staffRead, staffResource),
+    staffUpdate: auth.requireResourcePermission(PERMISSIONS.staffUpdate, staffResource),
+    staffAppoint: auth.requireResourcePermission(PERMISSIONS.staffAppoint, staffResource),
+    staffLinkAccount: auth.requirePermission(PERMISSIONS.identityManage),
+    rolesRead: auth.requirePermission(PERMISSIONS.membershipRead),
+    permissionsRead: auth.requirePermission(PERMISSIONS.membershipRead),
+    membershipRead: auth.requirePermission(PERMISSIONS.membershipRead),
+    membershipRolesAssign: auth.requirePermission(PERMISSIONS.membershipRolesAssign),
+    identityInvite: auth.requirePermission(PERMISSIONS.identityInvite),
+    identityManage: auth.requirePermission(PERMISSIONS.identityManage),
+    sessionsManageAccess: auth.requirePermission(PERMISSIONS.identitySessionsManage),
+    mfaManage: auth.requirePermission(PERMISSIONS.identityMfaManage),
+    auditRead: auth.requirePermission(PERMISSIONS.auditRead)
   };
 }

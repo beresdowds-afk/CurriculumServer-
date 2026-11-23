@@ -110,7 +110,23 @@ const REQUIRED_TABLES = [
   'production.teaching_delivery_records',
   'production.teaching_delivery_audit_history',
   'production.assessment_scope_authorizations',
-  'production.assessment_generation_provenance'
+  'production.assessment_generation_provenance',
+  'production.school_status_history',
+  'production.academic_sessions',
+  'production.academic_terms',
+  'production.student_admissions',
+  'production.student_medical_profiles',
+  'production.student_digital_id_cards',
+  'production.guardians',
+  'production.student_guardians',
+  'production.staff_subject_allocations',
+  'production.staff_separation_history',
+  'production.member_invitations',
+  'production.user_mfa_factors',
+  'production.mfa_challenges',
+  'production.oidc_auth_states',
+  'production.school_provisioning_workflow_steps',
+  'production.application_templates'
 ];
 
 export interface CapabilityReadiness {

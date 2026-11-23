@@ -382,7 +382,21 @@ export interface SchoolStaffRecord {
   last_name: string;
   email: string | null;
   designation: string;
-  status: 'active' | 'suspended' | 'departed';
+  status: 'active' | 'on_leave' | 'suspended' | 'retired' | 'departed';
+  staff_category?: 'teaching' | 'administrative' | 'support' | 'executive';
+  employment_type?: 'full_time' | 'part_time' | 'contract' | 'visiting';
+  phone?: string | null;
+  photo_url?: string | null;
+  qualification?: string | null;
+  certifications?: string[];
+  trcn_number?: string | null;
+  trcn_verified?: boolean;
+  biometric_id?: string | null;
+  max_periods_per_week?: number;
+  hire_date?: string | null;
+  separated_at?: string | null;
+  separation_reason?: string | null;
+  specialization_notes?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -401,6 +415,18 @@ export interface CreateSchoolStaffRequest {
   email?: string | null;
   designation: string;
   departmentId?: string | null;
+  staffCategory?: 'teaching' | 'administrative' | 'support' | 'executive';
+  employmentType?: 'full_time' | 'part_time' | 'contract' | 'visiting';
+  phone?: string | null;
+  photoUrl?: string | null;
+  qualification?: string | null;
+  certifications?: string[];
+  trcnNumber?: string | null;
+  trcnVerified?: boolean;
+  biometricId?: string | null;
+  maxPeriodsPerWeek?: number;
+  hireDate?: string | null;
+  specializationNotes?: string | null;
 }
 
 export type UpdateSchoolStaffRequest = Partial<CreateSchoolStaffRequest>;
@@ -413,7 +439,29 @@ export interface SchoolAdministrationStudent {
   admission_number: string;
   first_name: string;
   last_name: string;
-  lifecycle_status: 'applicant' | 'admitted' | 'active' | 'transferred' | 'graduated' | 'withdrawn' | 'legacy_unverified';
+  lifecycle_status:
+    | 'applicant'
+    | 'admitted'
+    | 'enrolled'
+    | 'active'
+    | 'suspended'
+    | 'transferred'
+    | 'graduated'
+    | 'withdrawn'
+    | 'legacy_unverified';
+  date_of_birth?: string | null;
+  gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say' | null;
+  nationality?: string | null;
+  state_of_origin?: string | null;
+  lga_of_origin?: string | null;
+  residential_address?: string | null;
+  previous_school_history?: Array<Record<string, unknown>>;
+  academic_history_summary?: Record<string, unknown>;
+  emergency_contacts?: Array<Record<string, unknown>>;
+  photo_url?: string | null;
+  rfid_card_uid?: string | null;
+  digital_id_code?: string | null;
+  user_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -422,6 +470,17 @@ export interface CreateSchoolStudentRequest {
   admissionNumber: string;
   firstName: string;
   lastName: string;
+  dateOfBirth?: string | null;
+  gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say' | null;
+  nationality?: string | null;
+  stateOfOrigin?: string | null;
+  lgaOfOrigin?: string | null;
+  residentialAddress?: string | null;
+  previousSchoolHistory?: Array<Record<string, unknown>>;
+  academicHistorySummary?: Record<string, unknown>;
+  emergencyContacts?: Array<Record<string, unknown>>;
+  photoUrl?: string | null;
+  rfidCardUid?: string | null;
 }
 
 export type UpdateSchoolStudentRequest = Partial<CreateSchoolStudentRequest>;
@@ -435,16 +494,32 @@ export interface SchoolAdministrationClass {
   section: string;
   status: 'active' | 'archived';
   class_teacher_staff_id: string | null;
+  department_id?: string | null;
+  academic_session_id?: string | null;
+  grade_level?: string;
+  arm?: string;
+  room_number?: string;
+  capacity?: number;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface CreateSchoolClassRequest {
   name: string;
   academicYear: string;
   section?: string;
+  departmentId?: string | null;
+  academicSessionId?: string | null;
+  gradeLevel?: string;
+  arm?: string;
+  roomNumber?: string;
+  capacity?: number;
+  classTeacherStaffId?: string | null;
 }
 
-export type UpdateSchoolClassRequest = Partial<CreateSchoolClassRequest>;
+export type UpdateSchoolClassRequest = Partial<CreateSchoolClassRequest> & {
+  status?: 'active' | 'archived';
+};
 
 // -------------------------------------------------------------
 // CURRICULUM FLOW (SCHOOL ERP) CONTRACTS
@@ -609,3 +684,512 @@ export interface ReviewInstanceRequestPayload {
   reviewerEmail: string;
 }
 
+// -------------------------------------------------------------
+// PROMPT 1: SCHOOL ADMINISTRATION, IDENTITY, STUDENT LIFECYCLE,
+// GUARDIANS, CENTRAL IAM & PROVISIONING CONTRACTS
+// -------------------------------------------------------------
+
+export type SchoolOwnershipType =
+  | 'public'
+  | 'private'
+  | 'mission'
+  | 'federal'
+  | 'state'
+  | 'international'
+  | 'community';
+
+export type SchoolInstitutionalStatus =
+  | 'pending_activation'
+  | 'active'
+  | 'suspended'
+  | 'decommissioned';
+
+export interface SchoolInstitutionalIdentity extends SchoolDetailsResponse {
+  legalName: string;
+  registeredIdentity: string | null;
+  ownership: SchoolOwnershipType;
+  educationalClassification: string;
+  administrativeAddress: string | null;
+  postalCode: string | null;
+  operationalPolicies: Record<string, unknown>;
+  institutionalStatus: SchoolInstitutionalStatus;
+  activatedAt: string | null;
+}
+
+export interface UpdateSchoolProfileRequest {
+  name?: string;
+  shortName?: string;
+  legalName?: string;
+  registeredIdentity?: string | null;
+  schoolType?: string;
+  ownership?: SchoolOwnershipType;
+  educationalClassification?: string;
+  country?: string;
+  stateProvince?: string;
+  city?: string;
+  physicalAddress?: string;
+  administrativeAddress?: string | null;
+  postalCode?: string | null;
+  officialContactEmail?: string;
+  telephone?: string;
+  website?: string | null;
+  motto?: string | null;
+  principalName?: string | null;
+  principalEmail?: string | null;
+  principalPhone?: string | null;
+  ictAdministratorName?: string | null;
+  ictAdministratorEmail?: string | null;
+  ictAdministratorPhone?: string | null;
+  logoUrl?: string | null;
+  primaryBrandColor?: string;
+  accentBrandColor?: string;
+  operationalPolicies?: Record<string, unknown>;
+}
+
+export interface SchoolStatusTransitionRequest {
+  toStatus: SchoolInstitutionalStatus;
+  reason: string;
+  evidence?: Record<string, unknown>;
+}
+
+export interface SchoolStatusHistoryRecord {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  from_status: string | null;
+  to_status: SchoolInstitutionalStatus;
+  reason: string;
+  changed_by: string;
+  evidence: Record<string, unknown>;
+  occurred_at: string;
+}
+
+export interface SchoolDepartmentRecord {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  name: string;
+  code: string | null;
+  unit_type: 'academic' | 'administrative' | 'support' | 'faculty';
+  parent_department_id: string | null;
+  head_staff_id: string | null;
+  description: string;
+  status: 'active' | 'inactive';
+  created_at: string;
+}
+
+export interface CreateDepartmentRequest {
+  name: string;
+  code?: string | null;
+  unitType?: 'academic' | 'administrative' | 'support' | 'faculty';
+  parentDepartmentId?: string | null;
+  headStaffId?: string | null;
+  description?: string;
+}
+
+export type UpdateDepartmentRequest = Partial<CreateDepartmentRequest> & {
+  status?: 'active' | 'inactive';
+};
+
+export interface AcademicTermRecord {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  session_id: string;
+  term_order: number;
+  name: string;
+  starts_on: string;
+  ends_on: string;
+  is_current: boolean;
+  status: 'planned' | 'active' | 'completed' | 'closed';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AcademicSessionRecord {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  session_code: string;
+  display_name: string;
+  starts_on: string;
+  ends_on: string;
+  is_current: boolean;
+  status: 'planned' | 'active' | 'completed' | 'archived';
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  terms: AcademicTermRecord[];
+}
+
+export interface CreateAcademicSessionRequest {
+  sessionCode: string;
+  displayName: string;
+  startsOn: string;
+  endsOn: string;
+}
+
+export interface CreateAcademicTermRequest {
+  termOrder: number;
+  name: string;
+  startsOn: string;
+  endsOn: string;
+}
+
+export type AdmissionApplicationStatus =
+  | 'submitted'
+  | 'under_review'
+  | 'waitlisted'
+  | 'approved'
+  | 'rejected'
+  | 'enrolled';
+
+export interface StudentAdmissionRecord {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  application_number: string;
+  first_name: string;
+  last_name: string;
+  middle_name: string | null;
+  date_of_birth: string | null;
+  gender: 'male' | 'female' | 'other' | 'prefer_not_to_say' | null;
+  target_grade_level: string;
+  target_class_id: string | null;
+  academic_session_id: string | null;
+  previous_school_name: string | null;
+  previous_class: string | null;
+  guardian_summary: Record<string, unknown>;
+  documents: Array<Record<string, unknown>>;
+  review_notes: string | null;
+  status: AdmissionApplicationStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  enrolled_student_id: string | null;
+  submitted_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateStudentAdmissionRequest {
+  applicationNumber: string;
+  firstName: string;
+  lastName: string;
+  middleName?: string | null;
+  dateOfBirth?: string | null;
+  gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say' | null;
+  targetGradeLevel: string;
+  targetClassId?: string | null;
+  academicSessionId?: string | null;
+  previousSchoolName?: string | null;
+  previousClass?: string | null;
+  guardianSummary?: Record<string, unknown>;
+  documents?: Array<Record<string, unknown>>;
+}
+
+export interface ReviewAdmissionRequest {
+  decision: 'under_review' | 'waitlisted' | 'approved' | 'rejected';
+  reviewNotes?: string;
+}
+
+export interface EnrollAdmissionRequest {
+  admissionNumber: string;
+  classId?: string | null;
+}
+
+export interface StudentMedicalProfileRecord {
+  tenant_id: string;
+  school_id: string;
+  student_id: string;
+  blood_group: 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-' | 'unknown' | null;
+  genotype: 'AA' | 'AS' | 'SS' | 'AC' | 'SC' | 'unknown' | null;
+  allergies: string[];
+  chronic_conditions: string[];
+  immunization_summary: Record<string, unknown>;
+  dietary_restrictions: string[];
+  physician_name: string | null;
+  physician_phone: string | null;
+  medical_notes: string | null;
+  consent_for_emergency_care: boolean;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpsertStudentMedicalProfileRequest {
+  bloodGroup?: StudentMedicalProfileRecord['blood_group'];
+  genotype?: StudentMedicalProfileRecord['genotype'];
+  allergies?: string[];
+  chronicConditions?: string[];
+  immunizationSummary?: Record<string, unknown>;
+  dietaryRestrictions?: string[];
+  physicianName?: string | null;
+  physicianPhone?: string | null;
+  medicalNotes?: string | null;
+  consentForEmergencyCare?: boolean;
+}
+
+export interface StudentDigitalIdCardRecord {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  student_id: string;
+  card_number: string;
+  issued_by: string;
+  issued_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+  revoked_reason: string | null;
+  status: 'active' | 'expired' | 'revoked';
+}
+
+export interface IssueDigitalIdCardResponse {
+  card: StudentDigitalIdCardRecord;
+  qrToken: string;
+}
+
+export interface GuardianRecord {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  user_id: string | null;
+  full_name: string;
+  email: string | null;
+  phone: string;
+  alternate_phone: string | null;
+  occupation: string | null;
+  residential_address: string | null;
+  identity_document_type: string | null;
+  verification_status: 'pending' | 'verified' | 'rejected' | 'suspended';
+  verified_by: string | null;
+  verified_at: string | null;
+  status: 'active' | 'inactive';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudentGuardianLinkRecord {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  student_id: string;
+  guardian_id: string;
+  relationship_type: 'mother' | 'father' | 'legal_guardian' | 'sponsor' | 'sibling' | 'other';
+  is_primary: boolean;
+  is_financial_sponsor: boolean;
+  is_emergency_contact: boolean;
+  authorized_pickup: boolean;
+  can_view_academic_records: boolean;
+  can_view_medical_summary: boolean;
+  status: 'active' | 'inactive';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateGuardianRequest {
+  fullName: string;
+  phone: string;
+  email?: string | null;
+  alternatePhone?: string | null;
+  occupation?: string | null;
+  residentialAddress?: string | null;
+  identityDocumentType?: string | null;
+  userId?: string | null;
+}
+
+export type UpdateGuardianRequest = Partial<CreateGuardianRequest> & {
+  status?: 'active' | 'inactive';
+};
+
+export interface LinkStudentGuardianRequest {
+  studentId: string;
+  relationshipType: StudentGuardianLinkRecord['relationship_type'];
+  isPrimary?: boolean;
+  isFinancialSponsor?: boolean;
+  isEmergencyContact?: boolean;
+  authorizedPickup?: boolean;
+  canViewAcademicRecords?: boolean;
+  canViewMedicalSummary?: boolean;
+}
+
+export interface GuardianWardSummary {
+  student: SchoolAdministrationStudent;
+  relationshipType: StudentGuardianLinkRecord['relationship_type'];
+  isPrimary: boolean;
+  canViewAcademicRecords: boolean;
+  canViewMedicalSummary: boolean;
+}
+
+export interface StaffSubjectAllocationRecord {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  staff_id: string;
+  academic_session_id: string | null;
+  subject_code: string;
+  subject_name: string;
+  class_id: string | null;
+  periods_per_week: number;
+  status: 'active' | 'ended';
+  assigned_by: string | null;
+  assigned_at: string;
+  ended_at: string | null;
+}
+
+export interface AllocateStaffSubjectRequest {
+  subjectCode: string;
+  subjectName: string;
+  classId?: string | null;
+  academicSessionId?: string | null;
+  periodsPerWeek?: number;
+}
+
+export interface StaffStatusTransitionRequest {
+  toStatus: 'active' | 'on_leave' | 'suspended' | 'retired' | 'departed';
+  reason: string;
+}
+
+export interface IamRoleDefinition {
+  code: string;
+  description: string;
+  systemRole: boolean;
+  permissions: string[];
+}
+
+export interface IamMembershipRecord {
+  userId: string;
+  userSubject: string;
+  email: string;
+  fullName: string;
+  accountStatus: string;
+  membershipStatus: string;
+  primaryRole: string;
+  assignedRoles: string[];
+  createdAt: string;
+}
+
+export interface IamMemberInvitationRecord {
+  id: string;
+  tenantId: string;
+  schoolId: string;
+  fullName: string;
+  email: string;
+  intendedRoleCode: string;
+  departmentId: string | null;
+  staffId: string | null;
+  guardianId: string | null;
+  status: string;
+  expiresAt: string;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+}
+
+export interface CreateMemberInvitationRequest {
+  fullName: string;
+  email: string;
+  intendedRoleCode: string;
+  departmentId?: string | null;
+  staffId?: string | null;
+  guardianId?: string | null;
+  expiresInHours?: number;
+}
+
+export interface IamSessionRecord {
+  id: string;
+  userId: string;
+  email: string;
+  fullName: string;
+  authMethod: string;
+  mfaVerifiedAt: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  revokedReason: string | null;
+}
+
+export interface IamAuditEventRecord {
+  id: string;
+  actorSubject: string;
+  action: string;
+  details: Record<string, unknown>;
+  occurredAt: string;
+}
+
+export interface MfaFactorSummary {
+  id: string;
+  factorType: 'totp';
+  friendlyName: string;
+  status: 'pending' | 'verified' | 'disabled';
+  createdAt: string;
+  verifiedAt: string | null;
+  lastUsedAt: string | null;
+}
+
+export interface ProvisioningWorkflowStepRecord {
+  id: string;
+  operationId: string;
+  tenantId: string | null;
+  schoolId: string | null;
+  stepOrder: number;
+  stepCode: string;
+  stepName: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  details: Record<string, unknown>;
+  errorMessage: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  updatedAt: string;
+}
+
+export interface ApplicationTemplateRecord {
+  templateId: string;
+  templateVersion: string;
+  displayName: string;
+  description: string;
+  category: string;
+  status: 'draft' | 'active' | 'deprecated';
+  provisionable: boolean;
+  capabilities: string[];
+  defaultFeatures: string[];
+  configurationSchema: Record<string, unknown>;
+  defaultConfiguration: Record<string, unknown>;
+  upgradeCompatibility: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SchoolMfaChallengeResponse {
+  mfaRequired: true;
+  challengeId: string;
+  challengeToken: string;
+  expiresAt: string;
+  tenantId: string;
+  schoolName: string;
+}
+
+export interface MemberInvitationPreviewResponse {
+  id: string;
+  tenantId: string;
+  schoolId: string;
+  schoolName: string;
+  fullName: string;
+  email: string;
+  intendedRoleCode: string;
+  status: string;
+  expiresAt: string;
+}
+
+export interface AcceptMemberInvitationResponse {
+  tenantId: string;
+  schoolId: string;
+  userId: string;
+  email: string;
+  roleCode: string;
+  status: 'active';
+}

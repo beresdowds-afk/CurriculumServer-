@@ -10,13 +10,63 @@ import {
   StandardApiErrorResponse 
 } from '../../packages/shared-types/src/apiContracts';
 import type {
+  AcceptMemberInvitationResponse,
+  AcademicSessionRecord,
+  AcademicTermRecord,
+  AllocateStaffSubjectRequest,
+  ApplicationTemplateRecord,
+  CreateAcademicSessionRequest,
+  CreateAcademicTermRequest,
+  CreateDepartmentRequest,
+  CreateGuardianRequest,
+  CreateMemberInvitationRequest,
+  CreateSchoolClassRequest,
+  CreateSchoolStaffRequest,
+  CreateSchoolStudentRequest,
+  CreateStudentAdmissionRequest,
+  EnrollAdmissionRequest,
+  GuardianRecord,
+  GuardianWardSummary,
+  IamAuditEventRecord,
+  IamMemberInvitationRecord,
+  IamMembershipRecord,
+  IamRoleDefinition,
+  IamSessionRecord,
+  IssueDigitalIdCardResponse,
+  LinkStudentGuardianRequest,
+  MemberInvitationPreviewResponse,
+  MfaFactorSummary,
+  ProvisioningWorkflowStepRecord,
+  ReviewAdmissionRequest,
+  SchoolAdministrationClass,
+  SchoolAdministrationStudent,
   SchoolAdministratorLoginResponse,
   SchoolConfigurationResponse,
+  SchoolDepartmentRecord,
   SchoolDetailsResponse,
+  SchoolInstitutionalIdentity,
   SchoolMembershipResponse,
+  SchoolMfaChallengeResponse,
   SchoolProvisioningConfirmation,
   SchoolProvisioningOperationResponse,
-  SchoolProvisioningRequest
+  SchoolProvisioningRequest,
+  SchoolStaffPage,
+  SchoolStaffRecord,
+  SchoolStatusHistoryRecord,
+  SchoolStatusTransitionRequest,
+  StaffStatusTransitionRequest,
+  StaffSubjectAllocationRecord,
+  StudentAdmissionRecord,
+  StudentDigitalIdCardRecord,
+  StudentGuardianLinkRecord,
+  StudentMedicalProfileRecord,
+  UpdateDepartmentRequest,
+  UpdateGuardianRequest,
+  UpdateSchoolClassRequest,
+  UpdateSchoolProfileRequest,
+  UpdateSchoolStaffRequest,
+  UpdateSchoolStudentRequest,
+  UpsertStudentMedicalProfileRequest
 } from '../../packages/shared-types/src/apiContracts';
 import { TenantSchoolApp } from '../types';
 import { RegisteredApplication, RegisteredFeature } from '../types/applicationRegistry';
@@ -385,19 +435,116 @@ class UnifiedApiClient {
     tenantId: string,
     email: string,
     password: string
-  ): Promise<SchoolAdministratorLoginResponse> {
-    const res = await this.request<{ success: boolean; data: SchoolAdministratorLoginResponse }>(
+  ): Promise<SchoolAdministratorLoginResponse | SchoolMfaChallengeResponse> {
+    const res = await this.request<{ success: boolean; data: SchoolAdministratorLoginResponse | SchoolMfaChallengeResponse }>(
       '/api/v1/schools/auth/login',
       { method: 'POST', body: JSON.stringify({ tenantId, email, password }) },
       'none'
     );
-    this.setSchoolFlowToken(res.data.token, res.data.tenantId);
+    if ('token' in res.data && res.data.token) {
+      this.setSchoolFlowToken(res.data.token, res.data.tenantId);
+    }
     return res.data;
   }
 
-  public async getMySchool(): Promise<SchoolDetailsResponse> {
-    const res = await this.request<{ success: boolean; data: SchoolDetailsResponse }>(
-      '/api/v1/schools/me', { method: 'GET' }, 'school_flow'
+  public async verifySchoolMfaLogin(input: {
+    tenantId: string;
+    challengeId: string;
+    challengeToken: string;
+    code: string;
+  }): Promise<SchoolAdministratorLoginResponse> {
+    const res = await this.request<{ success: boolean; data: SchoolAdministratorLoginResponse }>(
+      '/api/v1/schools/auth/mfa/verify',
+      { method: 'POST', body: JSON.stringify(input) },
+      'none'
+    );
+    if (res.data?.token) {
+      this.setSchoolFlowToken(res.data.token, res.data.tenantId);
+    }
+    return res.data;
+  }
+
+  public async logoutSchoolSession(): Promise<{ revoked: boolean }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: { revoked: boolean } }>(
+      '/api/v1/schools/auth/logout',
+      { method: 'POST', body: JSON.stringify({}) }
+    );
+    return res.data;
+  }
+
+  public async startGoogleOidcSignIn(
+    tenantId: string,
+    redirectUri: string
+  ): Promise<{ state: string; codeChallenge: string; authorizationUrl: string; expiresAt: string }> {
+    const qs = new URLSearchParams({ tenantId, redirectUri });
+    const res = await this.request<{
+      success: boolean;
+      data: { state: string; codeChallenge: string; authorizationUrl: string; expiresAt: string };
+    }>(`/api/v1/schools/auth/oidc/google/start?${qs.toString()}`, { method: 'GET' }, 'none');
+    return res.data;
+  }
+
+  public async completeGoogleOidcSignIn(input: {
+    tenantId: string;
+    state: string;
+    code: string;
+    redirectUri: string;
+  }): Promise<SchoolAdministratorLoginResponse> {
+    const res = await this.request<{ success: boolean; data: SchoolAdministratorLoginResponse }>(
+      '/api/v1/schools/auth/oidc/google/callback',
+      { method: 'POST', body: JSON.stringify(input) },
+      'none'
+    );
+    if (res.data?.token) {
+      this.setSchoolFlowToken(res.data.token, res.data.tenantId);
+    }
+    return res.data;
+  }
+
+  public async previewMemberInvitation(token: string): Promise<MemberInvitationPreviewResponse> {
+    const qs = new URLSearchParams({ token });
+    const res = await this.request<{ success: boolean; data: MemberInvitationPreviewResponse }>(
+      `/api/v1/schools/invitations/preview?${qs.toString()}`,
+      { method: 'GET' },
+      'none'
+    );
+    return res.data;
+  }
+
+  public async acceptMemberInvitation(token: string, password: string): Promise<AcceptMemberInvitationResponse> {
+    const res = await this.request<{ success: boolean; data: AcceptMemberInvitationResponse }>(
+      '/api/v1/schools/invitations/accept',
+      { method: 'POST', body: JSON.stringify({ token, password }) },
+      'none'
+    );
+    return res.data;
+  }
+
+  public async getProvisioningWorkflowSteps(operationId: string): Promise<ProvisioningWorkflowStepRecord[]> {
+    const res = await this.requestAuthenticatedControlPlane<{
+      success: boolean;
+      data: ProvisioningWorkflowStepRecord[];
+    }>(`/api/v1/schools/provision/${encodeURIComponent(operationId)}/steps`, { method: 'GET' });
+    return res.data;
+  }
+
+  public async getApplicationTemplates(
+    query: { provisionable?: boolean; category?: string } = {}
+  ): Promise<ApplicationTemplateRecord[]> {
+    const qs = new URLSearchParams();
+    if (query.provisionable !== undefined) qs.set('provisionable', String(query.provisionable));
+    if (query.category) qs.set('category', query.category);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    const res = await this.requestAuthenticatedControlPlane<{
+      success: boolean;
+      data: ApplicationTemplateRecord[];
+    }>(`/api/v1/application-templates${suffix}`, { method: 'GET' });
+    return res.data;
+  }
+
+  public async getMySchool(): Promise<SchoolInstitutionalIdentity> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolInstitutionalIdentity }>(
+      '/api/v1/schools/me', { method: 'GET' }
     );
     return res.data;
   }
@@ -672,16 +819,27 @@ class UnifiedApiClient {
     password?: string, 
     roleHint?: string
   ): Promise<SchoolFlowAuthLoginResponse> {
+    void roleHint;
     const session = await this.loginSchoolAdministrator(tenantId, usernameOrEmail, password || '');
+    if ('mfaRequired' in session && session.mfaRequired) {
+      throw {
+        success: false,
+        error: 'Multi-factor authentication verification is required for this account.',
+        code: 'MFA_REQUIRED',
+        status: 401,
+        details: session
+      };
+    }
+    const authenticated = session as SchoolAdministratorLoginResponse;
     return {
-      token: session.token,
-      tenantId: session.tenantId,
-      schoolName: session.schoolName,
+      token: authenticated.token,
+      tenantId: authenticated.tenantId,
+      schoolName: authenticated.schoolName,
       user: {
-        id: session.user.id,
-        name: session.user.name,
-        email: session.user.email,
-        role: session.user.role,
+        id: authenticated.user.id,
+        name: authenticated.user.name,
+        email: authenticated.user.email,
+        role: authenticated.user.role,
         title: 'School Administrator',
         avatar: '',
         permissions: ['school:read', 'school:configure']
@@ -693,6 +851,602 @@ class UnifiedApiClient {
         status: 'ACTIVE'
       }
     };
+  }
+
+  // =============================================================
+  // PROMPT 1: SCHOOL IDENTITY, STRUCTURE, LIFECYCLE, GUARDIANS, IAM
+  // =============================================================
+
+  public async updateMySchoolProfile(payload: UpdateSchoolProfileRequest): Promise<SchoolInstitutionalIdentity> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolInstitutionalIdentity }>(
+      '/api/v1/schools/me',
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async transitionMySchoolStatus(payload: SchoolStatusTransitionRequest): Promise<SchoolInstitutionalIdentity> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolInstitutionalIdentity }>(
+      '/api/v1/schools/me/status',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async getMySchoolStatusHistory(): Promise<SchoolStatusHistoryRecord[]> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolStatusHistoryRecord[] }>(
+      '/api/v1/schools/me/status-history',
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async listDepartments(): Promise<SchoolDepartmentRecord[]> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolDepartmentRecord[] }>(
+      '/api/v1/schools/me/departments',
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async createDepartment(payload: CreateDepartmentRequest): Promise<SchoolDepartmentRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolDepartmentRecord }>(
+      '/api/v1/schools/me/departments',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async updateDepartment(departmentId: string, payload: UpdateDepartmentRequest): Promise<SchoolDepartmentRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolDepartmentRecord }>(
+      `/api/v1/schools/me/departments/${encodeURIComponent(departmentId)}`,
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async listAcademicSessions(): Promise<AcademicSessionRecord[]> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: AcademicSessionRecord[] }>(
+      '/api/v1/schools/me/academic-sessions',
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async createAcademicSession(payload: CreateAcademicSessionRequest): Promise<AcademicSessionRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: AcademicSessionRecord }>(
+      '/api/v1/schools/me/academic-sessions',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async activateAcademicSession(sessionId: string): Promise<AcademicSessionRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: AcademicSessionRecord }>(
+      `/api/v1/schools/me/academic-sessions/${encodeURIComponent(sessionId)}/activate`,
+      { method: 'POST', body: JSON.stringify({}) }
+    );
+    return res.data;
+  }
+
+  public async createAcademicTerm(sessionId: string, payload: CreateAcademicTermRequest): Promise<AcademicTermRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: AcademicTermRecord }>(
+      `/api/v1/schools/me/academic-sessions/${encodeURIComponent(sessionId)}/terms`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async activateAcademicTerm(termId: string): Promise<AcademicTermRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: AcademicTermRecord }>(
+      `/api/v1/schools/me/academic-terms/${encodeURIComponent(termId)}/activate`,
+      { method: 'POST', body: JSON.stringify({}) }
+    );
+    return res.data;
+  }
+
+  public async listStudents(
+    query: { page?: number; pageSize?: number; search?: string; status?: string; classId?: string } = {}
+  ): Promise<{ records: SchoolAdministrationStudent[]; page: number; pageSize: number; total: number }> {
+    const qs = new URLSearchParams();
+    if (query.page !== undefined) qs.set('page', String(query.page));
+    if (query.pageSize !== undefined) qs.set('pageSize', String(query.pageSize));
+    if (query.search) qs.set('search', query.search);
+    if (query.status) qs.set('status', query.status);
+    if (query.classId) qs.set('classId', query.classId);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    const res = await this.requestAuthenticatedSchoolFlow<{
+      success: boolean;
+      data: { records: SchoolAdministrationStudent[]; page: number; pageSize: number; total: number };
+    }>(`/api/v1/schools/me/students${suffix}`, { method: 'GET' });
+    return res.data;
+  }
+
+  public async getStudent(studentId: string): Promise<SchoolAdministrationStudent> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolAdministrationStudent }>(
+      `/api/v1/schools/me/students/${encodeURIComponent(studentId)}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async createStudent(payload: CreateSchoolStudentRequest): Promise<SchoolAdministrationStudent> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolAdministrationStudent }>(
+      '/api/v1/schools/me/students',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async updateStudent(studentId: string, payload: UpdateSchoolStudentRequest): Promise<SchoolAdministrationStudent> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolAdministrationStudent }>(
+      `/api/v1/schools/me/students/${encodeURIComponent(studentId)}`,
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async transitionStudentLifecycle(
+    studentId: string,
+    payload: { type: 'admit' | 'enroll' | 'activate' | 'suspend' | 'graduate' | 'external_transfer' | 'withdraw' | 'reinstate'; destination?: string; reason?: string }
+  ): Promise<SchoolAdministrationStudent> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolAdministrationStudent }>(
+      `/api/v1/schools/me/students/${encodeURIComponent(studentId)}/lifecycle`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async assignStudentClass(
+    studentId: string,
+    classId: string,
+    operation: 'assign' | 'promote' | 'internal_transfer' = 'assign'
+  ): Promise<SchoolAdministrationStudent> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolAdministrationStudent }>(
+      `/api/v1/schools/me/students/${encodeURIComponent(studentId)}/class`,
+      { method: 'POST', body: JSON.stringify({ classId, operation }) }
+    );
+    return res.data;
+  }
+
+  public async getStudentHistory(studentId: string): Promise<any[]> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: any[] }>(
+      `/api/v1/schools/me/students/${encodeURIComponent(studentId)}/history`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async getStudentMedicalProfile(studentId: string): Promise<StudentMedicalProfileRecord | null> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: StudentMedicalProfileRecord | null }>(
+      `/api/v1/schools/me/students/${encodeURIComponent(studentId)}/medical`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async upsertStudentMedicalProfile(
+    studentId: string,
+    payload: UpsertStudentMedicalProfileRequest
+  ): Promise<StudentMedicalProfileRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: StudentMedicalProfileRecord }>(
+      `/api/v1/schools/me/students/${encodeURIComponent(studentId)}/medical`,
+      { method: 'PUT', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async getStudentDigitalId(studentId: string): Promise<StudentDigitalIdCardRecord | null> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: StudentDigitalIdCardRecord | null }>(
+      `/api/v1/schools/me/students/${encodeURIComponent(studentId)}/digital-id`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async issueStudentDigitalId(studentId: string, expiresInDays = 365): Promise<IssueDigitalIdCardResponse> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: IssueDigitalIdCardResponse }>(
+      `/api/v1/schools/me/students/${encodeURIComponent(studentId)}/digital-id`,
+      { method: 'POST', body: JSON.stringify({ expiresInDays }) }
+    );
+    return res.data;
+  }
+
+  public async revokeStudentDigitalId(studentId: string, reason: string): Promise<StudentDigitalIdCardRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: StudentDigitalIdCardRecord }>(
+      `/api/v1/schools/me/students/${encodeURIComponent(studentId)}/digital-id/revoke`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
+    );
+    return res.data;
+  }
+
+  public async listAdmissions(status?: string): Promise<StudentAdmissionRecord[]> {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: StudentAdmissionRecord[] }>(
+      `/api/v1/schools/me/admissions${qs}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async createAdmission(payload: CreateStudentAdmissionRequest): Promise<StudentAdmissionRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: StudentAdmissionRecord }>(
+      '/api/v1/schools/me/admissions',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async reviewAdmission(admissionId: string, payload: ReviewAdmissionRequest): Promise<StudentAdmissionRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: StudentAdmissionRecord }>(
+      `/api/v1/schools/me/admissions/${encodeURIComponent(admissionId)}/review`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async enrollAdmission(
+    admissionId: string,
+    payload: EnrollAdmissionRequest
+  ): Promise<{ admission: StudentAdmissionRecord; student: SchoolAdministrationStudent }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{
+      success: boolean;
+      data: { admission: StudentAdmissionRecord; student: SchoolAdministrationStudent };
+    }>(`/api/v1/schools/me/admissions/${encodeURIComponent(admissionId)}/enroll`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    return res.data;
+  }
+
+  public async listMyWards(): Promise<GuardianWardSummary[]> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: GuardianWardSummary[] }>(
+      '/api/v1/schools/me/guardians/my-wards',
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async listGuardians(search?: string): Promise<GuardianRecord[]> {
+    const qs = search ? `?search=${encodeURIComponent(search)}` : '';
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: GuardianRecord[] }>(
+      `/api/v1/schools/me/guardians${qs}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async createGuardian(payload: CreateGuardianRequest): Promise<GuardianRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: GuardianRecord }>(
+      '/api/v1/schools/me/guardians',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async updateGuardian(guardianId: string, payload: UpdateGuardianRequest): Promise<GuardianRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: GuardianRecord }>(
+      `/api/v1/schools/me/guardians/${encodeURIComponent(guardianId)}`,
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async verifyGuardian(
+    guardianId: string,
+    status: 'verified' | 'rejected' | 'suspended'
+  ): Promise<GuardianRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: GuardianRecord }>(
+      `/api/v1/schools/me/guardians/${encodeURIComponent(guardianId)}/verify`,
+      { method: 'POST', body: JSON.stringify({ status }) }
+    );
+    return res.data;
+  }
+
+  public async linkStudentGuardian(
+    guardianId: string,
+    payload: LinkStudentGuardianRequest
+  ): Promise<StudentGuardianLinkRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: StudentGuardianLinkRecord }>(
+      `/api/v1/schools/me/guardians/${encodeURIComponent(guardianId)}/students`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async unlinkStudentGuardian(guardianId: string, studentId: string): Promise<{ unlinked: boolean }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: { unlinked: boolean } }>(
+      `/api/v1/schools/me/guardians/${encodeURIComponent(guardianId)}/students/${encodeURIComponent(studentId)}`,
+      { method: 'DELETE' }
+    );
+    return res.data;
+  }
+
+  public async listClasses(
+    query: { page?: number; pageSize?: number; search?: string; status?: 'active' | 'archived' } = {}
+  ): Promise<{ records: SchoolAdministrationClass[]; page: number; pageSize: number; total: number }> {
+    const qs = new URLSearchParams();
+    if (query.page !== undefined) qs.set('page', String(query.page));
+    if (query.pageSize !== undefined) qs.set('pageSize', String(query.pageSize));
+    if (query.search) qs.set('search', query.search);
+    if (query.status) qs.set('status', query.status);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    const res = await this.requestAuthenticatedSchoolFlow<{
+      success: boolean;
+      data: { records: SchoolAdministrationClass[]; page: number; pageSize: number; total: number };
+    }>(`/api/v1/schools/me/classes${suffix}`, { method: 'GET' });
+    return res.data;
+  }
+
+  public async createClass(payload: CreateSchoolClassRequest): Promise<SchoolAdministrationClass> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolAdministrationClass }>(
+      '/api/v1/schools/me/classes',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async updateClass(classId: string, payload: UpdateSchoolClassRequest): Promise<SchoolAdministrationClass> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolAdministrationClass }>(
+      `/api/v1/schools/me/classes/${encodeURIComponent(classId)}`,
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async listStaff(
+    query: { page?: number; pageSize?: number; search?: string; status?: string } = {}
+  ): Promise<SchoolStaffPage> {
+    const qs = new URLSearchParams();
+    if (query.page !== undefined) qs.set('page', String(query.page));
+    if (query.pageSize !== undefined) qs.set('pageSize', String(query.pageSize));
+    if (query.search) qs.set('search', query.search);
+    if (query.status) qs.set('status', query.status);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolStaffPage }>(
+      `/api/v1/schools/me/staff${suffix}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async getStaff(staffId: string): Promise<SchoolStaffRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolStaffRecord }>(
+      `/api/v1/schools/me/staff/${encodeURIComponent(staffId)}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async createStaff(payload: CreateSchoolStaffRequest): Promise<SchoolStaffRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolStaffRecord }>(
+      '/api/v1/schools/me/staff',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async updateStaff(staffId: string, payload: UpdateSchoolStaffRequest): Promise<SchoolStaffRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolStaffRecord }>(
+      `/api/v1/schools/me/staff/${encodeURIComponent(staffId)}`,
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async linkStaffUser(staffId: string, userId: string): Promise<SchoolStaffRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolStaffRecord }>(
+      `/api/v1/schools/me/staff/${encodeURIComponent(staffId)}/link-user`,
+      { method: 'POST', body: JSON.stringify({ userId }) }
+    );
+    return res.data;
+  }
+
+  public async unlinkStaffUser(staffId: string, reason: string): Promise<SchoolStaffRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolStaffRecord }>(
+      `/api/v1/schools/me/staff/${encodeURIComponent(staffId)}/unlink-user`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
+    );
+    return res.data;
+  }
+
+  public async appointStaffRole(staffId: string, roleCode: string): Promise<SchoolStaffRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolStaffRecord }>(
+      `/api/v1/schools/me/staff/${encodeURIComponent(staffId)}/appointments`,
+      { method: 'POST', body: JSON.stringify({ roleCode }) }
+    );
+    return res.data;
+  }
+
+  public async listStaffSubjectAllocations(staffId: string): Promise<StaffSubjectAllocationRecord[]> {
+    const res = await this.requestAuthenticatedSchoolFlow<{
+      success: boolean;
+      data: StaffSubjectAllocationRecord[];
+    }>(`/api/v1/schools/me/staff/${encodeURIComponent(staffId)}/subject-allocations`, { method: 'GET' });
+    return res.data;
+  }
+
+  public async allocateStaffSubject(
+    staffId: string,
+    payload: AllocateStaffSubjectRequest
+  ): Promise<StaffSubjectAllocationRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: StaffSubjectAllocationRecord }>(
+      `/api/v1/schools/me/staff/${encodeURIComponent(staffId)}/subject-allocations`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async revokeStaffSubjectAllocation(staffId: string, allocationId: string): Promise<{ revoked: boolean }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: { revoked: boolean } }>(
+      `/api/v1/schools/me/staff/${encodeURIComponent(staffId)}/subject-allocations/${encodeURIComponent(allocationId)}`,
+      { method: 'DELETE' }
+    );
+    return res.data;
+  }
+
+  public async transitionStaffStatus(
+    staffId: string,
+    payload: StaffStatusTransitionRequest
+  ): Promise<SchoolStaffRecord> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: SchoolStaffRecord }>(
+      `/api/v1/schools/me/staff/${encodeURIComponent(staffId)}/status`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async listIamRoles(): Promise<IamRoleDefinition[]> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: IamRoleDefinition[] }>(
+      '/api/v1/schools/me/roles',
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async listIamPermissions(): Promise<Array<{ code: string; description: string }>> {
+    const res = await this.requestAuthenticatedSchoolFlow<{
+      success: boolean;
+      data: Array<{ code: string; description: string }>;
+    }>('/api/v1/schools/me/permissions', { method: 'GET' });
+    return res.data;
+  }
+
+  public async listIamMemberships(): Promise<IamMembershipRecord[]> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: IamMembershipRecord[] }>(
+      '/api/v1/schools/me/memberships',
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async assignMembershipRole(userId: string, roleCode: string): Promise<{ assigned: boolean }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: { assigned: boolean } }>(
+      '/api/v1/schools/me/memberships/roles',
+      { method: 'POST', body: JSON.stringify({ userId, roleCode }) }
+    );
+    return res.data;
+  }
+
+  public async revokeMembershipRole(userId: string, roleCode: string, reason: string): Promise<{ revoked: boolean }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: { revoked: boolean } }>(
+      '/api/v1/schools/me/memberships/roles',
+      { method: 'DELETE', body: JSON.stringify({ userId, roleCode, reason }) }
+    );
+    return res.data;
+  }
+
+  public async suspendMembership(userId: string, reason: string): Promise<{ suspended: boolean }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: { suspended: boolean } }>(
+      `/api/v1/schools/me/memberships/${encodeURIComponent(userId)}/suspend`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
+    );
+    return res.data;
+  }
+
+  public async reactivateMembership(userId: string, reason: string): Promise<{ reactivated: boolean }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: { reactivated: boolean } }>(
+      `/api/v1/schools/me/memberships/${encodeURIComponent(userId)}/reactivate`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
+    );
+    return res.data;
+  }
+
+  public async revokeMembership(userId: string, reason: string): Promise<{ revoked: boolean }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: { revoked: boolean } }>(
+      `/api/v1/schools/me/memberships/${encodeURIComponent(userId)}/revoke`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
+    );
+    return res.data;
+  }
+
+  public async listMemberInvitations(): Promise<IamMemberInvitationRecord[]> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: IamMemberInvitationRecord[] }>(
+      '/api/v1/schools/me/invitations',
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async createMemberInvitation(
+    payload: CreateMemberInvitationRequest
+  ): Promise<{ invitation: IamMemberInvitationRecord; rawToken?: string }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{
+      success: boolean;
+      data: { invitation: IamMemberInvitationRecord; rawToken?: string };
+    }>('/api/v1/schools/me/invitations', { method: 'POST', body: JSON.stringify(payload) });
+    return res.data;
+  }
+
+  public async revokeMemberInvitation(invitationId: string, reason: string): Promise<{ revoked: boolean }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: { revoked: boolean } }>(
+      `/api/v1/schools/me/invitations/${encodeURIComponent(invitationId)}/revoke`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
+    );
+    return res.data;
+  }
+
+  public async listIamSessions(userIdFilter?: string): Promise<IamSessionRecord[]> {
+    const qs = userIdFilter ? `?userId=${encodeURIComponent(userIdFilter)}` : '';
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: IamSessionRecord[] }>(
+      `/api/v1/schools/me/sessions${qs}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async revokeIamSession(sessionId: string, reason?: string): Promise<{ revoked: boolean }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: { revoked: boolean } }>(
+      `/api/v1/schools/me/sessions/${encodeURIComponent(sessionId)}/revoke`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
+    );
+    return res.data;
+  }
+
+  public async listIamAuditEvents(query: { action?: string; limit?: number } = {}): Promise<IamAuditEventRecord[]> {
+    const qs = new URLSearchParams();
+    if (query.action) qs.set('action', query.action);
+    if (query.limit !== undefined) qs.set('limit', String(query.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: IamAuditEventRecord[] }>(
+      `/api/v1/schools/me/audit-events${suffix}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async listMfaFactors(): Promise<MfaFactorSummary[]> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: MfaFactorSummary[] }>(
+      '/api/v1/schools/me/mfa/totp',
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async enrollTotpMfa(
+    friendlyName?: string
+  ): Promise<{ factorId: string; otpauthUri: string; secretBase32: string }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{
+      success: boolean;
+      data: { factorId: string; otpauthUri: string; secretBase32: string };
+    }>('/api/v1/schools/me/mfa/totp', { method: 'POST', body: JSON.stringify({ friendlyName }) });
+    return res.data;
+  }
+
+  public async verifyTotpMfa(factorId: string, code: string): Promise<{ verified: boolean }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: { verified: boolean } }>(
+      `/api/v1/schools/me/mfa/totp/${encodeURIComponent(factorId)}/verify`,
+      { method: 'POST', body: JSON.stringify({ code }) }
+    );
+    return res.data;
+  }
+
+  public async disableTotpMfa(factorId: string): Promise<{ disabled: boolean }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: { disabled: boolean } }>(
+      `/api/v1/schools/me/mfa/totp/${encodeURIComponent(factorId)}`,
+      { method: 'DELETE' }
+    );
+    return res.data;
   }
 
   public async getSchoolProfile(tenantId?: string): Promise<SchoolInstanceProfileResponse> {

@@ -21,7 +21,8 @@ import {
   ChevronLeft,
   ChevronRight,
   UserCheck,
-  CheckCircle2
+  CheckCircle2,
+  KeyRound
 } from 'lucide-react';
 import { UserRole } from '@/src/types';
 
@@ -48,22 +49,29 @@ export type FlowNavTab =
   | 'parent_dashboard'
   | 'admin_assistant_dashboard'
   | 'logistics_suite'
-  | 'quality_assurance';
+  | 'quality_assurance'
+  | 'user_profiles';
 
 interface CurriculumFlowSidebarProps {
   activeTab: FlowNavTab;
   onSelectTab: (tab: FlowNavTab) => void;
   userRole: UserRole;
   schoolName: string;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const CurriculumFlowSidebar: React.FC<CurriculumFlowSidebarProps> = ({
   activeTab,
   onSelectTab,
   userRole,
-  schoolName
+  schoolName,
+  isCollapsed: controlledCollapsed,
+  onToggleCollapse
 }) => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
+  const isCollapsed = controlledCollapsed ?? internalCollapsed;
+  const toggleCollapse = onToggleCollapse ?? (() => setInternalCollapsed(prev => !prev));
 
   // Determine permitted navigation sections based on role
   const isLeadership = ['principal', 'principal_admin', 'vice_principal_academic', 'vice_principal_admin', 'academic_coordinator', 'super_admin'].includes(userRole);
@@ -93,7 +101,7 @@ export const CurriculumFlowSidebar: React.FC<CurriculumFlowSidebarProps> = ({
           )}
         </div>
         <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
+          onClick={toggleCollapse}
           className="p-1.5 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all shrink-0"
           title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
         >
@@ -256,18 +264,70 @@ export const CurriculumFlowSidebar: React.FC<CurriculumFlowSidebarProps> = ({
               </div>
             )}
             {(isAdminAssistant || isLeadership) && (
-              <button
-                onClick={() => onSelectTab('student_registers')}
-                title={isCollapsed ? "Student Registers & Arms" : undefined}
-                className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl text-xs font-semibold transition-all ${
-                  activeTab === 'student_registers'
-                    ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <Users className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                {!isCollapsed && <span>Student Registers & Arms</span>}
-              </button>
+              <>
+                <button
+                  onClick={() => onSelectTab('student_registers')}
+                  title={isCollapsed ? "Student Registers & Arms" : undefined}
+                  className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl text-xs font-semibold transition-all ${
+                    activeTab === 'student_registers'
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Users className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  {!isCollapsed && <span>Student Registers & Admissions</span>}
+                </button>
+                <button
+                  onClick={() => onSelectTab('teacher_pool')}
+                  title={isCollapsed ? "Staff & Teacher Pool" : undefined}
+                  className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl text-xs font-semibold transition-all ${
+                    activeTab === 'teacher_pool'
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <GraduationCap className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  {!isCollapsed && <span>Staff & Teacher Pool</span>}
+                </button>
+                <button
+                  onClick={() => onSelectTab('class_groups')}
+                  title={isCollapsed ? "Classes & Departments" : undefined}
+                  className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl text-xs font-semibold transition-all ${
+                    activeTab === 'class_groups'
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  {!isCollapsed && <span>Classes & Departments</span>}
+                </button>
+                <button
+                  onClick={() => onSelectTab('academic_calendar')}
+                  title={isCollapsed ? "Sessions & Calendar" : undefined}
+                  className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl text-xs font-semibold transition-all ${
+                    activeTab === 'academic_calendar'
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Calendar className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  {!isCollapsed && <span>Sessions & Calendar</span>}
+                </button>
+                {isLeadership && (
+                  <button
+                    onClick={() => onSelectTab('user_profiles')}
+                    title={isCollapsed ? "IAM, Roles & Guardians" : undefined}
+                    className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl text-xs font-semibold transition-all ${
+                      activeTab === 'user_profiles'
+                        ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <KeyRound className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    {!isCollapsed && <span>IAM, Roles & Guardians</span>}
+                  </button>
+                )}
+              </>
             )}
             {(isAdminAssistant || isLeadership) && (
               <button

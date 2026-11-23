@@ -13,7 +13,9 @@ import { Server, GraduationCap, School, ArrowRightLeft } from 'lucide-react';
 export const App: React.FC = () => {
   const query = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const activationToken = query?.get('school_activation') || undefined;
+  const invitationToken = query?.get('member_invitation') || query?.get('invitation') || undefined;
   const schoolAdminMode = query?.get('school_admin');
+  const isOidcCallback = query?.get('oidc_callback') === '1' || (Boolean(query?.get('code')) && Boolean(query?.get('state')));
   const [activeApp, setActiveApp] = useState<ActiveApplicationType>(detectActiveApplication());
   const [isDevEnvironment, setIsDevEnvironment] = useState<boolean>(false);
 
@@ -49,10 +51,11 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  if (activationToken || schoolAdminMode === 'login') {
+  if (activationToken || invitationToken || schoolAdminMode === 'login' || isOidcCallback) {
     return (
       <SchoolAdminAccessPage
         activationToken={activationToken}
+        invitationToken={invitationToken}
         initialTenantId={query?.get('tenant') || ''}
       />
     );

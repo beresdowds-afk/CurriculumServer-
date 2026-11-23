@@ -26,6 +26,7 @@ import { ParentDashboardTab } from '../../../src/components/ParentDashboardTab';
 import { AdminAssistantDashboardTab } from '../../../src/components/AdminAssistantDashboardTab';
 import { LogisticsSupportSuiteTab } from '../../../src/components/LogisticsSupportSuiteTab';
 import { QualityAssuranceTab } from '../../../src/components/QualityAssuranceTab';
+import { UserProfilesTab } from '../../../src/components/UserProfilesTab';
 
 // Modals
 import { LessonPlanModal } from '../../../src/components/LessonPlanModal';
@@ -165,12 +166,26 @@ const handleHash = () => {
     setActiveTab('academic_analytics');
   } else if (hash === 'teacher_dashboard') {
     setActiveTab('teacher_dashboard');
+  } else if (hash === 'teacher_pool' || hash === 'staff') {
+    setActiveTab('teacher_pool');
+  } else if (hash === 'class_groups' || hash === 'classes' || hash === 'departments') {
+    setActiveTab('class_groups');
+  } else if (hash === 'academic_calendar' || hash === 'calendar' || hash === 'sessions') {
+    setActiveTab('academic_calendar');
+  } else if (hash === 'user_profiles' || hash === 'iam' || hash === 'guardians') {
+    setActiveTab('user_profiles');
   } else if (hash === 'student_dashboard') {
     setActiveTab('student_dashboard');
   } else if (hash === 'parent_dashboard') {
     setActiveTab('parent_dashboard');
   }
 };
+
+  useEffect(() => {
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
 
   const handleSelectTab = (tab: FlowNavTab) => {
     setActiveTab(tab);
@@ -289,7 +304,7 @@ const handleHash = () => {
             )}
 
             {activeTab === 'student_registers' && (
-              <StudentRegistersTab />
+              <StudentRegistersTab currentUser={currentUser} onNavigateTab={handleSelectTab} />
             )}
 
             {activeTab === 'biometric_attendance' && (
@@ -307,11 +322,11 @@ const handleHash = () => {
             )}
 
             {activeTab === 'teacher_pool' && (
-              <TeacherPoolTab />
+              <TeacherPoolTab currentUser={currentUser} onNavigateTab={handleSelectTab} />
             )}
 
             {activeTab === 'class_groups' && (
-              <ClassGroupsTab />
+              <ClassGroupsTab currentUser={currentUser} onNavigateTab={handleSelectTab} />
             )}
 
             {activeTab === 'school_timetable' && (
@@ -319,7 +334,11 @@ const handleHash = () => {
             )}
 
             {activeTab === 'academic_calendar' && (
-              <AcademicCalendarTab />
+              <AcademicCalendarTab currentUser={currentUser} onNavigateTab={handleSelectTab} />
+            )}
+
+            {activeTab === 'user_profiles' && (
+              <UserProfilesTab currentUser={currentUser} onNavigateTab={handleSelectTab} />
             )}
 
             {activeTab === 'student_dashboard' && (

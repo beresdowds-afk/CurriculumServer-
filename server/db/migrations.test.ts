@@ -110,7 +110,7 @@ function migration(version: number, name: string, sql: string): MigrationFile {
 test('migration discovery recognizes the preserved initial migration and sorts versions', async () => {
   const root = process.cwd();
   const discovered = await discoverMigrations(path.join(root, 'src/db/migrations'));
-  assert.ok(discovered.length >= 26);
+  assert.ok(discovered.length >= 34);
   assert.deepEqual(discovered.map(item => item.version), Array.from({ length: discovered.length }, (_, index) => index + 1));
   assert.equal(discovered[0].name, '001_initial_control_plane.sql');
   assert.equal(discovered[1].name, '002_durable_control_plane.sql');
@@ -141,6 +141,7 @@ test('migration discovery recognizes the preserved initial migration and sorts v
   assert.equal(discovered.filter(item => item.version === 25).length, 1);
   assert.equal(discovered[24].name, '025_teacher_academic_progress_authority.sql');
   assert.equal(discovered[25].name, '026_boarding_transport_workflows.sql');
+  assert.equal(discovered[33].name, '034_prompt1_school_admin_iam_provisioning.sql');
 
   const directory = await mkdtemp(path.join(os.tmpdir(), 'migration-order-'));
   try {
@@ -171,19 +172,23 @@ test('migration runner applies out-of-order input in numeric version order', asy
   assert.deepEqual([...pool.history.keys()], [1, 2]);
 });
 
-test('migration 025 executes once on a clean database and is skipped on rerun', async () => {
+test('migration 025 and 034 execute once on a clean database and are skipped on rerun', async () => {
   const discovered = await discoverMigrations(path.join(process.cwd(), 'src/db/migrations'));
   const teacherAuthorityMigration = discovered.find(item => item.version === 25);
+  const prompt1Migration = discovered.find(item => item.version === 34);
   assert.ok(teacherAuthorityMigration);
+  assert.ok(prompt1Migration);
   const pool = new MigrationMemoryPool();
 
-  await applyMigrations(pool, [teacherAuthorityMigration]);
-  assert.equal(pool.executionCount, 1);
+  await applyMigrations(pool, [teacherAuthorityMigration, prompt1Migration]);
+  assert.equal(pool.executionCount, 2);
   assert.equal(pool.history.get(25)?.name, '025_teacher_academic_progress_authority.sql');
   assert.equal(pool.history.get(25)?.status, 'applied');
+  assert.equal(pool.history.get(34)?.name, '034_prompt1_school_admin_iam_provisioning.sql');
+  assert.equal(pool.history.get(34)?.status, 'applied');
 
-  await applyMigrations(pool, [teacherAuthorityMigration]);
-  assert.equal(pool.executionCount, 1);
+  await applyMigrations(pool, [teacherAuthorityMigration, prompt1Migration]);
+  assert.equal(pool.executionCount, 2);
 });
 
 test('migration runner applies once, records status, and detects checksum changes', async () => {
