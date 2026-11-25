@@ -7,30 +7,74 @@ import {
 import { createProductionCapabilityGateMiddleware } from './productionCapabilityMiddleware';
 
 const notReady = [
-  'central_iam',
-  'school_provisioning',
   'school_finance_fee_policies',
   'school_finance_settlement_account_requests',
+  'attendance_device_ingestion',
+  'attendance_platform_device_provisioning',
+  'attendance_school_device_management',
+  'campus_logistics',
+  'question_bank_scoped_writes'
+];
+
+const readyPrompt1Capabilities = [
+  'central_iam',
+  'school_provisioning',
   'school_identity',
   'student_administration',
   'class_administration',
   'staff_administration',
-  'attendance_device_ingestion',
-  'attendance_platform_device_provisioning',
-  'attendance_school_device_management',
   'administrative_permissions',
   'student_lifecycle',
-  'campus_logistics',
-  'application_template_discovery',
-  'question_bank_scoped_writes'
-];
+  'application_template_discovery'
+] as const;
 
-test('legacy authentication endpoints remain blocked by central IAM readiness', () => {
-  for (const path of ['/server/auth/login', '/server/auth/verify', '/schools/auth/login', '/flow/auth/login']) {
-    const decision = evaluateProductionCapabilityGate('POST', path);
-    assert.equal(decision.allowed, false, path);
-    assert.equal(decision.reason, 'capability_not_ready', path);
-    assert.equal(decision.capabilityId, 'central_iam', path);
+test('central IAM and Prompt 1 school administration endpoints pass the production capability gate', () => {
+  for (const id of readyPrompt1Capabilities) {
+    const capability = PRODUCTION_CAPABILITIES.find(item => item.id === id);
+    assert.ok(capability, id);
+    assert.equal(capability.state, 'ready', id);
+    assert.deepEqual(capabilityActivationProblems(capability), [], id);
+  }
+  const allowedRoutes: Array<[string, string, string]> = [
+    ['POST', '/server/auth/login', 'central_iam'],
+    ['POST', '/server/auth/verify', 'central_iam'],
+    ['POST', '/schools/auth/login', 'central_iam'],
+    ['POST', '/flow/auth/login', 'central_iam'],
+    ['GET', '/schools/auth/oidc/google/start', 'central_iam'],
+    ['POST', '/schools/auth/mfa/verify', 'central_iam'],
+    ['GET', '/schools/invitations/preview', 'central_iam'],
+    ['POST', '/schools/invitations/accept', 'central_iam'],
+    ['POST', '/schools/provision', 'school_provisioning'],
+    ['GET', '/schools/provision/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/steps', 'school_provisioning'],
+    ['GET', '/schools/me', 'school_identity'],
+    ['PUT', '/schools/me/config', 'school_identity'],
+    ['GET', '/schools/me/departments', 'school_identity'],
+    ['GET', '/schools/me/academic-sessions', 'school_identity'],
+    ['GET', '/schools/me/students', 'student_administration'],
+    ['POST', '/schools/me/students', 'student_administration'],
+    ['GET', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'student_administration'],
+    ['PATCH', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'student_administration'],
+    ['GET', '/schools/me/admissions', 'student_administration'],
+    ['GET', '/schools/me/guardians', 'student_administration'],
+    ['GET', '/schools/me/classes', 'class_administration'],
+    ['POST', '/schools/me/classes', 'class_administration'],
+    ['PATCH', '/schools/me/classes/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'class_administration'],
+    ['POST', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/class', 'class_administration'],
+    ['POST', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/lifecycle', 'student_lifecycle'],
+    ['GET', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/history', 'student_lifecycle'],
+    ['GET', '/schools/me/staff', 'staff_administration'],
+    ['POST', '/schools/me/staff', 'staff_administration'],
+    ['GET', '/schools/me/staff/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'staff_administration'],
+    ['PATCH', '/schools/me/staff/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'staff_administration'],
+    ['GET', '/schools/me/roles', 'administrative_permissions'],
+    ['GET', '/schools/me/memberships', 'administrative_permissions'],
+    ['GET', '/schools/me/mfa/totp', 'administrative_permissions'],
+    ['GET', '/application-templates', 'application_template_discovery']
+  ];
+  for (const [method, path, capabilityId] of allowedRoutes) {
+    const decision = evaluateProductionCapabilityGate(method, path);
+    assert.equal(decision.allowed, true, `${method} ${path}`);
+    assert.equal(decision.capabilityId, capabilityId, `${method} ${path}`);
   }
 });
 
@@ -43,9 +87,8 @@ test('database-backed capabilities remain blocked until operational readiness is
   }
 });
 
-test('implemented administration handlers map to their canonical unready capability', () => {
+test('deferred handlers map to their canonical unready capability', () => {
   const cases = [
-    ['GET', '/schools/me', 'school_identity'],
     ['GET', '/school-finance/schools', 'school_finance_fee_policies'],
     ['GET', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/fee-policies', 'school_finance_fee_policies'],
     ['POST', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/fee-policies', 'school_finance_fee_policies'],
@@ -54,17 +97,6 @@ test('implemented administration handlers map to their canonical unready capabil
     ['GET', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/settlement-accounts/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'school_finance_settlement_account_requests'],
     ['POST', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/settlement-accounts', 'school_finance_settlement_account_requests'],
     ['POST', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/settlement-accounts/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/approve', 'school_finance_settlement_account_requests'],
-    ['PUT', '/schools/me/config', 'school_identity'],
-    ['GET', '/schools/me/students', 'student_administration'],
-    ['POST', '/schools/me/students', 'student_administration'],
-    ['GET', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'student_administration'],
-    ['PATCH', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'student_administration'],
-    ['GET', '/schools/me/classes', 'class_administration'],
-    ['POST', '/schools/me/classes', 'class_administration'],
-    ['PATCH', '/schools/me/classes/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'class_administration'],
-    ['POST', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/class', 'class_administration'],
-    ['POST', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/lifecycle', 'student_lifecycle'],
-    ['GET', '/schools/me/students/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/history', 'student_lifecycle'],
     ['POST', '/logistics/pickup-passes', 'campus_logistics'],
     ['GET', '/logistics/gate/events', 'campus_logistics'],
     ['GET', '/logistics/hostel/register', 'campus_logistics'],
@@ -98,12 +130,7 @@ test('implemented administration handlers map to their canonical unready capabil
     ['PUT', '/logistics/library/storage', 'campus_logistics'],
     ['PUT', '/logistics/library/resources/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/file', 'campus_logistics'],
     ['GET', '/logistics/library/resources/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/download', 'campus_logistics'],
-    ['POST', '/logistics/library/resources/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/visibility', 'campus_logistics'],
-    ['GET', '/schools/me/staff', 'staff_administration'],
-    ['POST', '/schools/me/staff', 'staff_administration'],
-    ['GET', '/schools/me/staff/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'staff_administration'],
-    ['PATCH', '/schools/me/staff/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'staff_administration'],
-    ['GET', '/application-templates', 'application_template_discovery']
+    ['POST', '/logistics/library/resources/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/visibility', 'campus_logistics']
   ] as const;
   for (const [method, path, capabilityId] of cases) {
     assert.deepEqual(evaluateProductionCapabilityGate(method, path), {
@@ -264,7 +291,7 @@ test('unready routes return the established unavailable response', () => {
   const output: { status?: number; body?: Record<string, unknown> } = {};
   const req = {
     method: 'GET',
-    path: '/schools/me/students',
+    path: '/logistics/gate/events',
     correlationId: 'capability-test'
   };
   const res = {
@@ -276,7 +303,7 @@ test('unready routes return the established unavailable response', () => {
   });
   assert.equal(output.status, 503);
   assert.equal(output.body?.code, 'PRODUCTION_PERSISTENCE_UNAVAILABLE');
-  assert.equal(output.body?.capabilityId, 'student_administration');
+  assert.equal(output.body?.capabilityId, 'campus_logistics');
 });
 
 test('the capability gate is mounted before API route registrations', () => {

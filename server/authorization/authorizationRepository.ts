@@ -9,6 +9,7 @@ import {
 import type { DatabaseClient, DatabasePool } from '../db/postgres';
 import { inTransaction } from '../db/postgres';
 import {
+  createVerifiedTenantPrincipal,
   setInvitationTenantContext,
   setInvitationTokenContext,
   withTenantLoginTransaction,
@@ -1356,20 +1357,25 @@ export class AuthorizationRepository implements AuthorizationSource {
       throw new Error('INVALID_MFA_CHALLENGE');
     }
     const tokenHash = createHash('sha256').update(challengeToken).digest();
-    const tenantPrincipal: VerifiedTenantPrincipal = {
-      tenantId,
-      role: 'login',
-      appId: 'curriculum-flow',
-      schoolName: 'School',
-      subscriptionTier: 'standard',
-      status: 'ACTIVE',
-      issuer: 'CurriculumServer-ControlPlane',
-      audience: tenantId,
-      issuedAt: Math.floor(Date.now() / 1000),
-      expiresAt: Math.floor(Date.now() / 1000) + ttlSeconds,
-      tokenSignature: 'verified-mfa-login',
-      permissions: []
-    };
+    const tenantPrincipal = createVerifiedTenantPrincipal({
+      valid: true,
+      context: {
+        tenantId,
+        role: 'login',
+        appId: 'curriculum-flow',
+        schoolName: 'School',
+        subscriptionTier: 'standard',
+        status: 'ACTIVE',
+        databaseName: '',
+        storageNamespace: '',
+        issuer: 'CurriculumServer-ControlPlane',
+        audience: tenantId,
+        issuedAt: Math.floor(Date.now() / 1000),
+        expiresAt: Math.floor(Date.now() / 1000) + ttlSeconds,
+        tokenSignature: 'verified-mfa-login',
+        permissions: []
+      }
+    });
     return withTenantTransaction(this.pool, tenantPrincipal, async client => {
       const challenge = await client.query<{
         id: string;
@@ -1458,20 +1464,25 @@ export class AuthorizationRepository implements AuthorizationSource {
     const nonce = randomBytes(24).toString('base64url');
     const encryptedVerifier = encryptSecret(codeVerifier);
 
-    const tenantPrincipal: VerifiedTenantPrincipal = {
-      tenantId,
-      role: 'login',
-      appId: 'curriculum-flow',
-      schoolName: 'School',
-      subscriptionTier: 'standard',
-      status: 'ACTIVE',
-      issuer: 'CurriculumServer-ControlPlane',
-      audience: tenantId,
-      issuedAt: Math.floor(Date.now() / 1000),
-      expiresAt: Math.floor(Date.now() / 1000) + 600,
-      tokenSignature: 'verified-oidc-start',
-      permissions: []
-    };
+    const tenantPrincipal = createVerifiedTenantPrincipal({
+      valid: true,
+      context: {
+        tenantId,
+        role: 'login',
+        appId: 'curriculum-flow',
+        schoolName: 'School',
+        subscriptionTier: 'standard',
+        status: 'ACTIVE',
+        databaseName: '',
+        storageNamespace: '',
+        issuer: 'CurriculumServer-ControlPlane',
+        audience: tenantId,
+        issuedAt: Math.floor(Date.now() / 1000),
+        expiresAt: Math.floor(Date.now() / 1000) + 600,
+        tokenSignature: 'verified-oidc-start',
+        permissions: []
+      }
+    });
 
     const inserted = await withTenantTransaction(this.pool, tenantPrincipal, async client => {
       const tenantCheck = await client.query<{ status: string }>(
@@ -1534,20 +1545,25 @@ export class AuthorizationRepository implements AuthorizationSource {
     }
     const stateHash = createHash('sha256').update(input.state).digest();
     const ttlSeconds = Math.min(86400, Math.max(300, Math.floor(input.ttlSeconds ?? 3600)));
-    const tenantPrincipal: VerifiedTenantPrincipal = {
-      tenantId: input.tenantId,
-      role: 'login',
-      appId: 'curriculum-flow',
-      schoolName: 'School',
-      subscriptionTier: 'standard',
-      status: 'ACTIVE',
-      issuer: 'CurriculumServer-ControlPlane',
-      audience: input.tenantId,
-      issuedAt: Math.floor(Date.now() / 1000),
-      expiresAt: Math.floor(Date.now() / 1000) + ttlSeconds,
-      tokenSignature: 'verified-oidc-callback',
-      permissions: []
-    };
+    const tenantPrincipal = createVerifiedTenantPrincipal({
+      valid: true,
+      context: {
+        tenantId: input.tenantId,
+        role: 'login',
+        appId: 'curriculum-flow',
+        schoolName: 'School',
+        subscriptionTier: 'standard',
+        status: 'ACTIVE',
+        databaseName: '',
+        storageNamespace: '',
+        issuer: 'CurriculumServer-ControlPlane',
+        audience: input.tenantId,
+        issuedAt: Math.floor(Date.now() / 1000),
+        expiresAt: Math.floor(Date.now() / 1000) + ttlSeconds,
+        tokenSignature: 'verified-oidc-callback',
+        permissions: []
+      }
+    });
 
     const stateRecord = await withTenantTransaction(this.pool, tenantPrincipal, async client => {
       const result = await client.query<{

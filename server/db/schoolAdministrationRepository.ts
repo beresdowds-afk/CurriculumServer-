@@ -496,7 +496,7 @@ export class SchoolAdministrationRepository {
   // =========================================================================
 
   async getSchoolIdentity(actor: AuthorizedPrincipal, schoolId: string): Promise<SchoolProfileRecord | null> {
-    assertAuthorized(actor, PERMISSIONS.schoolRead);
+    assertAuthorized(actor, PERMISSIONS.schoolProfileRead);
     assertValidUuid(schoolId);
     return withTenantTransaction(this.pool, actor.tenant, async client => {
       const result = await client.query<SchoolProfileRecord>(
@@ -602,7 +602,7 @@ export class SchoolAdministrationRepository {
   }
 
   async getSchoolStatusHistory(actor: AuthorizedPrincipal, schoolId: string): Promise<SchoolStatusHistoryRow[]> {
-    assertAuthorized(actor, PERMISSIONS.schoolRead);
+    assertAuthorized(actor, PERMISSIONS.schoolProfileRead);
     assertValidUuid(schoolId);
     return withTenantTransaction(this.pool, actor.tenant, async client => {
       const result = await client.query<SchoolStatusHistoryRow>(

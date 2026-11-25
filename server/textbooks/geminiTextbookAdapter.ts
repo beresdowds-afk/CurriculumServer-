@@ -153,7 +153,7 @@ export class GeminiTextbookOperationalAdapter implements TextbookAiAdapter {
     if (err instanceof AiGatewayError) {
       if (
         !process.env.GEMINI_API_KEY &&
-        /PERMISSION_DENIED|UNAUTHENTICATED|Could not load the default credentials|not configured/i.test(err.message)
+        /PERMISSION_DENIED|UNAUTHENTICATED|Could not load the default credentials|not configured|Google Gemini provider request failed/i.test(err.message)
       ) {
         throw new CentralTextbookError(
           'VALIDATION_ERROR',

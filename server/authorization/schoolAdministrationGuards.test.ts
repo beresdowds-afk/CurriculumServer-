@@ -115,12 +115,14 @@ test('capability gate precedes versioned, legacy, and AI route handlers', async 
   app.use('/api', createApiCapabilityGateMiddleware());
   app.get('/api/health', (_req, res) => res.sendStatus(204));
   app.get('/api/v1/schools/me/staff', (_req, res) => res.sendStatus(204));
+  app.get('/api/v1/logistics/gate/events', (_req, res) => res.sendStatus(204));
   app.get('/api/ai/v1/capabilities', (_req, res) => res.sendStatus(204));
   app.get('/api/shared/curriculum/discovery', (_req, res) => res.sendStatus(204));
   app.get('/api/v1/legacy/health', (_req, res) => res.sendStatus(204));
   await withServer(app, async base => {
     assert.equal((await fetch(`${base}/api/health`)).status, 204);
-    for (const path of ['/api/v1/schools/me/staff', '/api/ai/v1/capabilities', '/api/shared/curriculum/discovery', '/api/v1/legacy/health']) {
+    assert.equal((await fetch(`${base}/api/v1/schools/me/staff`)).status, 204);
+    for (const path of ['/api/v1/logistics/gate/events', '/api/ai/v1/capabilities', '/api/shared/curriculum/discovery', '/api/v1/legacy/health']) {
       const response = await fetch(`${base}${path}`);
       assert.equal(response.status, 503, path);
       assert.equal((await response.json()).code, 'PRODUCTION_PERSISTENCE_UNAVAILABLE');

@@ -54,7 +54,8 @@ test('platform tokens are allowlisted, canonical, short-lived, and separate from
   });
   try {
     assert.throws(() => ServerTenantTokenService.issueTenantToken(tenant, 'super_admin'), /tenant role and tenant identity/i);
-    assert.throws(() => ServerTenantTokenService.issueTenantToken(tenant, 'principal'), /tenant role and tenant identity/i);
+    assert.throws(() => ServerTenantTokenService.issueTenantToken(tenant, 'platform_operator'), /tenant role and tenant identity/i);
+    assert.equal(ServerTenantTokenService.verifyTenantToken(ServerTenantTokenService.issueTenantToken(tenant, 'principal')).context?.role, 'principal');
     assert.throws(() => ServerTenantTokenService.issueTenantToken({
       ...tenant,
       id: 'platform-control-plane'
