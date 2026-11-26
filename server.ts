@@ -19,6 +19,8 @@ import { GeminiTextbookOperationalAdapter } from './server/textbooks/geminiTextb
 import { CentralTextbookError } from './server/textbooks/centralTextbookRepository';
 import { InstanceQuestionBankService } from './server/questionBank/instanceQuestionBankService';
 import { InstanceQuestionBankError } from './server/questionBank/instanceQuestionBankRepository';
+import { createQuestionBankRouter } from './server/questionBank/routes';
+import { createApplicationInstancePermissionGuard, extractApplicationInstanceId } from './server/authorization/applicationInstanceScope';
 import { TeachingEvidenceService } from './server/teachingEvidence/teachingEvidenceService';
 import { TeachingEvidenceError } from './server/teachingEvidence/teachingEvidenceTypes';
 import { runSecurityHardeningTestSuite } from './server/securityHardeningTests';
@@ -61,8 +63,7 @@ import {
 } from './server/db/schoolProvisioningRepository';
 import { createVerifiedTenantPrincipal } from './server/db/tenantContext';
 import { AuthorizationRepository } from './server/authorization/authorizationRepository';
-import { SchoolFinancePolicies, SchoolFinancePolicyError } from './server/db/schoolFinancePolicies';
-import { SchoolSettlementAccounts } from './server/db/schoolSettlementAccounts';
+import { createSchoolFinanceRouter } from './server/db/schoolFinanceRoutes';
 import { createAuthorizationMiddleware } from './server/authorization/middleware';
 import { PERMISSIONS } from './server/authorization/permissions';
 import {
@@ -85,6 +86,7 @@ import { LogisticsGpsRepository, LogisticsGpsRepositoryError } from './server/lo
 import { TraccarGpsAdapter, TraccarGpsError } from './server/logistics/traccarGpsAdapter';
 import { LogisticsLibraryStorageError, LogisticsLibraryStorageService } from './server/logistics/logisticsLibraryStorageService';
 import { GooglePlatformAccessTokenProvider } from './server/logistics/googlePlatformAccessTokenProvider';
+import { createLogisticsCompletionRouter } from './server/logistics/logisticsRoutes';
 import { validateLogisticsFeatureConfiguration } from './src/data/logisticsFeatureTemplate';
 import type { AuthorizedPrincipal } from './server/authorization/authorizedPrincipal';
 import type { CentralSharedServiceId, SharedServiceOperation } from './packages/shared-types/src/sharedServiceContracts';
@@ -180,7 +182,11 @@ app.use((req, res, next) => {
   const paymentWebhook = /^\/api\/v1\/server\/payments\/webhook\/[^/]+$/.test(req.path);
   const parser = paymentWebhook
     ? express.raw({ type: 'application/json', limit: '256kb' })
-    : express.json();
+    : express.json({
+        verify: (verifyReq, _res, buf) => {
+          (verifyReq as any).rawBody = buf;
+        }
+      });
   parser(req, res, next);
 });
 
@@ -459,25 +465,11 @@ app.use('/api/v1/platform/attendance', createAttendanceProvisioningRouter(
 const schoolAdministrationGuards = createSchoolAdministrationGuards(authorizationMiddleware);
 
 function resolveApplicationInstanceId(req: Request): string {
-  const headerInstanceId = req.headers['x-application-instance-id'];
-  const queryInstanceId = typeof req.query.applicationInstanceId === 'string'
-    ? req.query.applicationInstanceId
-    : undefined;
-  const bodyInstanceId = typeof req.body?.applicationInstanceId === 'string'
-    ? req.body.applicationInstanceId
-    : undefined;
-  if (typeof headerInstanceId === 'string') {
-    if (bodyInstanceId && headerInstanceId !== bodyInstanceId) return '';
-    return headerInstanceId;
-  }
-  return bodyInstanceId || queryInstanceId || '';
+  return extractApplicationInstanceId(req);
 }
 
 function requireApplicationInstancePermission(permission: string) {
-  return authorizationMiddleware.requireResourcePermission(permission, req => {
-    const resourceId = resolveApplicationInstanceId(req);
-    return resourceId ? { resourceType: 'application_instance', resourceId } : undefined;
-  });
+  return createApplicationInstancePermissionGuard(authorizationMiddleware, permission);
 }
 
 function getCentralCurriculumService(): CentralCurriculumService {
@@ -2521,7 +2513,7 @@ app.post(
 
 app.get(
   '/api/v1/logistics/gate/events',
-  authorizationMiddleware.requirePermission('logistics.gate.manage'),
+  requireAnyLogisticsPermission('logistics.gate.read', 'logistics.gate.manage'),
   async (req: Request, res: Response) => {
     const direction = req.query.direction === 'entry' || req.query.direction === 'exit'
       ? req.query.direction
@@ -2587,6 +2579,25 @@ app.post(
       respondLogisticsFailure(req, res, error);
     }
   }
+);
+
+app.use(
+  '/api/v1',
+  createLogisticsCompletionRouter({
+    getPool: () => postgresRuntime.getPool(),
+    authorizationMiddleware,
+    createRepository: logisticsRepository,
+    createGpsRepository: () => {
+      try {
+        return logisticsGpsRepository();
+      } catch (error) {
+        if (error instanceof LogisticsGpsRepositoryError) {
+          return new LogisticsGpsRepository(postgresRuntime.getPool(), null);
+        }
+        throw error;
+      }
+    }
+  })
 );
 
 // 6. API v1 - Health & Tenant Container Probe
@@ -2917,7 +2928,11 @@ app.get('/api/v1/embed/portal-widget', (req: Request, res: Response) => {
 // -------------------------------------------------------------
 function handleInstanceQuestionBankError(req: Request, res: Response, err: unknown, fallbackMessage: string) {
   if (err instanceof InstanceQuestionBankError) {
-    const status = err.code === 'NOT_FOUND' ? 404 : err.code === 'FORBIDDEN' ? 403 : 400;
+    const status =
+      err.code === 'NOT_FOUND' ? 404 :
+      err.code === 'FORBIDDEN' ? 403 :
+      err.code === 'CONFLICT' ? 409 :
+      400;
     res.status(status).json({
       success: false,
       error: err.message,
@@ -2936,554 +2951,16 @@ function handleInstanceQuestionBankError(req: Request, res: Response, err: unkno
   });
 }
 
-app.use('/api/v1/question-bank', questionBankRateLimiter);
-app.use('/api/v1/assessments', questionBankRateLimiter);
-
-app.get(
-  '/api/v1/question-bank/categories',
-  requireApplicationInstancePermission(PERMISSIONS.questionBankRead),
-  async (req: Request, res: Response) => {
-    try {
-      const categories = await getInstanceQuestionBankService().listCategories(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req)
-      );
-      res.json({ success: true, total: categories.length, categories });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to list question bank categories');
-    }
-  }
-);
-
-app.post(
-  '/api/v1/question-bank/categories',
-  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
-  async (req: Request, res: Response) => {
-    try {
-      const { name, description, subjectReferenceId } = req.body ?? {};
-      if (!name || typeof name !== 'string') {
-        res.status(400).json({ success: false, error: 'Category name is required', code: 'VALIDATION_FAILED' });
-        return;
-      }
-      const category = await getInstanceQuestionBankService().createCategory(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req),
-        { name, description, subjectReferenceId }
-      );
-      res.status(201).json({ success: true, category });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to create question category');
-    }
-  }
-);
-
-app.get(
-  '/api/v1/question-bank',
-  requireApplicationInstancePermission(PERMISSIONS.questionBankRead),
-  async (req: Request, res: Response) => {
-    try {
-      const { subjectId, subjectReferenceId, classGrade, questionType, reviewStatus, difficulty, categoryId } = req.query;
-      const questions = await getInstanceQuestionBankService().listQuestions(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req),
-        {
-          subjectReferenceId: (subjectReferenceId || subjectId) as string,
-          classGradeName: classGrade as string,
-          questionType: questionType as string,
-          reviewStatus: reviewStatus as string,
-          difficulty: difficulty as string,
-          categoryId: categoryId as string
-        }
-      );
-      res.json({ success: true, total: questions.length, questions });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to load instance question bank');
-    }
-  }
-);
-
-app.post(
-  '/api/v1/question-bank',
-  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
-  async (req: Request, res: Response) => {
-    try {
-      const payload = req.body ?? {};
-      const subjectReferenceId = payload.subjectReferenceId || payload.subjectId;
-      if (!payload.stem || !subjectReferenceId || typeof payload.correctAnswer !== 'string' || !payload.correctAnswer.trim()) {
-        res.status(400).json({ success: false, error: 'Missing required question parameters: stem, subjectId, correctAnswer' });
-        return;
-      }
-      const saved = await getInstanceQuestionBankService().createQuestion(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req),
-        {
-          id: payload.id,
-          categoryId: payload.categoryId,
-          subjectReferenceId,
-          classGradeName: payload.classGrade || payload.classGradeName || 'JSS 1',
-          curriculumVersionId: payload.curriculumVersionId || 'NERDC-9YEAR-BASIC-2024',
-          topicReferenceId: payload.topicId || payload.topicReferenceId || 'general',
-          learningObjectiveIds: payload.learningObjectiveIds || [],
-          questionType: payload.questionType || 'objective',
-          stem: payload.stem,
-          options: payload.options,
-          correctAnswer: payload.correctAnswer,
-          explanation: payload.explanation || '',
-          markingRubric: payload.markingRubric,
-          marks: payload.marks || 2,
-          difficulty: payload.difficulty || 'Medium',
-          cognitiveDemand: payload.cognitiveDemand || 'Application',
-          sourceType: payload.sourceType || 'teacher_authored',
-          sourceReference: payload.sourceReference,
-          creationMethod: payload.creationMethod || 'manual',
-          reviewStatus: payload.reviewStatus || 'pending_review',
-          metadata: payload.metadata
-        }
-      );
-      res.status(201).json({ success: true, question: saved });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to save question');
-    }
-  }
-);
-
-app.post(
-  '/api/v1/question-bank/items/:id/review',
-  requireApplicationInstancePermission(PERMISSIONS.questionBankReview),
-  async (req: Request, res: Response) => {
-    try {
-      const { id } = req.params;
-      const { reviewStatus } = req.body ?? {};
-      const tenant = (req as any).trustedTenantContext;
-      const updated = await getInstanceQuestionBankService().reviewQuestion(
-        tenant,
-        resolveApplicationInstanceId(req),
-        id,
-        reviewStatus
-      );
-      TamperEvidentAuditService.logPlatformAction({
-        actor: tenant.email || tenant.userId || 'school_curator',
-        actorRole: tenant.role,
-        tenantId: tenant.tenantId,
-        action: reviewStatus === 'approved' ? 'question_item_approved' : reviewStatus === 'rejected' ? 'question_item_rejected' : 'question_item_reviewed',
-        target: `question:${id}`,
-        result: 'SUCCESS',
-        outcome: 'SUCCESS',
-        resourceType: 'instance_question_item',
-        resourceId: id,
-        details: `School Question ${id} updated to status '${reviewStatus}'`,
-        ipAddress: req.ip || '127.0.0.1'
-      });
-      res.json({ success: true, question: updated });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to review question item');
-    }
-  }
-);
-
-app.delete(
-  '/api/v1/question-bank/items/:id',
-  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
-  async (req: Request, res: Response) => {
-    try {
-      const deleted = await getInstanceQuestionBankService().deleteQuestion(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req),
-        req.params.id
-      );
-      if (!deleted) {
-        res.status(404).json({ success: false, error: 'Question not found' });
-        return;
-      }
-      res.json({ success: true, deleted: true });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to delete question item');
-    }
-  }
-);
-
-app.post(
-  '/api/v1/question-bank/seed-past-questions',
-  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
-  async (req: Request, res: Response) => {
-    try {
-      const list = await getInstanceQuestionBankService().seedStarterPastQuestions(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req)
-      );
-      res.json({ success: true, total: list.length, questions: list });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to seed instance past questions');
-    }
-  }
-);
-
-app.post(
-  '/api/v1/question-bank/seed-theory-questions',
-  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
-  async (req: Request, res: Response) => {
-    try {
-      const list = await getInstanceQuestionBankService().seedStarterTheoryQuestions(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req)
-      );
-      res.json({ success: true, total: list.length, questions: list });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to seed instance theory questions');
-    }
-  }
-);
-
-app.post(
-  '/api/v1/question-bank/seed-practical-questions',
-  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
-  async (req: Request, res: Response) => {
-    try {
-      const list = await getInstanceQuestionBankService().seedStarterPracticalQuestions(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req)
-      );
-      res.json({ success: true, total: list.length, questions: list });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to seed instance practical questions');
-    }
-  }
-);
-
-app.post(
-  '/api/v1/question-bank/generate-practical',
-  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
-  async (req: Request, res: Response) => {
-    try {
-      const { subjectName, subjectId, classGrade, topic, count } = req.body ?? {};
-      if (!subjectName || !classGrade) {
-        res.status(400).json({ error: 'Missing required parameters: subjectName, classGrade' });
-        return;
-      }
-      const caller = buildGatewayCallerFromTenantReq(req);
-      const gatewayResult = await centralAiGatewayService.execute<{ questions: any[] }>({
-        caller,
-        envelope: {
-          applicationId: 'SCHOOL_INSTANCE',
-          capability: 'SCHOOL_QUESTION_BANK_GENERATION',
-          taskType: 'question_bank_items',
-          tenantId: caller.tenantId || undefined,
-          applicationInstanceId: caller.applicationInstanceId || undefined,
-          payload: {
-            subjectName,
-            classGrade,
-            topic: topic || 'Laboratory Practical',
-            count: count || 2,
-            questionType: 'practical'
-          },
-          correlationId: (req as any).correlationId
-        }
-      });
-
-      const createdItems = [];
-      const qbService = getInstanceQuestionBankService();
-      const tenant = (req as any).trustedTenantContext;
-      const instanceId = resolveApplicationInstanceId(req);
-      for (const item of gatewayResult.data.questions || []) {
-        const saved = await qbService.createQuestion(tenant, instanceId, {
-          subjectReferenceId: subjectId || subjectName,
-          classGradeName: classGrade,
-          topicReferenceId: topic || 'practical-general',
-          questionType: 'practical',
-          stem: item.stem,
-          correctAnswer: item.correctAnswer || 'See model answer',
-          explanation: item.explanation || '',
-          markingRubric: item.markingRubric || [],
-          marks: item.marks || 10,
-          difficulty: item.difficulty || 'Medium',
-          cognitiveDemand: item.cognitiveDemand || 'Analysis',
-          sourceType: 'ai_practice',
-          sourceReference: 'Central AI Gateway Question Bank Generator',
-          creationMethod: 'ai_assisted',
-          reviewStatus: 'pending_review'
-        });
-        createdItems.push(saved);
-      }
-      res.json({
-        success: true,
-        count: createdItems.length,
-        questions: createdItems,
-        reviewRequired: true,
-        gatewayRequestId: gatewayResult.requestId,
-        routing: gatewayResult.routing,
-        usage: gatewayResult.usage
-      });
-    } catch (err) {
-      if (err instanceof AiGatewayError) {
-        sendAiGatewayError(res, err, (req as any).correlationId);
-        return;
-      }
-      handleInstanceQuestionBankError(req, res, err, 'Failed to generate practical questions');
-    }
-  }
-);
-
-app.post(
-  '/api/v1/question-bank/generate-theory',
-  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
-  async (req: Request, res: Response) => {
-    try {
-      const { subjectName, subjectId, classGrade, topic, count, questionType } = req.body ?? {};
-      if (!subjectName || !classGrade) {
-        res.status(400).json({ error: 'Missing required parameters: subjectName, classGrade' });
-        return;
-      }
-      const caller = buildGatewayCallerFromTenantReq(req);
-      const gatewayResult = await centralAiGatewayService.execute<{ questions: any[] }>({
-        caller,
-        envelope: {
-          applicationId: 'SCHOOL_INSTANCE',
-          capability: 'SCHOOL_QUESTION_BANK_GENERATION',
-          taskType: 'question_bank_items',
-          tenantId: caller.tenantId || undefined,
-          applicationInstanceId: caller.applicationInstanceId || undefined,
-          payload: {
-            subjectName,
-            classGrade,
-            topic: topic || 'Core Curriculum',
-            count: count || 2,
-            questionType: questionType || 'theory'
-          },
-          correlationId: (req as any).correlationId
-        }
-      });
-
-      const createdItems = [];
-      const qbService = getInstanceQuestionBankService();
-      const tenant = (req as any).trustedTenantContext;
-      const instanceId = resolveApplicationInstanceId(req);
-      for (const item of gatewayResult.data.questions || []) {
-        const saved = await qbService.createQuestion(tenant, instanceId, {
-          subjectReferenceId: subjectId || subjectName,
-          classGradeName: classGrade,
-          topicReferenceId: topic || 'general',
-          questionType: questionType || 'theory',
-          stem: item.stem,
-          correctAnswer: item.correctAnswer || 'See model answer',
-          explanation: item.explanation || '',
-          markingRubric: item.markingRubric || [],
-          marks: item.marks || 8,
-          difficulty: item.difficulty || 'Medium',
-          cognitiveDemand: item.cognitiveDemand || 'Application',
-          sourceType: 'ai_practice',
-          sourceReference: 'Central AI Gateway Question Bank Generator',
-          creationMethod: 'ai_assisted',
-          reviewStatus: 'pending_review'
-        });
-        createdItems.push(saved);
-      }
-      res.json({
-        success: true,
-        count: createdItems.length,
-        questions: createdItems,
-        reviewRequired: true,
-        gatewayRequestId: gatewayResult.requestId,
-        routing: gatewayResult.routing,
-        usage: gatewayResult.usage
-      });
-    } catch (err) {
-      if (err instanceof AiGatewayError) {
-        sendAiGatewayError(res, err, (req as any).correlationId);
-        return;
-      }
-      handleInstanceQuestionBankError(req, res, err, 'Failed to generate theory questions');
-    }
-  }
-);
-
-app.post(
-  '/api/v1/question-bank/generate-objective',
-  requireApplicationInstancePermission(PERMISSIONS.questionBankManage),
-  async (req: Request, res: Response) => {
-    try {
-      const { subjectName, subjectId, classGrade, topic, count } = req.body ?? {};
-      if (!subjectName || !classGrade) {
-        res.status(400).json({ error: 'Missing required parameters: subjectName, classGrade' });
-        return;
-      }
-      const caller = buildGatewayCallerFromTenantReq(req);
-      const gatewayResult = await centralAiGatewayService.execute<{ questions: any[] }>({
-        caller,
-        envelope: {
-          applicationId: 'SCHOOL_INSTANCE',
-          capability: 'SCHOOL_QUESTION_BANK_GENERATION',
-          taskType: 'question_bank_items',
-          tenantId: caller.tenantId || undefined,
-          applicationInstanceId: caller.applicationInstanceId || undefined,
-          payload: {
-            subjectName,
-            classGrade,
-            topic: topic || 'General Core Topics',
-            count: count || 3,
-            questionType: 'objective'
-          },
-          correlationId: (req as any).correlationId
-        }
-      });
-
-      const createdItems = [];
-      const qbService = getInstanceQuestionBankService();
-      const tenant = (req as any).trustedTenantContext;
-      const instanceId = resolveApplicationInstanceId(req);
-      for (const item of gatewayResult.data.questions || []) {
-        const saved = await qbService.createQuestion(tenant, instanceId, {
-          subjectReferenceId: subjectId || subjectName,
-          classGradeName: classGrade,
-          topicReferenceId: topic || 'general',
-          questionType: 'objective',
-          stem: item.stem,
-          options: item.options,
-          correctAnswer: item.correctAnswer || 'A',
-          explanation: item.explanation || '',
-          marks: 2,
-          difficulty: item.difficulty || 'Medium',
-          cognitiveDemand: item.cognitiveDemand || 'Application',
-          sourceType: 'ai_practice',
-          sourceReference: 'Central AI Gateway Question Bank Generator',
-          creationMethod: 'ai_assisted',
-          reviewStatus: 'pending_review'
-        });
-        createdItems.push(saved);
-      }
-      res.json({
-        success: true,
-        count: createdItems.length,
-        questions: createdItems,
-        reviewRequired: true,
-        gatewayRequestId: gatewayResult.requestId,
-        routing: gatewayResult.routing,
-        usage: gatewayResult.usage
-      });
-    } catch (err) {
-      if (err instanceof AiGatewayError) {
-        sendAiGatewayError(res, err, (req as any).correlationId);
-        return;
-      }
-      handleInstanceQuestionBankError(req, res, err, 'Failed to generate objective questions');
-    }
-  }
-);
-
-app.get(
-  '/api/v1/assessment-blueprints',
-  requireApplicationInstancePermission(PERMISSIONS.assessmentsRead),
-  async (req: Request, res: Response) => {
-    try {
-      const blueprints = await getInstanceQuestionBankService().listBlueprints(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req)
-      );
-      res.json({ success: true, blueprints });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to load assessment blueprints');
-    }
-  }
-);
-
-app.post(
-  '/api/v1/assessment-blueprints',
-  requireApplicationInstancePermission(PERMISSIONS.assessmentsManage),
-  async (req: Request, res: Response) => {
-    try {
-      const payload = req.body ?? {};
-      const blueprint = await getInstanceQuestionBankService().createBlueprint(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req),
-        {
-          title: payload.title,
-          subjectReferenceId: payload.subjectReferenceId || payload.subjectId,
-          classGradeName: payload.classGradeName || payload.classGrade,
-          term: payload.term || 'Term 1',
-          curriculumVersionId: payload.curriculumVersionId || 'NERDC-9YEAR-BASIC-2024',
-          assessmentType: payload.assessmentType || 'exam',
-          questionFormatsCount: payload.questionFormatsCount || {},
-          totalMarks: Number(payload.totalMarks || 100),
-          difficultyMix: payload.difficultyMix || {},
-          timeAllowanceMinutes: payload.timeAllowanceMinutes,
-          allowVerifiedPastQuestions: payload.allowVerifiedPastQuestions,
-          allowAiPracticeQuestions: payload.allowAiPracticeQuestions,
-          completedTopicsOnly: payload.completedTopicsOnly,
-          selectedTopicIds: payload.selectedTopicIds
-        }
-      );
-      res.status(201).json({ success: true, blueprint });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to create assessment blueprint');
-    }
-  }
-);
-
-app.get(
-  '/api/v1/assessments/exams',
-  requireApplicationInstancePermission(PERMISSIONS.assessmentsRead),
-  async (req: Request, res: Response) => {
-    try {
-      const exams = await getInstanceQuestionBankService().listExamConfigurations(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req)
-      );
-      res.json({ success: true, exams });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to list exam configurations');
-    }
-  }
-);
-
-app.post(
-  '/api/v1/assessments/exams',
-  requireApplicationInstancePermission(PERMISSIONS.assessmentsManage),
-  async (req: Request, res: Response) => {
-    try {
-      const payload = req.body ?? {};
-      const exam = await getInstanceQuestionBankService().createExamConfiguration(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req),
-        payload
-      );
-      res.status(201).json({ success: true, exam });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to create exam configuration');
-    }
-  }
-);
-
-app.get(
-  '/api/v1/assessments/records',
-  requireApplicationInstancePermission(PERMISSIONS.assessmentsRead),
-  async (req: Request, res: Response) => {
-    try {
-      const records = await getInstanceQuestionBankService().listAssessmentRecords(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req),
-        req.query.examConfigurationId as string | undefined
-      );
-      res.json({ success: true, records });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to list assessment records');
-    }
-  }
-);
-
-app.post(
-  '/api/v1/assessments/records',
-  requireApplicationInstancePermission(PERMISSIONS.assessmentsManage),
-  async (req: Request, res: Response) => {
-    try {
-      const record = await getInstanceQuestionBankService().recordAssessmentSubmission(
-        (req as any).trustedTenantContext,
-        resolveApplicationInstanceId(req),
-        req.body ?? {}
-      );
-      res.status(201).json({ success: true, record });
-    } catch (err) {
-      handleInstanceQuestionBankError(req, res, err, 'Failed to persist assessment record');
-    }
-  }
+app.use(
+  '/api/v1',
+  createQuestionBankRouter({
+    getService: getInstanceQuestionBankService,
+    auth: authorizationMiddleware,
+    rateLimiter: questionBankRateLimiter,
+    centralAiGatewayService,
+    buildGatewayCallerFromTenantReq,
+    sendAiGatewayError
+  })
 );
 
 // -------------------------------------------------------------
@@ -6176,138 +5653,10 @@ async function getCurrentSchoolId(req: Request, res: Response): Promise<string |
   return school.id;
 }
 
-function schoolFinancePolicyFailure(res: Response, error: unknown): void {
-  if (error instanceof SchoolFinancePolicyError) {
-    const status = error.code === 'NOT_FOUND' ? 404 : error.code === 'CONFLICT' ? 409 : 400;
-    res.status(status).json({ success: false, code: error.code, error: error.message });
-    return;
-  }
-  if (error instanceof Error && error.message === 'FORBIDDEN') {
-    res.status(403).json({ success: false, code: 'FORBIDDEN', error: 'Permission denied.' });
-    return;
-  }
-  console.error('School finance policy operation failed.', error);
-  res.status(503).json({
-    success: false, code: 'SCHOOL_FINANCE_UNAVAILABLE',
-    error: 'School fee policies are temporarily unavailable.'
-  });
-}
-
-app.get('/api/v1/school-finance/schools',
-  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinancePoliciesRead),
-  async (req: Request, res: Response) => {
-    try {
-      const data = await new SchoolFinancePolicies(postgresRuntime.getPool()).listSchools(
-        (req as any).authorizedPrincipal
-      );
-      res.json({ success: true, data });
-    } catch (error) {
-      schoolFinancePolicyFailure(res, error);
-    }
-  }
-);
-
-app.get('/api/v1/school-finance/schools/:schoolId/fee-policies',
-  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinancePoliciesRead),
-  async (req: Request, res: Response) => {
-    try {
-      const data = await new SchoolFinancePolicies(postgresRuntime.getPool()).list(
-        (req as any).authorizedPrincipal, req.params.schoolId
-      );
-      res.json({ success: true, data });
-    } catch (error) {
-      schoolFinancePolicyFailure(res, error);
-    }
-  }
-);
-
-app.post('/api/v1/school-finance/schools/:schoolId/fee-policies',
-  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinancePoliciesCreate),
-  async (req: Request, res: Response) => {
-    try {
-      const id = await new SchoolFinancePolicies(postgresRuntime.getPool()).create(
-        (req as any).authorizedPrincipal, req.params.schoolId, req.body
-      );
-      res.status(201).json({ success: true, data: { id } });
-    } catch (error) {
-      schoolFinancePolicyFailure(res, error);
-    }
-  }
-);
-
-app.post('/api/v1/school-finance/schools/:schoolId/fee-policies/:policyId/approve',
-  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinancePoliciesApprove),
-  async (req: Request, res: Response) => {
-    try {
-      await new SchoolFinancePolicies(postgresRuntime.getPool()).approve(
-        (req as any).authorizedPrincipal, req.params.schoolId, req.params.policyId
-      );
-      res.json({ success: true });
-    } catch (error) {
-      schoolFinancePolicyFailure(res, error);
-    }
-  }
-);
-
-app.get('/api/v1/school-finance/schools/:schoolId/settlement-accounts',
-  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinanceSettlementRead),
-  async (req: Request, res: Response) => {
-    try {
-      res.set('Cache-Control', 'no-store');
-      const data = await new SchoolSettlementAccounts(postgresRuntime.getPool()).list(
-        (req as any).authorizedPrincipal, req.params.schoolId
-      );
-      res.json({ success: true, data });
-    } catch (error) {
-      schoolFinancePolicyFailure(res, error);
-    }
-  }
-);
-
-app.get('/api/v1/school-finance/schools/:schoolId/settlement-accounts/:requestId',
-  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinanceSettlementRead),
-  async (req: Request, res: Response) => {
-    try {
-      res.set('Cache-Control', 'no-store');
-      const data = await new SchoolSettlementAccounts(postgresRuntime.getPool()).details(
-        (req as any).authorizedPrincipal, req.params.schoolId, req.params.requestId
-      );
-      res.json({ success: true, data });
-    } catch (error) {
-      schoolFinancePolicyFailure(res, error);
-    }
-  }
-);
-
-app.post('/api/v1/school-finance/schools/:schoolId/settlement-accounts',
-  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinanceSettlementRequest),
-  async (req: Request, res: Response) => {
-    try {
-      res.set('Cache-Control', 'no-store');
-      const id = await new SchoolSettlementAccounts(postgresRuntime.getPool()).request(
-        (req as any).authorizedPrincipal, req.params.schoolId, req.body
-      );
-      res.status(201).json({ success: true, data: { id } });
-    } catch (error) {
-      schoolFinancePolicyFailure(res, error);
-    }
-  }
-);
-
-app.post('/api/v1/school-finance/schools/:schoolId/settlement-accounts/:requestId/approve',
-  authorizationMiddleware.requirePermission(PERMISSIONS.schoolFinanceSettlementApprove),
-  async (req: Request, res: Response) => {
-    try {
-      res.set('Cache-Control', 'no-store');
-      await new SchoolSettlementAccounts(postgresRuntime.getPool()).approve(
-        (req as any).authorizedPrincipal, req.params.schoolId, req.params.requestId
-      );
-      res.json({ success: true });
-    } catch (error) {
-      schoolFinancePolicyFailure(res, error);
-    }
-  }
-);
+app.use('/api/v1', createSchoolFinanceRouter({
+  getPool: () => postgresRuntime.getPool(),
+  authorizationMiddleware
+}));
 
 app.get('/api/v1/schools/me/students', schoolAdministrationGuards.studentRead, async (req: Request, res: Response) => {
   try {

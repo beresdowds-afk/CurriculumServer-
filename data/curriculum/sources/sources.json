@@ -9,8 +9,8 @@
     "category": "senior_secondary",
     "publishedVersionTag": "NERDC-GAZETTE-2024-V2",
     "retrievalMethod": "HTTPS_DIRECT_INGEST",
-    "lastSuccessfulRetrieval": "2026-11-24T11:53:36.635Z",
-    "lastAttemptTimestamp": "2026-11-24T11:53:36.635Z",
+    "lastSuccessfulRetrieval": "2026-11-26T09:50:58.545Z",
+    "lastAttemptTimestamp": "2026-11-26T09:50:58.545Z",
     "sourceStatus": "ACTIVE",
     "verificationStatus": "OFFICIAL_VERIFIED",
     "issuingAuthority": "Nigerian Educational Research and Development Council (NERDC), Abuja",
@@ -18,7 +18,7 @@
     "isOfficial": true,
     "notes": "Authoritative national syllabus baseline for SS 1 - SS 3 General Mathematics.",
     "createdAt": "2026-10-31T10:54:59.487Z",
-    "updatedAt": "2026-11-24T11:53:36.635Z"
+    "updatedAt": "2026-11-26T09:50:58.545Z"
   },
   {
     "sourceId": "src-nerdc-chem-sss",
@@ -30,8 +30,8 @@
     "category": "senior_secondary",
     "publishedVersionTag": "NERDC-GAZETTE-2024-V2",
     "retrievalMethod": "HTTPS_DIRECT_INGEST",
-    "lastSuccessfulRetrieval": "2026-11-24T11:53:36.639Z",
-    "lastAttemptTimestamp": "2026-11-24T11:53:36.639Z",
+    "lastSuccessfulRetrieval": "2026-11-26T09:50:58.554Z",
+    "lastAttemptTimestamp": "2026-11-26T09:50:58.554Z",
     "sourceStatus": "ACTIVE",
     "verificationStatus": "OFFICIAL_VERIFIED",
     "issuingAuthority": "NERDC Science & Technology Curriculum Department",
@@ -39,7 +39,7 @@
     "isOfficial": true,
     "notes": "Covers physical, inorganic, and practical alternative-to-practical standards.",
     "createdAt": "2026-10-31T10:54:59.487Z",
-    "updatedAt": "2026-11-24T11:53:36.639Z"
+    "updatedAt": "2026-11-26T09:50:58.554Z"
   },
   {
     "sourceId": "src-nerdc-basic-jss",
@@ -73,13 +73,13 @@
     "publishedVersionTag": "UNKNOWN",
     "retrievalMethod": "HTTPS_DIRECT_INGEST",
     "lastSuccessfulRetrieval": null,
-    "lastAttemptTimestamp": "2026-11-24T11:53:36.651Z",
+    "lastAttemptTimestamp": "2026-11-26T09:50:58.596Z",
     "sourceStatus": "UNREACHABLE",
     "verificationStatus": "UNVERIFIED",
     "issuingAuthority": "NERDC Physics Panel",
     "contactEmail": "physics@nerdc.gov.ng",
     "isOfficial": false,
-    "createdAt": "2026-11-24T11:53:36.651Z",
-    "updatedAt": "2026-11-24T11:53:36.651Z"
+    "createdAt": "2026-11-26T09:50:58.596Z",
+    "updatedAt": "2026-11-26T09:50:58.596Z"
   }
 ]

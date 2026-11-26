@@ -1318,5 +1318,165 @@
     "actor": "sync_daemon",
     "completedAt": "2026-11-24T11:53:36.660Z",
     "resultSummary": "CHECKED — NO VERIFIED CURRICULUM CHANGES FOUND"
+  },
+  {
+    "jobId": "job_sync_1795598762908_x1c2",
+    "jobType": "MANUAL_SYNC",
+    "status": "FAILED",
+    "sourceId": "src-test-unreachable",
+    "progressPercent": 15,
+    "checkpoints": [
+      "job_registered",
+      "source_connection_initiated"
+    ],
+    "currentStep": "CONNECTING_TO_SOURCE",
+    "createdAt": "2026-11-25T09:26:02.908Z",
+    "updatedAt": "2026-11-25T09:26:02.910Z",
+    "retryCount": 0,
+    "maxRetries": 3,
+    "actor": "admin@curriculumserver.ng",
+    "failureReason": "SOURCE_UNREACHABLE: Official source 'Unreachable External Gazette Server' is flagged as unreachable. Manual document upload required."
+  },
+  {
+    "jobId": "job_sync_1795598762915_8iwa",
+    "jobType": "MANUAL_SYNC",
+    "status": "COMPLETED",
+    "sourceId": "src-nerdc-math-sss",
+    "progressPercent": 100,
+    "checkpoints": [
+      "job_registered",
+      "source_connection_initiated",
+      "source_fingerprint_verified",
+      "curriculum_diff_computed",
+      "job_completed"
+    ],
+    "currentStep": "COMPLETED",
+    "createdAt": "2026-11-25T09:26:02.915Z",
+    "updatedAt": "2026-11-25T09:26:02.917Z",
+    "retryCount": 0,
+    "maxRetries": 3,
+    "actor": "sync_daemon",
+    "completedAt": "2026-11-25T09:26:02.917Z",
+    "resultSummary": "CHECKED — NO VERIFIED CURRICULUM CHANGES FOUND"
+  },
+  {
+    "jobId": "job_sync_1795601081803_q9p3",
+    "jobType": "MANUAL_SYNC",
+    "status": "FAILED",
+    "sourceId": "src-test-unreachable",
+    "progressPercent": 15,
+    "checkpoints": [
+      "job_registered",
+      "source_connection_initiated"
+    ],
+    "currentStep": "CONNECTING_TO_SOURCE",
+    "createdAt": "2026-11-25T10:04:41.803Z",
+    "updatedAt": "2026-11-25T10:04:41.805Z",
+    "retryCount": 0,
+    "maxRetries": 3,
+    "actor": "admin@curriculumserver.ng",
+    "failureReason": "SOURCE_UNREACHABLE: Official source 'Unreachable External Gazette Server' is flagged as unreachable. Manual document upload required."
+  },
+  {
+    "jobId": "job_sync_1795601081808_ki4p",
+    "jobType": "MANUAL_SYNC",
+    "status": "COMPLETED",
+    "sourceId": "src-nerdc-math-sss",
+    "progressPercent": 100,
+    "checkpoints": [
+      "job_registered",
+      "source_connection_initiated",
+      "source_fingerprint_verified",
+      "curriculum_diff_computed",
+      "job_completed"
+    ],
+    "currentStep": "COMPLETED",
+    "createdAt": "2026-11-25T10:04:41.808Z",
+    "updatedAt": "2026-11-25T10:04:41.811Z",
+    "retryCount": 0,
+    "maxRetries": 3,
+    "actor": "sync_daemon",
+    "completedAt": "2026-11-25T10:04:41.811Z",
+    "resultSummary": "CHECKED — NO VERIFIED CURRICULUM CHANGES FOUND"
+  },
+  {
+    "jobId": "job_sync_1795601205200_i7eo",
+    "jobType": "MANUAL_SYNC",
+    "status": "FAILED",
+    "sourceId": "src-test-unreachable",
+    "progressPercent": 15,
+    "checkpoints": [
+      "job_registered",
+      "source_connection_initiated"
+    ],
+    "currentStep": "CONNECTING_TO_SOURCE",
+    "createdAt": "2026-11-25T10:06:45.200Z",
+    "updatedAt": "2026-11-25T10:06:45.202Z",
+    "retryCount": 0,
+    "maxRetries": 3,
+    "actor": "admin@curriculumserver.ng",
+    "failureReason": "SOURCE_UNREACHABLE: Official source 'Unreachable External Gazette Server' is flagged as unreachable. Manual document upload required."
+  },
+  {
+    "jobId": "job_sync_1795601205204_axs8",
+    "jobType": "MANUAL_SYNC",
+    "status": "COMPLETED",
+    "sourceId": "src-nerdc-math-sss",
+    "progressPercent": 100,
+    "checkpoints": [
+      "job_registered",
+      "source_connection_initiated",
+      "source_fingerprint_verified",
+      "curriculum_diff_computed",
+      "job_completed"
+    ],
+    "currentStep": "COMPLETED",
+    "createdAt": "2026-11-25T10:06:45.204Z",
+    "updatedAt": "2026-11-25T10:06:45.206Z",
+    "retryCount": 0,
+    "maxRetries": 3,
+    "actor": "sync_daemon",
+    "completedAt": "2026-11-25T10:06:45.206Z",
+    "resultSummary": "CHECKED — NO VERIFIED CURRICULUM CHANGES FOUND"
+  },
+  {
+    "jobId": "job_sync_1795686658598_jr2w",
+    "jobType": "MANUAL_SYNC",
+    "status": "FAILED",
+    "sourceId": "src-test-unreachable",
+    "progressPercent": 15,
+    "checkpoints": [
+      "job_registered",
+      "source_connection_initiated"
+    ],
+    "currentStep": "CONNECTING_TO_SOURCE",
+    "createdAt": "2026-11-26T09:50:58.598Z",
+    "updatedAt": "2026-11-26T09:50:58.607Z",
+    "retryCount": 0,
+    "maxRetries": 3,
+    "actor": "admin@curriculumserver.ng",
+    "failureReason": "SOURCE_UNREACHABLE: Official source 'Unreachable External Gazette Server' is flagged as unreachable. Manual document upload required."
+  },
+  {
+    "jobId": "job_sync_1795686658615_xvrh",
+    "jobType": "MANUAL_SYNC",
+    "status": "COMPLETED",
+    "sourceId": "src-nerdc-math-sss",
+    "progressPercent": 100,
+    "checkpoints": [
+      "job_registered",
+      "source_connection_initiated",
+      "source_fingerprint_verified",
+      "curriculum_diff_computed",
+      "job_completed"
+    ],
+    "currentStep": "COMPLETED",
+    "createdAt": "2026-11-26T09:50:58.615Z",
+    "updatedAt": "2026-11-26T09:50:58.618Z",
+    "retryCount": 0,
+    "maxRetries": 3,
+    "actor": "sync_daemon",
+    "completedAt": "2026-11-26T09:50:58.618Z",
+    "resultSummary": "CHECKED — NO VERIFIED CURRICULUM CHANGES FOUND"
   }
 ]

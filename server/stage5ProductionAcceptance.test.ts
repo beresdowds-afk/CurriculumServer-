@@ -331,14 +331,21 @@ test('Stage 5 Section 5: Gemini textbook adapter fails closed without GEMINI_API
 
 test('Stage 5 Section 6: Instance Question Bank operates locally per tenant+instance with zero cross-domain SQL and persists CBT records', async () => {
   const schoolB = principal(TENANT_B, 'tenant_admin');
+  const EXAM_ID = '99999999-9999-4999-8999-999999999901';
   const { pool, queries } = createRecordedPool(sql => {
+    if (sql.includes('FROM production.application_instances')) {
+      return { rows: [{ id: INSTANCE_B }], rowCount: 1 };
+    }
+    if (sql.includes('FROM production.instance_exam_configurations')) {
+      return { rows: [{ id: EXAM_ID }], rowCount: 1 };
+    }
     if (sql.includes('INSERT INTO production.instance_assessment_records')) {
       return {
         rows: [{
           id: 'rec-1',
           tenant_id: TENANT_B,
           application_instance_id: INSTANCE_B,
-          exam_configuration_id: 'exam-1',
+          exam_configuration_id: EXAM_ID,
           student_identifier: 'STD-2026-001',
           score_obtained: 5,
           max_score: 10,
@@ -355,7 +362,7 @@ test('Stage 5 Section 6: Instance Question Bank operates locally per tenant+inst
 
   const qb = new InstanceQuestionBankService(pool);
   const result = await qb.recordAssessmentSubmission(schoolB, INSTANCE_B, {
-    examConfigurationId: 'exam-1',
+    examConfigurationId: EXAM_ID,
     studentIdentifier: 'STD-2026-001',
     scoreObtained: 5,
     maxScore: 10,

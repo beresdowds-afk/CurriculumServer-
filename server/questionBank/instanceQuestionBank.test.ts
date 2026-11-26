@@ -24,28 +24,80 @@ function createScopedPool() {
   const records: Array<Record<string, any>> = [];
   const queries: Array<{ sql: string; values?: unknown[] }> = [];
 
+  const instanceOwners = new Map<string, string>([
+    [instanceA, tenantA],
+    [instanceB, tenantB]
+  ]);
+  const auditEvents: Array<{ tenantId: string; actorSubject: string; action: string; details: unknown }> = [];
   const query = async <R extends QueryResultRow = QueryResultRow>(
     sql: string,
     values?: unknown[]
   ): Promise<QueryResult<R>> => {
     queries.push({ sql, values });
 
+    if (sql.includes('FROM production.application_instances')) {
+      const tenantId = String(values?.[0] || '');
+      const instanceId = String(values?.[1] || '');
+      const matches = instanceOwners.get(instanceId) === tenantId;
+      return {
+        rows: (matches ? [{ id: instanceId }] : []) as unknown as R[],
+        rowCount: matches ? 1 : 0,
+        command: 'SELECT',
+        oid: 0,
+        fields: []
+      };
+    }
+    if (sql.includes('INSERT INTO production.audit_events')) {
+      auditEvents.push({
+        tenantId: String(values?.[0] || ''),
+        actorSubject: String(values?.[1] || ''),
+        action: String(values?.[2] || ''),
+        details: JSON.parse(String(values?.[3] || '{}'))
+      });
+      return { rows: [], rowCount: 1, command: 'INSERT', oid: 0, fields: [] };
+    }
     if (sql.includes('INSERT INTO production.instance_question_categories')) {
+      const existingIdx = categories.findIndex(
+        c => c.tenant_id === values?.[0] && c.application_instance_id === values?.[1] && c.name === values?.[2]
+      );
+      if (existingIdx !== -1) {
+        categories[existingIdx].description = values?.[3];
+        categories[existingIdx].subject_reference_id = values?.[4] ?? categories[existingIdx].subject_reference_id;
+        categories[existingIdx].updated_at = new Date();
+        return { rows: [categories[existingIdx] as unknown as R], rowCount: 1, command: 'INSERT', oid: 0, fields: [] };
+      }
       const row = {
-        id: '33333333-3333-4333-8333-333333333331',
+        id: `33333333-3333-4333-8333-33333333333${categories.length + 1}`,
         tenant_id: values?.[0],
         application_instance_id: values?.[1],
         name: values?.[2],
         description: values?.[3],
         subject_reference_id: values?.[4],
         created_by: values?.[5],
-        created_at: new Date()
+        created_at: new Date(),
+        updated_at: new Date()
       };
       categories.push(row);
       return { rows: [row as unknown as R], rowCount: 1, command: 'INSERT', oid: 0, fields: [] };
     }
+    if (sql.includes('UPDATE production.instance_question_categories')) {
+      const idx = categories.findIndex(
+        c => c.tenant_id === values?.[0] && c.application_instance_id === values?.[1] && c.id === values?.[2]
+      );
+      if (idx === -1) return { rows: [], rowCount: 0, command: 'UPDATE', oid: 0, fields: [] };
+      if (values?.[3] !== null && values?.[3] !== undefined) categories[idx].name = values[3];
+      if (values?.[4] !== null && values?.[4] !== undefined) categories[idx].description = values[4];
+      if (values?.[5]) categories[idx].subject_reference_id = values[6];
+      categories[idx].updated_at = new Date();
+      return { rows: [categories[idx] as unknown as R], rowCount: 1, command: 'UPDATE', oid: 0, fields: [] };
+    }
     if (sql.includes('FROM production.instance_question_categories')) {
-      const filtered = categories.filter(c => c.tenant_id === values?.[0] && c.application_instance_id === values?.[1]);
+      const hasIdFilter = sql.includes('id = $3');
+      const filtered = categories.filter(c =>
+        c.tenant_id === values?.[0] &&
+        c.application_instance_id === values?.[1] &&
+        (!hasIdFilter || c.id === values?.[2])
+      );
       return { rows: filtered as unknown as R[], rowCount: filtered.length, command: 'SELECT', oid: 0, fields: [] };
     }
     if (sql.includes('INSERT INTO production.instance_question_bank_items')) {
@@ -78,6 +130,9 @@ function createScopedPool() {
         reviewer_id: null,
         approval_timestamp: null,
         exposure_count: 0,
+        archived_at: null,
+        archived_by: null,
+        archive_reason: null,
         metadata: JSON.parse(String(values?.[offset + 21] || '{}')),
         created_by: values?.[offset + 22],
         created_at: new Date(),
@@ -91,13 +146,59 @@ function createScopedPool() {
         q => q.tenant_id === values?.[0] && q.application_instance_id === values?.[1] && q.id === values?.[2]
       );
       if (idx === -1) return { rows: [], rowCount: 0, command: 'UPDATE', oid: 0, fields: [] };
-      questions[idx].review_status = values?.[3];
-      questions[idx].reviewer_id = values?.[4];
-      questions[idx].approval_timestamp = values?.[3] === 'approved' ? new Date() : null;
+      if (sql.includes("review_status = 'pending_review'")) {
+        questions[idx].review_status = 'pending_review';
+        questions[idx].approval_timestamp = null;
+      } else if (sql.includes('archived_at = now()')) {
+        questions[idx].archived_at = new Date();
+        questions[idx].archived_by = values?.[3];
+        questions[idx].archive_reason = values?.[4];
+      } else {
+        questions[idx].review_status = values?.[3];
+        questions[idx].reviewer_id = values?.[4];
+        questions[idx].approval_timestamp = values?.[3] === 'approved' ? new Date() : null;
+      }
+      questions[idx].updated_at = new Date();
       return { rows: [questions[idx] as unknown as R], rowCount: 1, command: 'UPDATE', oid: 0, fields: [] };
     }
+    if (sql.includes('DELETE FROM production.instance_question_bank_items')) {
+      const idx = questions.findIndex(
+        q => q.tenant_id === values?.[0] && q.application_instance_id === values?.[1] && q.id === values?.[2]
+      );
+      if (idx === -1) return { rows: [], rowCount: 0, command: 'DELETE', oid: 0, fields: [] };
+      questions.splice(idx, 1);
+      return { rows: [], rowCount: 1, command: 'DELETE', oid: 0, fields: [] };
+    }
+    if (sql.includes('AS referenced')) {
+      const tenantId = values?.[0];
+      const instanceId = values?.[1];
+      const questionId = String(values?.[2] || '');
+      const inExam = exams.some(
+        e => e.tenant_id === tenantId && e.application_instance_id === instanceId && (e.selected_question_ids || []).includes(questionId)
+      );
+      const inRecord = records.some(
+        r => r.tenant_id === tenantId && r.application_instance_id === instanceId && Object.prototype.hasOwnProperty.call(r.responses || {}, questionId)
+      );
+      return { rows: [{ referenced: inExam || inRecord } as unknown as R], rowCount: 1, command: 'SELECT', oid: 0, fields: [] };
+    }
     if (sql.includes('FROM production.instance_question_bank_items')) {
-      const filtered = questions.filter(q => q.tenant_id === values?.[0] && q.application_instance_id === values?.[1]);
+      if (sql.includes('id = ANY($3::uuid[])')) {
+        const ids = Array.isArray(values?.[2]) ? (values?.[2] as string[]) : [];
+        const filtered = questions.filter(
+          q => q.tenant_id === values?.[0] && q.application_instance_id === values?.[1] && ids.includes(q.id)
+        );
+        return { rows: filtered as unknown as R[], rowCount: filtered.length, command: 'SELECT', oid: 0, fields: [] };
+      }
+      if (sql.includes('id = $3')) {
+        const filtered = questions.filter(
+          q => q.tenant_id === values?.[0] && q.application_instance_id === values?.[1] && q.id === values?.[2]
+        );
+        return { rows: filtered as unknown as R[], rowCount: filtered.length, command: 'SELECT', oid: 0, fields: [] };
+      }
+      const includeArchived = !sql.includes('archived_at IS NULL');
+      const filtered = questions.filter(
+        q => q.tenant_id === values?.[0] && q.application_instance_id === values?.[1] && (includeArchived || !q.archived_at)
+      );
       return { rows: filtered as unknown as R[], rowCount: filtered.length, command: 'SELECT', oid: 0, fields: [] };
     }
     if (sql.includes('INSERT INTO production.instance_assessment_blueprints')) {
@@ -126,6 +227,13 @@ function createScopedPool() {
       };
       blueprints.push(row);
       return { rows: [row as unknown as R], rowCount: 1, command: 'INSERT', oid: 0, fields: [] };
+    }
+    if (sql.includes('FROM production.instance_assessment_blueprints')) {
+      const hasIdFilter = sql.includes('id = $3');
+      const filtered = blueprints.filter(
+        b => b.tenant_id === values?.[0] && b.application_instance_id === values?.[1] && (!hasIdFilter || b.id === values?.[2])
+      );
+      return { rows: filtered as unknown as R[], rowCount: filtered.length, command: 'SELECT', oid: 0, fields: [] };
     }
     if (sql.includes('INSERT INTO production.instance_exam_configurations')) {
       const row = {
@@ -156,6 +264,13 @@ function createScopedPool() {
       };
       exams.push(row);
       return { rows: [row as unknown as R], rowCount: 1, command: 'INSERT', oid: 0, fields: [] };
+    }
+    if (sql.includes('FROM production.instance_exam_configurations')) {
+      const hasIdFilter = sql.includes('id = $3');
+      const filtered = exams.filter(
+        e => e.tenant_id === values?.[0] && e.application_instance_id === values?.[1] && (!hasIdFilter || e.id === values?.[2])
+      );
+      return { rows: filtered as unknown as R[], rowCount: filtered.length, command: 'SELECT', oid: 0, fields: [] };
     }
     if (sql.includes('INSERT INTO production.instance_assessment_records')) {
       const row = {
@@ -190,7 +305,7 @@ function createScopedPool() {
     async end() {},
     on() { return this; }
   };
-  return { pool, queries };
+  return { pool, queries, auditEvents };
 }
 
 test('InstanceQuestionBankService isolates questions, categories, blueprints, exams, and assessments strictly per school instance', async () => {
@@ -357,9 +472,19 @@ test('Architectural separation: combined textbookQuestionBankService is deleted 
   // Central Textbook services must never run direct SQL against curriculum_topics or curriculum_learning_objectives
   assert.doesNotMatch(tbCovSrc + tbGenSrc + tbGeminiSrc + tbValSrc, /FROM\s+production\.curriculum_|JOIN\s+production\.curriculum_|FROM\s+central_curriculum\./i);
 
-  // Writes remain unavailable until they require authorized principals and item scopes.
+  // Question Bank reads & scoped writes are ready; CBT execution, exam vaults, marking, results publication, and adaptive remedial remain blocked.
   assert.equal(evaluateProductionCapabilityGate('GET', '/question-bank').allowed, true);
-  assert.equal(evaluateProductionCapabilityGate('POST', '/assessment-blueprints').allowed, false);
-  assert.equal(evaluateProductionCapabilityGate('POST', '/assessments/exams').allowed, false);
-  assert.equal(evaluateProductionCapabilityGate('POST', '/assessments/records').allowed, false);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/question-bank').allowed, true);
+  assert.equal(evaluateProductionCapabilityGate('PATCH', '/question-bank/categories/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8').allowed, true);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/question-bank/items/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/review').allowed, true);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/question-bank/items/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/archive').allowed, true);
+  assert.equal(evaluateProductionCapabilityGate('DELETE', '/question-bank/items/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8').allowed, true);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/assessment-blueprints').allowed, true);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/assessments/exams').allowed, true);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/assessments/records').allowed, true);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/assessments/cbt/sessions').allowed, false);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/assessments/vault/seal').allowed, false);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/assessments/marking/scripts').allowed, false);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/assessments/results/publish').allowed, false);
+  assert.equal(evaluateProductionCapabilityGate('POST', '/assessments/remedial/plans').allowed, false);
 });

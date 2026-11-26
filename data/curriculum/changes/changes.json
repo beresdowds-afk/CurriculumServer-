@@ -29,7 +29,7 @@
     "confidence": 1,
     "humanReviewStatus": "APPROVED",
     "reviewedBy": "Dr. Folashade Adeyemi (editorial_director)",
-    "reviewedAt": "2026-11-24T11:53:36.645Z",
+    "reviewedAt": "2026-11-26T09:50:58.591Z",
     "reviewNotes": "Approved after WAEC Subject Panel alignment review."
   },
   {
@@ -3990,6 +3990,490 @@
     "humanReviewStatus": "APPROVED",
     "reviewedBy": "Alhaji Musa Garba (editorial_director)",
     "reviewedAt": "2026-11-24T11:53:36.673Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795598762900_add_5uv5",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "ADDED_TOPIC",
+    "itemPath": "topics[top-mth-ss2-03]",
+    "itemTitle": "Spherical Trigonometry and GPS Coordinate Navigation",
+    "previousValue": null,
+    "newValue": {
+      "title": "Spherical Trigonometry and GPS Coordinate Navigation",
+      "subTopics": [
+        "Great circle distances",
+        "Nautical miles",
+        "GPS latitude and longitude calculations"
+      ],
+      "objectives": [
+        "Calculate shortest nautical distance between two Nigerian airport coordinates"
+      ]
+    },
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795598762887_oglbm",
+      "sectionReference": "NERDC Gazette 2026 Chapter 4 p.35"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-25T09:26:02.900Z",
+    "confidence": 1,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-25T09:26:02.918Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795598762900_rem_q1gp",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "REMOVED_TOPIC",
+    "itemPath": "topics[top-mth-ss2-02]",
+    "itemTitle": "Plane Geometry & Bearings",
+    "previousValue": {
+      "title": "Plane Geometry & Bearings",
+      "subTopics": [
+        "2D Compass Bearings",
+        "Angles of Elevation"
+      ],
+      "objectives": [
+        "Solve 2D triangle bearing problems using sine and cosine rules"
+      ]
+    },
+    "newValue": null,
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795598762887_oglbm",
+      "sectionReference": "Omitted from updated syllabus publication"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-25T09:26:02.900Z",
+    "confidence": 1,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-25T09:26:02.922Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795598762900_obj_dzq5",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "MODIFIED_OBJECTIVE",
+    "itemPath": "topics[top-mth-ss2-01].performanceObjectives",
+    "itemTitle": "Logarithms and Indices",
+    "previousValue": {
+      "removedObjectives": []
+    },
+    "newValue": {
+      "addedObjectives": [
+        "Calculate compound depreciation using natural logarithms"
+      ]
+    },
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795598762887_oglbm",
+      "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-25T09:26:02.900Z",
+    "confidence": 0.95,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-25T09:26:02.926Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795598762900_eval_ro28",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "EVALUATION_GUIDANCE_CHANGED",
+    "itemPath": "topics[top-mth-ss2-01].evaluationGuidance",
+    "itemTitle": "Logarithms and Indices",
+    "previousValue": [
+      "Administer 5 objective problems on logarithm rules"
+    ],
+    "newValue": [
+      "Administer 5 objective problems on logarithm rules and 1 theory problem"
+    ],
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795598762887_oglbm",
+      "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-25T09:26:02.900Z",
+    "confidence": 0.98,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-25T09:26:02.930Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795601081791_add_bze9",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "ADDED_TOPIC",
+    "itemPath": "topics[top-mth-ss2-03]",
+    "itemTitle": "Spherical Trigonometry and GPS Coordinate Navigation",
+    "previousValue": null,
+    "newValue": {
+      "title": "Spherical Trigonometry and GPS Coordinate Navigation",
+      "subTopics": [
+        "Great circle distances",
+        "Nautical miles",
+        "GPS latitude and longitude calculations"
+      ],
+      "objectives": [
+        "Calculate shortest nautical distance between two Nigerian airport coordinates"
+      ]
+    },
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795601081779_jxmbt",
+      "sectionReference": "NERDC Gazette 2026 Chapter 4 p.35"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-25T10:04:41.791Z",
+    "confidence": 1,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-25T10:04:41.813Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795601081791_rem_idbv",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "REMOVED_TOPIC",
+    "itemPath": "topics[top-mth-ss2-02]",
+    "itemTitle": "Plane Geometry & Bearings",
+    "previousValue": {
+      "title": "Plane Geometry & Bearings",
+      "subTopics": [
+        "2D Compass Bearings",
+        "Angles of Elevation"
+      ],
+      "objectives": [
+        "Solve 2D triangle bearing problems using sine and cosine rules"
+      ]
+    },
+    "newValue": null,
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795601081779_jxmbt",
+      "sectionReference": "Omitted from updated syllabus publication"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-25T10:04:41.791Z",
+    "confidence": 1,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-25T10:04:41.818Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795601081791_obj_jq86",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "MODIFIED_OBJECTIVE",
+    "itemPath": "topics[top-mth-ss2-01].performanceObjectives",
+    "itemTitle": "Logarithms and Indices",
+    "previousValue": {
+      "removedObjectives": []
+    },
+    "newValue": {
+      "addedObjectives": [
+        "Calculate compound depreciation using natural logarithms"
+      ]
+    },
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795601081779_jxmbt",
+      "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-25T10:04:41.791Z",
+    "confidence": 0.95,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-25T10:04:41.881Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795601081791_eval_smk7",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "EVALUATION_GUIDANCE_CHANGED",
+    "itemPath": "topics[top-mth-ss2-01].evaluationGuidance",
+    "itemTitle": "Logarithms and Indices",
+    "previousValue": [
+      "Administer 5 objective problems on logarithm rules"
+    ],
+    "newValue": [
+      "Administer 5 objective problems on logarithm rules and 1 theory problem"
+    ],
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795601081779_jxmbt",
+      "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-25T10:04:41.791Z",
+    "confidence": 0.98,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-25T10:04:41.891Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795601205189_add_3mzg",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "ADDED_TOPIC",
+    "itemPath": "topics[top-mth-ss2-03]",
+    "itemTitle": "Spherical Trigonometry and GPS Coordinate Navigation",
+    "previousValue": null,
+    "newValue": {
+      "title": "Spherical Trigonometry and GPS Coordinate Navigation",
+      "subTopics": [
+        "Great circle distances",
+        "Nautical miles",
+        "GPS latitude and longitude calculations"
+      ],
+      "objectives": [
+        "Calculate shortest nautical distance between two Nigerian airport coordinates"
+      ]
+    },
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795601205170_srauo",
+      "sectionReference": "NERDC Gazette 2026 Chapter 4 p.35"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-25T10:06:45.189Z",
+    "confidence": 1,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-25T10:06:45.208Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795601205189_rem_c0q7",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "REMOVED_TOPIC",
+    "itemPath": "topics[top-mth-ss2-02]",
+    "itemTitle": "Plane Geometry & Bearings",
+    "previousValue": {
+      "title": "Plane Geometry & Bearings",
+      "subTopics": [
+        "2D Compass Bearings",
+        "Angles of Elevation"
+      ],
+      "objectives": [
+        "Solve 2D triangle bearing problems using sine and cosine rules"
+      ]
+    },
+    "newValue": null,
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795601205170_srauo",
+      "sectionReference": "Omitted from updated syllabus publication"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-25T10:06:45.189Z",
+    "confidence": 1,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-25T10:06:45.212Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795601205189_obj_f6pu",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "MODIFIED_OBJECTIVE",
+    "itemPath": "topics[top-mth-ss2-01].performanceObjectives",
+    "itemTitle": "Logarithms and Indices",
+    "previousValue": {
+      "removedObjectives": []
+    },
+    "newValue": {
+      "addedObjectives": [
+        "Calculate compound depreciation using natural logarithms"
+      ]
+    },
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795601205170_srauo",
+      "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-25T10:06:45.189Z",
+    "confidence": 0.95,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-25T10:06:45.216Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795601205189_eval_3wl3",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "EVALUATION_GUIDANCE_CHANGED",
+    "itemPath": "topics[top-mth-ss2-01].evaluationGuidance",
+    "itemTitle": "Logarithms and Indices",
+    "previousValue": [
+      "Administer 5 objective problems on logarithm rules"
+    ],
+    "newValue": [
+      "Administer 5 objective problems on logarithm rules and 1 theory problem"
+    ],
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795601205170_srauo",
+      "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-25T10:06:45.189Z",
+    "confidence": 0.98,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-25T10:06:45.223Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795686658588_add_2e4u",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "ADDED_TOPIC",
+    "itemPath": "topics[top-mth-ss2-03]",
+    "itemTitle": "Spherical Trigonometry and GPS Coordinate Navigation",
+    "previousValue": null,
+    "newValue": {
+      "title": "Spherical Trigonometry and GPS Coordinate Navigation",
+      "subTopics": [
+        "Great circle distances",
+        "Nautical miles",
+        "GPS latitude and longitude calculations"
+      ],
+      "objectives": [
+        "Calculate shortest nautical distance between two Nigerian airport coordinates"
+      ]
+    },
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795686658545_t1wkz",
+      "sectionReference": "NERDC Gazette 2026 Chapter 4 p.35"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-26T09:50:58.588Z",
+    "confidence": 1,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-26T09:50:58.620Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795686658588_rem_iq5o",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "REMOVED_TOPIC",
+    "itemPath": "topics[top-mth-ss2-02]",
+    "itemTitle": "Plane Geometry & Bearings",
+    "previousValue": {
+      "title": "Plane Geometry & Bearings",
+      "subTopics": [
+        "2D Compass Bearings",
+        "Angles of Elevation"
+      ],
+      "objectives": [
+        "Solve 2D triangle bearing problems using sine and cosine rules"
+      ]
+    },
+    "newValue": null,
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795686658545_t1wkz",
+      "sectionReference": "Omitted from updated syllabus publication"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-26T09:50:58.588Z",
+    "confidence": 1,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-26T09:50:58.625Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795686658589_obj_25le",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "MODIFIED_OBJECTIVE",
+    "itemPath": "topics[top-mth-ss2-01].performanceObjectives",
+    "itemTitle": "Logarithms and Indices",
+    "previousValue": {
+      "removedObjectives": []
+    },
+    "newValue": {
+      "addedObjectives": [
+        "Calculate compound depreciation using natural logarithms"
+      ]
+    },
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795686658545_t1wkz",
+      "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-26T09:50:58.588Z",
+    "confidence": 0.95,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-26T09:50:58.630Z",
+    "reviewNotes": "Batch approval for 2026 academic release."
+  },
+  {
+    "changeId": "chg_1795686658589_eval_vnap",
+    "subjectId": "sss-mth",
+    "subjectName": "General Mathematics",
+    "classGrade": "SS 2",
+    "category": "EVALUATION_GUIDANCE_CHANGED",
+    "itemPath": "topics[top-mth-ss2-01].evaluationGuidance",
+    "itemTitle": "Logarithms and Indices",
+    "previousValue": [
+      "Administer 5 objective problems on logarithm rules"
+    ],
+    "newValue": [
+      "Administer 5 objective problems on logarithm rules and 1 theory problem"
+    ],
+    "sourceEvidence": {
+      "documentId": "doc_evid_1795686658545_t1wkz",
+      "sectionReference": "NERDC Gazette 2026 Chapter 2 p.16"
+    },
+    "sourceVersion": "NERDC-2026-V1.0",
+    "previousVersion": "NERDC-2024-V1.0",
+    "detectedAt": "2026-11-26T09:50:58.588Z",
+    "confidence": 0.98,
+    "humanReviewStatus": "APPROVED",
+    "reviewedBy": "Alhaji Musa Garba (editorial_director)",
+    "reviewedAt": "2026-11-26T09:50:58.634Z",
     "reviewNotes": "Batch approval for 2026 academic release."
   }
 ]

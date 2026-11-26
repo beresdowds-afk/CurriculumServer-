@@ -1,3 +1,4 @@
+import type { AuthorizedPrincipal } from '../authorization/authorizedPrincipal';
 import type { DatabasePool } from '../db/postgres';
 import type { VerifiedTenantPrincipal } from '../db/tenantContext';
 import { InstanceQuestionBankRepository } from './instanceQuestionBankRepository';
@@ -7,6 +8,7 @@ import type {
   InstanceExamConfiguration,
   InstanceQuestionCategory,
   InstanceQuestionItem,
+  QuestionDeleteOrArchiveResult,
   QuestionReviewStatus
 } from './instanceQuestionBankTypes';
 
@@ -29,9 +31,20 @@ export class InstanceQuestionBankService {
   createCategory(
     tenant: VerifiedTenantPrincipal,
     applicationInstanceId: string,
-    input: { name: string; description?: string; subjectReferenceId?: string }
+    input: { name: string; description?: string; subjectReferenceId?: string },
+    actorPrincipal?: AuthorizedPrincipal
   ): Promise<InstanceQuestionCategory> {
-    return this.repository.createCategory(tenant, applicationInstanceId, input);
+    return this.repository.createCategory(tenant, applicationInstanceId, input, actorPrincipal);
+  }
+
+  updateCategory(
+    tenant: VerifiedTenantPrincipal,
+    applicationInstanceId: string,
+    categoryId: string,
+    input: { name?: string; description?: string; subjectReferenceId?: string | null },
+    actorPrincipal?: AuthorizedPrincipal
+  ): Promise<InstanceQuestionCategory> {
+    return this.repository.updateCategory(tenant, applicationInstanceId, categoryId, input, actorPrincipal);
   }
 
   listQuestions(
@@ -44,6 +57,7 @@ export class InstanceQuestionBankService {
       reviewStatus?: string;
       difficulty?: string;
       categoryId?: string;
+      includeArchived?: boolean;
     }
   ): Promise<InstanceQuestionItem[]> {
     return this.repository.listQuestions(tenant, applicationInstanceId, filter);
@@ -52,26 +66,59 @@ export class InstanceQuestionBankService {
   createQuestion(
     tenant: VerifiedTenantPrincipal,
     applicationInstanceId: string,
-    input: Parameters<InstanceQuestionBankRepository['createQuestion']>[2]
+    input: Parameters<InstanceQuestionBankRepository['createQuestion']>[2],
+    actorPrincipal?: AuthorizedPrincipal
   ): Promise<InstanceQuestionItem> {
-    return this.repository.createQuestion(tenant, applicationInstanceId, input);
+    return this.repository.createQuestion(tenant, applicationInstanceId, input, actorPrincipal);
+  }
+
+  submitQuestionForReview(
+    tenant: VerifiedTenantPrincipal,
+    applicationInstanceId: string,
+    questionId: string,
+    actorPrincipal?: AuthorizedPrincipal
+  ): Promise<InstanceQuestionItem> {
+    return this.repository.submitQuestionForReview(tenant, applicationInstanceId, questionId, actorPrincipal);
   }
 
   reviewQuestion(
     tenant: VerifiedTenantPrincipal,
     applicationInstanceId: string,
     questionId: string,
-    reviewStatus: QuestionReviewStatus
+    reviewStatus: QuestionReviewStatus,
+    actorPrincipal?: AuthorizedPrincipal,
+    reason?: string
   ): Promise<InstanceQuestionItem> {
-    return this.repository.reviewQuestion(tenant, applicationInstanceId, questionId, reviewStatus);
+    return this.repository.reviewQuestion(tenant, applicationInstanceId, questionId, reviewStatus, actorPrincipal, reason);
+  }
+
+  archiveQuestion(
+    tenant: VerifiedTenantPrincipal,
+    applicationInstanceId: string,
+    questionId: string,
+    reason?: string,
+    actorPrincipal?: AuthorizedPrincipal
+  ): Promise<InstanceQuestionItem> {
+    return this.repository.archiveQuestion(tenant, applicationInstanceId, questionId, reason, actorPrincipal);
+  }
+
+  deleteOrArchiveQuestion(
+    tenant: VerifiedTenantPrincipal,
+    applicationInstanceId: string,
+    questionId: string,
+    actorPrincipal?: AuthorizedPrincipal,
+    reason?: string
+  ): Promise<QuestionDeleteOrArchiveResult> {
+    return this.repository.deleteOrArchiveQuestion(tenant, applicationInstanceId, questionId, actorPrincipal, reason);
   }
 
   deleteQuestion(
     tenant: VerifiedTenantPrincipal,
     applicationInstanceId: string,
-    questionId: string
+    questionId: string,
+    actorPrincipal?: AuthorizedPrincipal
   ): Promise<boolean> {
-    return this.repository.deleteQuestion(tenant, applicationInstanceId, questionId);
+    return this.repository.deleteQuestion(tenant, applicationInstanceId, questionId, actorPrincipal);
   }
 
   listBlueprints(tenant: VerifiedTenantPrincipal, applicationInstanceId: string): Promise<InstanceAssessmentBlueprint[]> {
@@ -81,9 +128,10 @@ export class InstanceQuestionBankService {
   createBlueprint(
     tenant: VerifiedTenantPrincipal,
     applicationInstanceId: string,
-    input: Parameters<InstanceQuestionBankRepository['createBlueprint']>[2]
+    input: Parameters<InstanceQuestionBankRepository['createBlueprint']>[2],
+    actorPrincipal?: AuthorizedPrincipal
   ): Promise<InstanceAssessmentBlueprint> {
-    return this.repository.createBlueprint(tenant, applicationInstanceId, input);
+    return this.repository.createBlueprint(tenant, applicationInstanceId, input, actorPrincipal);
   }
 
   listExamConfigurations(
@@ -96,17 +144,19 @@ export class InstanceQuestionBankService {
   createExamConfiguration(
     tenant: VerifiedTenantPrincipal,
     applicationInstanceId: string,
-    input: Parameters<InstanceQuestionBankRepository['createExamConfiguration']>[2]
+    input: Parameters<InstanceQuestionBankRepository['createExamConfiguration']>[2],
+    actorPrincipal?: AuthorizedPrincipal
   ): Promise<InstanceExamConfiguration> {
-    return this.repository.createExamConfiguration(tenant, applicationInstanceId, input);
+    return this.repository.createExamConfiguration(tenant, applicationInstanceId, input, actorPrincipal);
   }
 
   recordAssessmentSubmission(
     tenant: VerifiedTenantPrincipal,
     applicationInstanceId: string,
-    input: Parameters<InstanceQuestionBankRepository['recordAssessmentSubmission']>[2]
+    input: Parameters<InstanceQuestionBankRepository['recordAssessmentSubmission']>[2],
+    actorPrincipal?: AuthorizedPrincipal
   ): Promise<InstanceAssessmentRecord> {
-    return this.repository.recordAssessmentSubmission(tenant, applicationInstanceId, input);
+    return this.repository.recordAssessmentSubmission(tenant, applicationInstanceId, input, actorPrincipal);
   }
 
   listAssessmentRecords(
@@ -119,7 +169,8 @@ export class InstanceQuestionBankService {
 
   async seedStarterPastQuestions(
     tenant: VerifiedTenantPrincipal,
-    applicationInstanceId: string
+    applicationInstanceId: string,
+    actorPrincipal?: AuthorizedPrincipal
   ): Promise<InstanceQuestionItem[]> {
     const items = await Promise.all([
       this.repository.createQuestion(tenant, applicationInstanceId, {
@@ -145,7 +196,7 @@ export class InstanceQuestionBankService {
         sourceReference: 'WAEC May/June 2023 General Mathematics Paper 1, Question 14',
         creationMethod: 'imported',
         reviewStatus: 'pending_review'
-      }),
+      }, actorPrincipal),
       this.repository.createQuestion(tenant, applicationInstanceId, {
         subjectReferenceId: 'sub-chem',
         classGradeName: 'SS 2',
@@ -176,7 +227,8 @@ export class InstanceQuestionBankService {
 
   async seedStarterTheoryQuestions(
     tenant: VerifiedTenantPrincipal,
-    applicationInstanceId: string
+    applicationInstanceId: string,
+    actorPrincipal?: AuthorizedPrincipal
   ): Promise<InstanceQuestionItem[]> {
     return Promise.all([
       this.repository.createQuestion(tenant, applicationInstanceId, {
@@ -201,13 +253,14 @@ export class InstanceQuestionBankService {
         sourceReference: 'WAEC May/June 2023 General Mathematics Paper 2, Question 5',
         creationMethod: 'imported',
         reviewStatus: 'pending_review'
-      })
+      }, actorPrincipal)
     ]);
   }
 
   async seedStarterPracticalQuestions(
     tenant: VerifiedTenantPrincipal,
-    applicationInstanceId: string
+    applicationInstanceId: string,
+    actorPrincipal?: AuthorizedPrincipal
   ): Promise<InstanceQuestionItem[]> {
     return Promise.all([
       this.repository.createQuestion(tenant, applicationInstanceId, {
@@ -231,7 +284,7 @@ export class InstanceQuestionBankService {
         sourceReference: 'WAEC May/June 2023 Chemistry Practical Alternative B',
         creationMethod: 'imported',
         reviewStatus: 'pending_review'
-      })
+      }, actorPrincipal)
     ]);
   }
 }

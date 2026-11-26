@@ -1,7 +1,9 @@
-import { createHash, createHmac, randomBytes, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import type { AuthorizedPrincipal } from '../authorization/authorizedPrincipal';
 import type { DatabaseClient, DatabasePool } from '../db/postgres';
 import { withTenantTransaction } from '../db/tenantContext';
+import { validateNotificationRequest } from '../notifications/providers';
+import { ServerSecretVault } from '../storageAndDatabaseManager';
 
 const MAX_PIN_FAILURES = 5;
 const PIN_LOCKOUT_MINUTES = 15;
@@ -559,6 +561,18 @@ export class LogisticsRepository {
         await this.audit(client, actor, schoolId, `exeat_${input.direction}_recorded`, 'exeat', exeatId, {
           movementId: movement.rows[0].id, gateLocationId
         });
+        await this.dispatchGuardianAlerts(client, {
+          tenantId: actor.tenantId,
+          schoolId,
+          eventType: input.direction === 'departure' ? 'exeat_departed' : 'exeat_returned',
+          entityType: 'exeat',
+          entityId: exeatId,
+          studentId: row.student_id,
+          subject: input.direction === 'departure' ? 'Exeat Departure Recorded' : 'Exeat Return Recorded',
+          message: input.direction === 'departure'
+            ? 'Your ward has checked out at the school gate under an authorized exeat.'
+            : 'Your ward has safely returned and checked in at the school gate.'
+        });
         return { movementId: movement.rows[0].id, status: nextStatus, occurredAt: movement.rows[0].occurred_at };
       }
     );
@@ -857,6 +871,18 @@ export class LogisticsRepository {
         );
         await this.audit(client, actor, schoolId, `trip_passenger_${input.eventType}`, 'trip', tripId, {
           studentId, eventId: event.rows[0].id
+        });
+        await this.dispatchGuardianAlerts(client, {
+          tenantId: actor.tenantId,
+          schoolId,
+          eventType: input.eventType === 'boarded' ? 'transport_boarded' : 'transport_dropped_off',
+          entityType: 'trip',
+          entityId: tripId,
+          studentId,
+          subject: input.eventType === 'boarded' ? 'School Bus Boarding Recorded' : 'School Bus Drop-Off Recorded',
+          message: input.eventType === 'boarded'
+            ? 'Your ward has boarded their scheduled school transport trip.'
+            : 'Your ward has alighted from their scheduled school transport trip.'
         });
         return { eventId: event.rows[0].id, occurredAt: event.rows[0].occurred_at, replayed: false };
       }
@@ -1384,6 +1410,20 @@ export class LogisticsRepository {
         await this.audit(client, actor, schoolId, `exeat_${input.decision}`, 'exeat', exeatId, {
           stage, rationale, nextStatus
         });
+        if (nextStatus === 'approved' || nextStatus === 'rejected') {
+          await this.dispatchGuardianAlerts(client, {
+            tenantId: actor.tenantId,
+            schoolId,
+            eventType: nextStatus === 'approved' ? 'exeat_approved' : 'exeat_rejected',
+            entityType: 'exeat',
+            entityId: exeatId,
+            studentId: exeat.student_id,
+            subject: nextStatus === 'approved' ? 'Exeat Request Approved' : 'Exeat Request Rejected',
+            message: nextStatus === 'approved'
+              ? 'An exeat request for your ward has been approved and awaits departure authorization.'
+              : 'An exeat request for your ward was not approved.'
+          });
+        }
         return { id: exeatId, status: nextStatus };
       }
     );
@@ -1838,6 +1878,17 @@ export class LogisticsRepository {
           pass.id, actor.userId, input.direction, idempotencyKey, requestFingerprint]
       );
       await this.audit(client, actor, schoolId, 'gate_scan_authorized', 'gate_event', result.rows[0].id);
+      await this.dispatchGuardianAlerts(client, {
+        tenantId: actor.tenantId,
+        schoolId,
+        eventType: 'pickup_authorized',
+        entityType: 'gate_event',
+        entityId: result.rows[0].id,
+        studentId: pass.student_id,
+        guardianId: pass.guardian_id,
+        subject: 'Authorized Student Pickup Recorded',
+        message: 'A verified guardian pickup pass was authorized at the school gate.'
+      });
       return {
         eventId: result.rows[0].id,
         authorized: true,
@@ -1882,6 +1933,19 @@ export class LogisticsRepository {
       return previous.rows[0];
     }
     await this.audit(client, actor, schoolId, 'gate_scan_denied', 'gate_event', result.rows[0].id, { reason });
+    if (studentId) {
+      await this.dispatchGuardianAlerts(client, {
+        tenantId: actor.tenantId,
+        schoolId,
+        eventType: 'pickup_denied',
+        entityType: 'gate_event',
+        entityId: result.rows[0].id,
+        studentId,
+        guardianId,
+        subject: 'School Gate Pickup Attempt Denied',
+        message: 'A gate pickup pass check was denied at the school gate. Please contact school security if unexpected.'
+      });
+    }
     return {
       eventId: result.rows[0].id,
       authorized: false,
@@ -1906,7 +1970,7 @@ export class LogisticsRepository {
     }
     const gateLocationId = input.gateLocationId === undefined ? null : validateUuid(input.gateLocationId);
     return this.inSchool(
-      actor, 'gate_security', ['logistics.gate.manage'],
+      actor, 'gate_security', ['logistics.gate.read', 'logistics.gate.manage'],
       async (client, schoolId) => {
         const values = [actor.tenantId, schoolId, input.direction ?? null, input.outcome ?? null, gateLocationId];
         const where = `WHERE gate_event.tenant_id = $1 AND gate_event.school_id = $2
@@ -2770,8 +2834,1021 @@ export class LogisticsRepository {
            VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
           [actor.tenantId, schoolId, trip, student, input.type, description, actor.userId]);
         await this.audit(client, actor, schoolId, 'transport_incident_recorded', 'transport_incident', result.rows[0].id, { tripId: trip, studentId: student, type: input.type });
+        if (student) {
+          await this.dispatchGuardianAlerts(client, {
+            tenantId: actor.tenantId,
+            schoolId,
+            eventType: 'transport_incident',
+            entityType: 'transport_incident',
+            entityId: result.rows[0].id,
+            studentId: student,
+            subject: input.type === 'missed_pickup' ? 'Missed School Bus Pickup Notice' : 'School Transport Incident Notice',
+            message: input.type === 'missed_pickup'
+              ? 'Your ward was marked as a missed pickup on the scheduled school transport trip.'
+              : 'A school transport incident notice was recorded involving your ward.'
+          });
+        }
         return result.rows[0];
       });
+  }
+
+  async listGuardians(actor: AuthorizedPrincipal, input: {
+    verificationStatus?: 'pending' | 'verified' | 'rejected' | 'suspended';
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ page: number; pageSize: number; total: number; data: Record<string, unknown>[] }> {
+    const pagination = parsePage(input.page, input.pageSize);
+    const status = input.verificationStatus ?? null;
+    if (status && !['pending', 'verified', 'rejected', 'suspended'].includes(status)) {
+      throw new LogisticsError('INVALID_INPUT', 'Invalid guardian verification status filter.');
+    }
+    return this.inSchool(
+      actor,
+      'guardian_pickup',
+      ['logistics.guardians.manage', 'logistics.gate.read', 'logistics.gate.manage'],
+      async (client, schoolId) => {
+        const countRes = await client.query<{ total: string }>(
+          `SELECT count(*)::text AS total
+           FROM production.logistics_guardians
+           WHERE tenant_id = $1 AND school_id = $2
+             AND ($3::text IS NULL OR verification_status = $3)`,
+          [actor.tenantId, schoolId, status]
+        );
+        const rows = await client.query<Record<string, unknown>>(
+          `SELECT g.id, g.user_id AS "userId", g.full_name AS "fullName",
+                  g.phone, g.verification_status AS "verificationStatus",
+                  g.verified_at AS "verifiedAt", g.created_at AS "createdAt",
+                  coalesce(
+                    (SELECT jsonb_agg(jsonb_build_object(
+                      'relationshipId', rel.id,
+                      'studentId', rel.student_id,
+                      'relationship', rel.relationship,
+                      'status', rel.status,
+                      'verifiedAt', rel.verified_at
+                    ) ORDER BY rel.starts_at DESC)
+                    FROM production.logistics_guardian_students rel
+                    WHERE rel.tenant_id = g.tenant_id AND rel.school_id = g.school_id AND rel.guardian_id = g.id),
+                    '[]'::jsonb
+                  ) AS students
+           FROM production.logistics_guardians g
+           WHERE g.tenant_id = $1 AND g.school_id = $2
+             AND ($3::text IS NULL OR g.verification_status = $3)
+           ORDER BY g.created_at DESC, g.id
+           LIMIT $4 OFFSET $5`,
+          [actor.tenantId, schoolId, status, pagination.pageSize, pagination.offset]
+        );
+        return {
+          page: pagination.page,
+          pageSize: pagination.pageSize,
+          total: Number(countRes.rows[0]?.total || 0),
+          data: rows.rows
+        };
+      }
+    );
+  }
+
+  async createGuardian(actor: AuthorizedPrincipal, input: {
+    fullName: string;
+    phone: string;
+    userId?: string;
+    identityReference?: string;
+    idempotencyKey: string;
+  }) {
+    const fullName = requiredText(input.fullName, 'fullName', 160);
+    const phone = requiredText(input.phone, 'phone', 40);
+    const userId = input.userId ? validateUuid(input.userId) : null;
+    const identityHash = input.identityReference?.trim()
+      ? hashToken(input.identityReference.trim())
+      : null;
+    return this.workflow(
+      actor,
+      'guardian_pickup',
+      'logistics.guardians.manage',
+      'create_guardian',
+      input.idempotencyKey,
+      [fullName, phone, userId],
+      async (client, schoolId) => {
+        if (userId) {
+          const member = await client.query(
+            `SELECT 1 FROM production.memberships WHERE tenant_id = $1 AND user_id = $2 AND status = 'active'`,
+            [actor.tenantId, userId]
+          );
+          if (!member.rowCount) throw new LogisticsError('NOT_FOUND', 'Active guardian membership not found.');
+        }
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_guardians
+             (tenant_id, school_id, user_id, full_name, phone, identity_reference_hash, verification_status)
+           VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+           RETURNING id`,
+          [actor.tenantId, schoolId, userId, fullName, phone, identityHash]
+        );
+        await this.audit(client, actor, schoolId, 'guardian_registered', 'guardian', inserted.rows[0].id, {
+          hasLinkedUser: Boolean(userId)
+        });
+        return inserted.rows[0];
+      }
+    );
+  }
+
+  async verifyGuardian(actor: AuthorizedPrincipal, input: {
+    guardianId: string;
+    status: 'verified' | 'rejected' | 'suspended';
+  }): Promise<{ id: string; verificationStatus: string }> {
+    const guardianId = validateUuid(input.guardianId);
+    if (!['verified', 'rejected', 'suspended'].includes(input.status)) {
+      throw new LogisticsError('INVALID_INPUT', 'Verification status must be verified, rejected, or suspended.');
+    }
+    return this.inSchool(actor, 'guardian_pickup', ['logistics.guardians.manage'], async (client, schoolId) => {
+      const updated = await client.query<{ id: string; verification_status: string }>(
+        `UPDATE production.logistics_guardians
+         SET verification_status = $4,
+             verified_at = CASE WHEN $4 = 'verified' THEN coalesce(verified_at, now()) ELSE verified_at END,
+             verified_by = CASE WHEN $4 = 'verified' THEN $5 ELSE verified_by END
+         WHERE tenant_id = $1 AND school_id = $2 AND id = $3
+         RETURNING id, verification_status`,
+        [actor.tenantId, schoolId, guardianId, input.status, actor.userId]
+      );
+      if (!updated.rowCount) throw new LogisticsError('NOT_FOUND', 'Guardian record not found.');
+      await this.audit(client, actor, schoolId, `guardian_${input.status}`, 'guardian', guardianId);
+      return { id: updated.rows[0].id, verificationStatus: updated.rows[0].verification_status };
+    });
+  }
+
+  async linkGuardianStudent(actor: AuthorizedPrincipal, input: {
+    guardianId: string;
+    studentId: string;
+    relationship: string;
+    startsAt?: string;
+    endsAt?: string;
+    idempotencyKey: string;
+  }) {
+    const guardianId = validateUuid(input.guardianId);
+    const studentId = validateUuid(input.studentId);
+    const relationship = requiredText(input.relationship, 'relationship', 80);
+    const startsAt = input.startsAt ? parseDate(input.startsAt, 'startsAt') : new Date();
+    const endsAt = input.endsAt ? parseDate(input.endsAt, 'endsAt') : null;
+    if (endsAt && endsAt <= startsAt) {
+      throw new LogisticsError('INVALID_INPUT', 'End date must follow start date.');
+    }
+    return this.workflow(
+      actor,
+      'guardian_pickup',
+      'logistics.guardians.manage',
+      'link_guardian_student',
+      input.idempotencyKey,
+      [guardianId, studentId, relationship, startsAt.toISOString(), endsAt?.toISOString() ?? null],
+      async (client, schoolId) => {
+        const guardian = await client.query<{ verification_status: string }>(
+          `SELECT verification_status FROM production.logistics_guardians
+           WHERE tenant_id = $1 AND school_id = $2 AND id = $3 FOR UPDATE`,
+          [actor.tenantId, schoolId, guardianId]
+        );
+        if (!guardian.rowCount) throw new LogisticsError('NOT_FOUND', 'Guardian not found.');
+        if (guardian.rows[0].verification_status !== 'verified') {
+          throw new LogisticsError('CONFLICT', 'Guardian must be verified before linking a student.');
+        }
+        const student = await client.query(
+          `SELECT 1 FROM production.students
+           WHERE tenant_id = $1 AND school_id = $2 AND id = $3 AND lifecycle_status IN ('admitted', 'active')
+           FOR UPDATE`,
+          [actor.tenantId, schoolId, studentId]
+        );
+        if (!student.rowCount) throw new LogisticsError('NOT_FOUND', 'Active student not found.');
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_guardian_students
+             (tenant_id, school_id, guardian_id, student_id, relationship, status, verified_at, verified_by, starts_at, ends_at)
+           VALUES ($1, $2, $3, $4, $5, 'active', now(), $6, $7, $8)
+           RETURNING id`,
+          [actor.tenantId, schoolId, guardianId, studentId, relationship, actor.userId, startsAt, endsAt]
+        );
+        await this.audit(client, actor, schoolId, 'guardian_student_linked', 'guardian_student', inserted.rows[0].id, {
+          guardianId, studentId, relationship
+        });
+        return inserted.rows[0];
+      }
+    );
+  }
+
+  async createPickupAuthorization(actor: AuthorizedPrincipal, input: {
+    guardianStudentId: string;
+    startsAt: string;
+    endsAt: string;
+    additionalApprovalRequired?: boolean;
+    idempotencyKey: string;
+  }) {
+    const guardianStudentId = validateUuid(input.guardianStudentId);
+    const startsAt = parseDate(input.startsAt, 'startsAt');
+    const endsAt = parseDate(input.endsAt, 'endsAt');
+    const additionalApprovalRequired = Boolean(input.additionalApprovalRequired);
+    if (endsAt <= startsAt) {
+      throw new LogisticsError('INVALID_INPUT', 'Pickup authorization end time must be after start time.');
+    }
+    return this.workflow(
+      actor,
+      'guardian_pickup',
+      'logistics.guardians.manage',
+      'create_pickup_authorization',
+      input.idempotencyKey,
+      [guardianStudentId, startsAt.toISOString(), endsAt.toISOString(), additionalApprovalRequired],
+      async (client, schoolId) => {
+        const rel = await client.query<{ status: string; verified_at: Date | null }>(
+          `SELECT status, verified_at FROM production.logistics_guardian_students
+           WHERE tenant_id = $1 AND school_id = $2 AND id = $3 FOR UPDATE`,
+          [actor.tenantId, schoolId, guardianStudentId]
+        );
+        if (!rel.rowCount) throw new LogisticsError('NOT_FOUND', 'Guardian-student relationship not found.');
+        if (rel.rows[0].status !== 'active' || !rel.rows[0].verified_at) {
+          throw new LogisticsError('CONFLICT', 'Guardian-student relationship is not active and verified.');
+        }
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_pickup_authorizations
+             (tenant_id, school_id, guardian_student_id, authorized_by, starts_at, ends_at,
+              status, additional_approval_required, additional_approved_by, additional_approved_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, CASE WHEN $7 THEN $4 ELSE NULL END, CASE WHEN $7 THEN now() ELSE NULL END)
+           RETURNING id`,
+          [actor.tenantId, schoolId, guardianStudentId, actor.userId, startsAt, endsAt, additionalApprovalRequired]
+        );
+        await this.audit(client, actor, schoolId, 'pickup_authorization_created', 'pickup_authorization', inserted.rows[0].id, {
+          guardianStudentId
+        });
+        return inserted.rows[0];
+      }
+    );
+  }
+
+  async listPickupPasses(actor: AuthorizedPrincipal, input: {
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ page: number; pageSize: number; total: number; data: Record<string, unknown>[] }> {
+    const pagination = parsePage(input.page, input.pageSize);
+    return this.inSchool(
+      actor,
+      'guardian_pickup',
+      ['logistics.guardians.manage', 'logistics.gate.manage', 'logistics.gate.read'],
+      async (client, schoolId) => {
+        const countRes = await client.query<{ total: string }>(
+          `SELECT count(*)::text AS total FROM production.logistics_pickup_passes WHERE tenant_id = $1 AND school_id = $2`,
+          [actor.tenantId, schoolId]
+        );
+        const rows = await client.query<Record<string, unknown>>(
+          `SELECT pass.id, pass.pickup_authorization_id AS "authorizationId",
+                  pass.expires_at AS "expiresAt", pass.revoked_at AS "revokedAt",
+                  pass.max_uses AS "maxUses", pass.use_count AS "useCount",
+                  pass.locked_until AS "lockedUntil", pass.created_at AS "createdAt",
+                  (pass.pin_hash IS NOT NULL) AS "pinProtected",
+                  rel.student_id AS "studentId", rel.guardian_id AS "guardianId"
+           FROM production.logistics_pickup_passes pass
+           JOIN production.logistics_pickup_authorizations auth
+             ON auth.tenant_id = pass.tenant_id AND auth.school_id = pass.school_id
+            AND auth.id = pass.pickup_authorization_id
+           JOIN production.logistics_guardian_students rel
+             ON rel.tenant_id = auth.tenant_id AND rel.school_id = auth.school_id
+            AND rel.id = auth.guardian_student_id
+           WHERE pass.tenant_id = $1 AND pass.school_id = $2
+           ORDER BY pass.created_at DESC, pass.id
+           LIMIT $3 OFFSET $4`,
+          [actor.tenantId, schoolId, pagination.pageSize, pagination.offset]
+        );
+        return {
+          page: pagination.page,
+          pageSize: pagination.pageSize,
+          total: Number(countRes.rows[0]?.total || 0),
+          data: rows.rows
+        };
+      }
+    );
+  }
+
+  async revokePickupPass(actor: AuthorizedPrincipal, input: {
+    passId: string;
+    idempotencyKey: string;
+  }) {
+    const passId = validateUuid(input.passId);
+    return this.workflow(
+      actor,
+      'guardian_pickup',
+      'logistics.guardians.manage',
+      'revoke_pickup_pass',
+      input.idempotencyKey,
+      [passId],
+      async (client, schoolId) => {
+        const updated = await client.query<{ id: string }>(
+          `UPDATE production.logistics_pickup_passes
+           SET revoked_at = now(), revoked_by = $4
+           WHERE tenant_id = $1 AND school_id = $2 AND id = $3 AND revoked_at IS NULL
+           RETURNING id`,
+          [actor.tenantId, schoolId, passId, actor.userId]
+        );
+        if (!updated.rowCount) {
+          const exists = await client.query(
+            `SELECT 1 FROM production.logistics_pickup_passes WHERE tenant_id = $1 AND school_id = $2 AND id = $3`,
+            [actor.tenantId, schoolId, passId]
+          );
+          if (!exists.rowCount) throw new LogisticsError('NOT_FOUND', 'Pickup pass not found.');
+          throw new LogisticsError('CONFLICT', 'Pickup pass is already revoked.');
+        }
+        await this.audit(client, actor, schoolId, 'pickup_pass_revoked', 'pickup_pass', passId);
+        return { id: passId };
+      }
+    );
+  }
+
+  async listGateLocations(actor: AuthorizedPrincipal): Promise<Record<string, unknown>[]> {
+    return this.inSchool(actor, 'gate_security', ['logistics.gate.read', 'logistics.gate.manage'], async (client, schoolId) => {
+      const rows = await client.query<Record<string, unknown>>(
+        `SELECT gate.id, gate.name, gate.status, gate.created_at AS "createdAt",
+                coalesce(
+                  (SELECT jsonb_agg(jsonb_build_object(
+                    'assignmentId', a.id, 'userId', a.user_id, 'startsAt', a.starts_at, 'endsAt', a.ends_at
+                  ) ORDER BY a.starts_at DESC)
+                  FROM production.logistics_gate_officer_assignments a
+                  WHERE a.tenant_id = gate.tenant_id AND a.school_id = gate.school_id
+                    AND a.gate_location_id = gate.id AND a.revoked_at IS NULL),
+                  '[]'::jsonb
+                ) AS officers
+         FROM production.logistics_gate_locations gate
+         WHERE gate.tenant_id = $1 AND gate.school_id = $2
+         ORDER BY gate.name, gate.id
+         LIMIT 100`,
+        [actor.tenantId, schoolId]
+      );
+      return rows.rows;
+    });
+  }
+
+  async createGateLocation(actor: AuthorizedPrincipal, input: {
+    name: string;
+    idempotencyKey: string;
+  }) {
+    const name = requiredText(input.name, 'name', 120);
+    return this.workflow(
+      actor,
+      'gate_security',
+      'logistics.gate.manage',
+      'create_gate_location',
+      input.idempotencyKey,
+      [name],
+      async (client, schoolId) => {
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_gate_locations (tenant_id, school_id, name, status)
+           VALUES ($1, $2, $3, 'active')
+           RETURNING id`,
+          [actor.tenantId, schoolId, name]
+        );
+        await this.audit(client, actor, schoolId, 'gate_location_created', 'gate_location', inserted.rows[0].id, { name });
+        return inserted.rows[0];
+      }
+    );
+  }
+
+  async assignGateOfficer(actor: AuthorizedPrincipal, input: {
+    gateLocationId: string;
+    userId: string;
+    startsAt?: string;
+    endsAt?: string;
+    idempotencyKey: string;
+  }) {
+    const gateLocationId = validateUuid(input.gateLocationId);
+    const userId = validateUuid(input.userId);
+    const startsAt = input.startsAt ? parseDate(input.startsAt, 'startsAt') : new Date();
+    const endsAt = input.endsAt ? parseDate(input.endsAt, 'endsAt') : null;
+    if (endsAt && endsAt <= startsAt) {
+      throw new LogisticsError('INVALID_INPUT', 'Officer assignment end time must follow start time.');
+    }
+    return this.workflow(
+      actor,
+      'gate_security',
+      'logistics.gate.manage',
+      'assign_gate_officer',
+      input.idempotencyKey,
+      [gateLocationId, userId, startsAt.toISOString(), endsAt?.toISOString() ?? null],
+      async (client, schoolId) => {
+        const gate = await client.query(
+          `SELECT 1 FROM production.logistics_gate_locations
+           WHERE tenant_id = $1 AND school_id = $2 AND id = $3 AND status = 'active'`,
+          [actor.tenantId, schoolId, gateLocationId]
+        );
+        if (!gate.rowCount) throw new LogisticsError('NOT_FOUND', 'Active gate location not found.');
+        const member = await client.query(
+          `SELECT 1 FROM production.memberships WHERE tenant_id = $1 AND user_id = $2 AND status = 'active'`,
+          [actor.tenantId, userId]
+        );
+        if (!member.rowCount) throw new LogisticsError('NOT_FOUND', 'Active membership not found.');
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_gate_officer_assignments
+             (tenant_id, school_id, gate_location_id, user_id, assigned_by, starts_at, ends_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id`,
+          [actor.tenantId, schoolId, gateLocationId, userId, actor.userId, startsAt, endsAt]
+        );
+        await this.audit(client, actor, schoolId, 'gate_officer_assigned', 'gate_officer_assignment', inserted.rows[0].id, {
+          gateLocationId, userId
+        });
+        return inserted.rows[0];
+      }
+    );
+  }
+
+  async listSecurityIncidents(actor: AuthorizedPrincipal, input: {
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ page: number; pageSize: number; total: number; data: Record<string, unknown>[] }> {
+    const pagination = parsePage(input.page, input.pageSize);
+    return this.inSchool(actor, 'gate_security', ['logistics.gate.read', 'logistics.gate.manage'], async (client, schoolId) => {
+      const countRes = await client.query<{ total: string }>(
+        `SELECT count(*)::text AS total FROM production.logistics_security_incidents WHERE tenant_id = $1 AND school_id = $2`,
+        [actor.tenantId, schoolId]
+      );
+      const rows = await client.query<Record<string, unknown>>(
+        `SELECT id, gate_event_id AS "gateEventId", incident_type AS "incidentType",
+                details, recorded_by AS "recordedBy", occurred_at AS "occurredAt"
+         FROM production.logistics_security_incidents
+         WHERE tenant_id = $1 AND school_id = $2
+         ORDER BY occurred_at DESC, id
+         LIMIT $3 OFFSET $4`,
+        [actor.tenantId, schoolId, pagination.pageSize, pagination.offset]
+      );
+      return {
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        total: Number(countRes.rows[0]?.total || 0),
+        data: rows.rows
+      };
+    });
+  }
+
+  async recordSecurityIncident(actor: AuthorizedPrincipal, input: {
+    gateEventId?: string;
+    incidentType: string;
+    description: string;
+    details?: Record<string, unknown>;
+    idempotencyKey: string;
+  }) {
+    const gateEventId = input.gateEventId ? validateUuid(input.gateEventId) : null;
+    const incidentType = requiredText(input.incidentType, 'incidentType', 100);
+    const description = requiredText(input.description, 'description', 1000);
+    const mergedDetails = {
+      ...(input.details && typeof input.details === 'object' && !Array.isArray(input.details) ? input.details : {}),
+      description
+    };
+    return this.workflow(
+      actor,
+      'gate_security',
+      'logistics.gate.manage',
+      'record_security_incident',
+      input.idempotencyKey,
+      [gateEventId, incidentType, description],
+      async (client, schoolId) => {
+        if (gateEventId) {
+          const event = await client.query(
+            `SELECT 1 FROM production.logistics_gate_events WHERE tenant_id = $1 AND school_id = $2 AND id = $3`,
+            [actor.tenantId, schoolId, gateEventId]
+          );
+          if (!event.rowCount) throw new LogisticsError('NOT_FOUND', 'Gate event not found.');
+        }
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_security_incidents
+             (tenant_id, school_id, gate_event_id, incident_type, details, recorded_by)
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+           RETURNING id`,
+          [actor.tenantId, schoolId, gateEventId, incidentType, JSON.stringify(mergedDetails), actor.userId]
+        );
+        await this.audit(client, actor, schoolId, 'security_incident_recorded', 'security_incident', inserted.rows[0].id, {
+          gateEventId, incidentType
+        });
+        return inserted.rows[0];
+      }
+    );
+  }
+
+  async cancelExeat(actor: AuthorizedPrincipal, input: {
+    exeatId: string;
+    reason: string;
+    idempotencyKey: string;
+  }): Promise<{ id: string; status: string }> {
+    const exeatId = validateUuid(input.exeatId);
+    const reason = requiredText(input.reason, 'reason', 500);
+    const idempotencyKey = validateIdempotencyKey(input.idempotencyKey);
+    return this.inSchool(
+      actor,
+      'exeat_management',
+      ['logistics.exeat.request', 'logistics.exeat.approve', 'logistics.exeat.manage'],
+      async (client, schoolId) => {
+        const rowRes = await client.query<{
+          id: string;
+          student_id: string;
+          requested_by: string;
+          status: string;
+          cancelled_by: string | null;
+        }>(
+          `SELECT id, student_id, requested_by, status, cancelled_by
+           FROM production.logistics_exeats
+           WHERE tenant_id = $1 AND school_id = $2 AND id = $3
+           FOR UPDATE`,
+          [actor.tenantId, schoolId, exeatId]
+        );
+        const exeat = rowRes.rows[0];
+        if (!exeat) throw new LogisticsError('NOT_FOUND', 'Exeat request not found.');
+        if (actor.roles.includes('parent')) {
+          await this.guardianForStudent(client, actor, schoolId, exeat.student_id);
+        } else if (!actor.roles.includes('principal') && !actor.roles.includes('tenant_admin') &&
+                   actor.roles.includes('housemaster')) {
+          await this.assertHousemasterCanAccessStudent(client, actor, schoolId, exeat.student_id);
+        } else if (exeat.requested_by !== actor.userId &&
+                   !actor.hasPermission('logistics.exeat.approve') &&
+                   !actor.hasPermission('logistics.exeat.manage')) {
+          throw new LogisticsError('FORBIDDEN', 'Only the requester or an exeat approver can cancel this exeat.');
+        }
+        if (exeat.status === 'cancelled' && exeat.cancelled_by === actor.userId) {
+          return { id: exeatId, status: 'cancelled' };
+        }
+        if (!['pending_housemaster', 'pending_principal', 'approved', 'departure_authorized'].includes(exeat.status)) {
+          throw new LogisticsError('CONFLICT', `Exeat cannot be cancelled while ${exeat.status}.`);
+        }
+        await client.query(
+          `UPDATE production.logistics_exeats
+           SET status = 'cancelled', cancelled_at = now(), cancelled_by = $4, cancellation_reason = $5
+           WHERE tenant_id = $1 AND school_id = $2 AND id = $3`,
+          [actor.tenantId, schoolId, exeatId, actor.userId, reason]
+        );
+        await this.audit(client, actor, schoolId, 'exeat_cancelled', 'exeat', exeatId, {
+          reason, idempotencyKey
+        });
+        return { id: exeatId, status: 'cancelled' };
+      }
+    );
+  }
+
+  async evaluateOverdueExeats(actor: AuthorizedPrincipal): Promise<{ updatedIds: string[]; count: number }> {
+    return this.inSchool(
+      actor,
+      'exeat_management',
+      ['logistics.exeat.approve', 'logistics.exeat.manage'],
+      async (client, schoolId) => {
+        const overdue = await client.query<{ id: string; student_id: string }>(
+          `UPDATE production.logistics_exeats
+           SET status = 'overdue'
+           WHERE tenant_id = $1 AND school_id = $2
+             AND status = 'departed' AND return_due_at < now()
+           RETURNING id, student_id`,
+          [actor.tenantId, schoolId]
+        );
+        for (const row of overdue.rows) {
+          await this.audit(client, actor, schoolId, 'exeat_marked_overdue', 'exeat', row.id, {
+            studentId: row.student_id
+          });
+          await this.dispatchGuardianAlerts(client, {
+            tenantId: actor.tenantId,
+            schoolId,
+            eventType: 'exeat_overdue',
+            entityType: 'exeat',
+            entityId: row.id,
+            studentId: row.student_id,
+            subject: 'Exeat Return Overdue Notice',
+            message: 'Your ward has exceeded their approved exeat return time and the exeat has been flagged overdue.'
+          });
+        }
+        return {
+          updatedIds: overdue.rows.map(r => r.id),
+          count: overdue.rows.length
+        };
+      }
+    );
+  }
+
+  async listDiningEntitlements(actor: AuthorizedPrincipal, input: {
+    studentId?: string;
+    status?: string;
+  }): Promise<Record<string, unknown>[]> {
+    const studentId = input.studentId ? validateUuid(input.studentId) : null;
+    const status = input.status?.trim() || null;
+    if (status && !['active', 'suspended', 'ended'].includes(status)) {
+      throw new LogisticsError('INVALID_INPUT', 'Unsupported dining entitlement status filter.');
+    }
+    return this.inSchool(
+      actor,
+      'dining_management',
+      ['logistics.dining.read', 'logistics.dining.manage', 'logistics.dining.entitlement.manage'],
+      async (client, schoolId) => {
+        const rows = await client.query<Record<string, unknown>>(
+          `SELECT id, student_id AS "studentId", meal_periods AS "mealPeriods",
+                  starts_on AS "startsOn", ends_on AS "endsOn", status,
+                  dietary_profile_reference AS "dietaryProfileReference",
+                  created_at AS "createdAt"
+           FROM production.logistics_dining_entitlements
+           WHERE tenant_id = $1 AND school_id = $2
+             AND ($3::uuid IS NULL OR student_id = $3)
+             AND ($4::text IS NULL OR status = $4)
+           ORDER BY starts_on DESC, created_at DESC
+           LIMIT 100`,
+          [actor.tenantId, schoolId, studentId, status]
+        );
+        return rows.rows;
+      }
+    );
+  }
+
+  async grantDiningEntitlement(actor: AuthorizedPrincipal, input: {
+    studentId: string;
+    mealPeriods: string[];
+    startsOn: string;
+    endsOn?: string;
+    dietaryProfileReference?: string;
+    idempotencyKey: string;
+  }) {
+    const studentId = validateUuid(input.studentId);
+    const startsOn = calendarDate(input.startsOn, 'startsOn');
+    const endsOn = input.endsOn ? calendarDate(input.endsOn, 'endsOn') : null;
+    if (endsOn && endsOn < startsOn) {
+      throw new LogisticsError('INVALID_INPUT', 'Entitlement end date precedes start date.');
+    }
+    const mealPeriods = Array.isArray(input.mealPeriods)
+      ? [...new Set(input.mealPeriods.map(p => (typeof p === 'string' ? p.trim().toLowerCase() : '')).filter(Boolean))]
+      : [];
+    if (mealPeriods.length === 0 || mealPeriods.length > 10) {
+      throw new LogisticsError('INVALID_INPUT', 'At least one meal period is required.');
+    }
+    const dietaryRef = input.dietaryProfileReference?.trim() || null;
+    if (dietaryRef && dietaryRef.length > 200) {
+      throw new LogisticsError('INVALID_INPUT', 'Dietary profile reference is too long.');
+    }
+    return this.workflow(
+      actor,
+      'dining_management',
+      'logistics.dining.entitlement.manage',
+      'grant_dining_entitlement',
+      input.idempotencyKey,
+      [studentId, mealPeriods, startsOn, endsOn, dietaryRef],
+      async (client, schoolId) => {
+        const student = await client.query(
+          `SELECT 1 FROM production.students
+           WHERE tenant_id = $1 AND school_id = $2 AND id = $3 AND lifecycle_status IN ('admitted', 'active')`,
+          [actor.tenantId, schoolId, studentId]
+        );
+        if (!student.rowCount) throw new LogisticsError('NOT_FOUND', 'Active student not found.');
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO production.logistics_dining_entitlements
+             (tenant_id, school_id, student_id, meal_periods, starts_on, ends_on, status, dietary_profile_reference, created_by)
+           VALUES ($1, $2, $3, $4::text[], $5::date, $6::date, 'active', $7, $8)
+           RETURNING id`,
+          [actor.tenantId, schoolId, studentId, mealPeriods, startsOn, endsOn, dietaryRef, actor.userId]
+        );
+        await this.audit(client, actor, schoolId, 'dining_entitlement_granted', 'dining_entitlement', inserted.rows[0].id, {
+          studentId, mealPeriods, startsOn, endsOn
+        });
+        return inserted.rows[0];
+      }
+    );
+  }
+
+  async revokeDiningEntitlement(actor: AuthorizedPrincipal, input: {
+    entitlementId: string;
+    idempotencyKey: string;
+  }) {
+    const entitlementId = validateUuid(input.entitlementId);
+    return this.workflow(
+      actor,
+      'dining_management',
+      'logistics.dining.entitlement.manage',
+      'revoke_dining_entitlement',
+      input.idempotencyKey,
+      [entitlementId],
+      async (client, schoolId) => {
+        const updated = await client.query<{ id: string }>(
+          `UPDATE production.logistics_dining_entitlements
+           SET status = 'ended', ends_on = coalesce(ends_on, CURRENT_DATE)
+           WHERE tenant_id = $1 AND school_id = $2 AND id = $3 AND status = 'active'
+           RETURNING id`,
+          [actor.tenantId, schoolId, entitlementId]
+        );
+        if (!updated.rowCount) throw new LogisticsError('NOT_FOUND', 'Active dining entitlement not found.');
+        await this.audit(client, actor, schoolId, 'dining_entitlement_revoked', 'dining_entitlement', entitlementId);
+        return { id: entitlementId };
+      }
+    );
+  }
+
+  async listTripPassengers(actor: AuthorizedPrincipal, tripIdInput: string): Promise<Record<string, unknown>[]> {
+    const tripId = validateUuid(tripIdInput);
+    return this.inSchool(
+      actor,
+      'school_transport',
+      ['logistics.transport.read', 'logistics.transport.manage', 'logistics.transport.passengers.manage'],
+      async (client, schoolId) => {
+        const trip = await client.query(
+          `SELECT 1 FROM production.logistics_trips WHERE tenant_id = $1 AND school_id = $2 AND id = $3`,
+          [actor.tenantId, schoolId, tripId]
+        );
+        if (!trip.rowCount) throw new LogisticsError('NOT_FOUND', 'Transport trip not found.');
+        const rows = await client.query<Record<string, unknown>>(
+          `SELECT id, student_id AS "studentId", boarded_at AS "boardedAt",
+                  boarded_by AS "boardedBy", dropped_off_at AS "droppedOffAt",
+                  dropped_off_by AS "droppedOffBy"
+           FROM production.logistics_trip_passengers
+           WHERE tenant_id = $1 AND school_id = $2 AND trip_id = $3
+           ORDER BY boarded_at ASC NULLS LAST, id
+           LIMIT 200`,
+          [actor.tenantId, schoolId, tripId]
+        );
+        return rows.rows;
+      }
+    );
+  }
+
+  async cancelTrip(actor: AuthorizedPrincipal, input: {
+    tripId: string;
+    reason?: string;
+    idempotencyKey: string;
+  }) {
+    const tripId = validateUuid(input.tripId);
+    const reason = input.reason?.trim() || 'Cancelled by transport manager';
+    if (reason.length > 500) throw new LogisticsError('INVALID_INPUT', 'Cancellation reason is too long.');
+    return this.workflow(
+      actor,
+      'school_transport',
+      'logistics.transport.manage',
+      'cancel_trip',
+      input.idempotencyKey,
+      [tripId, reason],
+      async (client, schoolId) => {
+        const trip = await client.query<{ status: string }>(
+          `SELECT status FROM production.logistics_trips WHERE tenant_id = $1 AND school_id = $2 AND id = $3 FOR UPDATE`,
+          [actor.tenantId, schoolId, tripId]
+        );
+        if (!trip.rowCount) throw new LogisticsError('NOT_FOUND', 'Transport trip not found.');
+        if (!['scheduled', 'driver_assigned', 'vehicle_assigned'].includes(trip.rows[0].status)) {
+          throw new LogisticsError('CONFLICT', `Cannot cancel trip while status is ${trip.rows[0].status}.`);
+        }
+        await client.query(
+          `UPDATE production.logistics_trips SET status = 'cancelled' WHERE tenant_id = $1 AND school_id = $2 AND id = $3`,
+          [actor.tenantId, schoolId, tripId]
+        );
+        await this.audit(client, actor, schoolId, 'transport_trip_cancelled', 'trip', tripId, { reason });
+        return { id: tripId };
+      }
+    );
+  }
+
+  async updateLibraryPublicationStatus(actor: AuthorizedPrincipal, input: {
+    resourceId: string;
+    publicationStatus: 'pending_review' | 'published' | 'archived';
+  }): Promise<{ id: string; publicationStatus: string; currentVersion: number }> {
+    const resourceId = validateUuid(input.resourceId);
+    if (!['pending_review', 'published', 'archived'].includes(input.publicationStatus)) {
+      throw new LogisticsError('INVALID_INPUT', 'Invalid library publication status.');
+    }
+    return this.inSchool(actor, 'digital_library', ['logistics.library.manage'], async (client, schoolId) => {
+      const resourceRes = await client.query<{
+        id: string;
+        storage_object_key: string | null;
+        current_version: number;
+      }>(
+        `SELECT id, storage_object_key, current_version
+         FROM production.logistics_library_resources
+         WHERE tenant_id = $1 AND school_id = $2 AND id = $3
+         FOR UPDATE`,
+        [actor.tenantId, schoolId, resourceId]
+      );
+      const resource = resourceRes.rows[0];
+      if (!resource) throw new LogisticsError('NOT_FOUND', 'Library resource not found.');
+      if (input.publicationStatus === 'published') {
+        if (!resource.storage_object_key) {
+          throw new LogisticsError('CONFLICT', 'A verified uploaded file is required before publishing.');
+        }
+        const versionRes = await client.query<{ scan_status: string }>(
+          `SELECT scan_status FROM production.logistics_library_resource_versions
+           WHERE tenant_id = $1 AND school_id = $2 AND resource_id = $3 AND version = $4`,
+          [actor.tenantId, schoolId, resourceId, resource.current_version]
+        );
+        if (!versionRes.rowCount || versionRes.rows[0].scan_status !== 'clean') {
+          throw new LogisticsError('CONFLICT', 'Latest file version must pass safety scanning before publication.');
+        }
+      }
+      await client.query(
+        `UPDATE production.logistics_library_resources
+         SET publication_status = $4,
+             verified_by = CASE WHEN $4 = 'published' THEN $5 ELSE verified_by END,
+             verified_at = CASE WHEN $4 = 'published' THEN now() ELSE verified_at END
+         WHERE tenant_id = $1 AND school_id = $2 AND id = $3`,
+        [actor.tenantId, schoolId, resourceId, input.publicationStatus, actor.userId]
+      );
+      await this.audit(client, actor, schoolId, `library_resource_${input.publicationStatus}`, 'library_resource', resourceId, {
+        currentVersion: resource.current_version
+      });
+      return {
+        id: resourceId,
+        publicationStatus: input.publicationStatus,
+        currentVersion: resource.current_version
+      };
+    });
+  }
+
+  async listLibraryUsageEvents(actor: AuthorizedPrincipal, input: {
+    resourceId: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ page: number; pageSize: number; total: number; data: Record<string, unknown>[] }> {
+    const resourceId = validateUuid(input.resourceId);
+    const pagination = parsePage(input.page, input.pageSize);
+    return this.inSchool(actor, 'digital_library', ['logistics.library.manage', 'logistics.library.read'], async (client, schoolId) => {
+      const resource = await client.query(
+        `SELECT 1 FROM production.logistics_library_resources WHERE tenant_id = $1 AND school_id = $2 AND id = $3`,
+        [actor.tenantId, schoolId, resourceId]
+      );
+      if (!resource.rowCount) throw new LogisticsError('NOT_FOUND', 'Library resource not found.');
+      const countRes = await client.query<{ total: string }>(
+        `SELECT count(*)::text AS total FROM production.logistics_library_usage_events
+         WHERE tenant_id = $1 AND school_id = $2 AND resource_id = $3`,
+        [actor.tenantId, schoolId, resourceId]
+      );
+      const rows = await client.query<Record<string, unknown>>(
+        `SELECT id, actor_user_id AS "actorUserId", action, resource_version AS "resourceVersion",
+                occurred_at AS "occurredAt"
+         FROM production.logistics_library_usage_events
+         WHERE tenant_id = $1 AND school_id = $2 AND resource_id = $3
+         ORDER BY occurred_at DESC, id
+         LIMIT $4 OFFSET $5`,
+        [actor.tenantId, schoolId, resourceId, pagination.pageSize, pagination.offset]
+      );
+      return {
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        total: Number(countRes.rows[0]?.total || 0),
+        data: rows.rows
+      };
+    });
+  }
+
+  async listAuditEvents(actor: AuthorizedPrincipal, input: {
+    entityType?: string;
+    action?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ page: number; pageSize: number; total: number; data: Record<string, unknown>[] }> {
+    const pagination = parsePage(input.page, input.pageSize);
+    const entityType = input.entityType?.trim() || null;
+    const action = input.action?.trim() || null;
+    if (!actor.hasPermission('logistics.audit.read') && !actor.hasPermission('logistics.configuration.read')) {
+      throw new LogisticsError('FORBIDDEN');
+    }
+    return withTenantTransaction(this.pool, actor.tenant, async client => {
+      const schools = await client.query<{ school_id: string }>(
+        `SELECT school_id FROM production.application_instances
+         WHERE tenant_id = $1 AND application_id = 'app_curriculum_flow'
+           AND status = 'active' AND provisioning_status = 'ready'
+         ORDER BY created_at DESC
+         LIMIT 2`,
+        [actor.tenantId]
+      );
+      if (schools.rowCount !== 1) throw new LogisticsError('SCHOOL_CONTEXT_UNAVAILABLE');
+      const schoolId = schools.rows[0].school_id;
+      const countRes = await client.query<{ total: string }>(
+        `SELECT count(*)::text AS total FROM production.logistics_audit_events
+         WHERE tenant_id = $1 AND school_id = $2
+           AND ($3::text IS NULL OR entity_type = $3)
+           AND ($4::text IS NULL OR action = $4)`,
+        [actor.tenantId, schoolId, entityType, action]
+      );
+      const rows = await client.query<Record<string, unknown>>(
+        `SELECT id, actor_user_id AS "actorUserId", action, entity_type AS "entityType",
+                entity_id AS "entityId", details, occurred_at AS "occurredAt"
+         FROM production.logistics_audit_events
+         WHERE tenant_id = $1 AND school_id = $2
+           AND ($3::text IS NULL OR entity_type = $3)
+           AND ($4::text IS NULL OR action = $4)
+         ORDER BY occurred_at DESC, id
+         LIMIT $5 OFFSET $6`,
+        [actor.tenantId, schoolId, entityType, action, pagination.pageSize, pagination.offset]
+      );
+      return {
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        total: Number(countRes.rows[0]?.total || 0),
+        data: rows.rows
+      };
+    });
+  }
+
+  private async dispatchGuardianAlerts(client: DatabaseClient, input: {
+    tenantId: string;
+    schoolId: string;
+    eventType:
+      | 'pickup_authorized'
+      | 'pickup_denied'
+      | 'exeat_approved'
+      | 'exeat_rejected'
+      | 'exeat_departed'
+      | 'exeat_returned'
+      | 'exeat_overdue'
+      | 'transport_boarded'
+      | 'transport_dropped_off'
+      | 'transport_incident';
+    entityType: string;
+    entityId: string;
+    studentId: string;
+    guardianId?: string | null;
+    subject: string;
+    message: string;
+  }): Promise<void> {
+    const config = await client.query<{ parent_notifications: unknown }>(
+      `SELECT settings -> 'parentNotifications' AS parent_notifications
+       FROM production.logistics_feature_configurations
+       WHERE tenant_id = $1 AND school_id = $2`,
+      [input.tenantId, input.schoolId]
+    );
+    const prefs = config.rows[0]?.parent_notifications as {
+      sms?: unknown; email?: unknown; push?: unknown;
+    } | null | undefined;
+    if (!prefs || typeof prefs !== 'object') return;
+    const smsEnabled = prefs.sms === true;
+    const emailEnabled = prefs.email === true;
+    const pushEnabled = prefs.push === true;
+    if (!smsEnabled && !emailEnabled && !pushEnabled) return;
+
+    const guardians = await client.query<{
+      guardian_id: string;
+      phone: string;
+      user_id: string | null;
+      email: string | null;
+    }>(
+      `SELECT g.id AS guardian_id, g.phone, g.user_id, u.email
+       FROM production.logistics_guardian_students rel
+       JOIN production.logistics_guardians g
+         ON g.tenant_id = rel.tenant_id AND g.school_id = rel.school_id AND g.id = rel.guardian_id
+       LEFT JOIN production.users u ON u.id = g.user_id
+       WHERE rel.tenant_id = $1 AND rel.school_id = $2
+         AND rel.student_id = $3
+         AND ($4::uuid IS NULL OR g.id = $4)
+         AND g.verification_status = 'verified'
+         AND rel.status = 'active' AND rel.verified_at IS NOT NULL
+         AND rel.starts_at <= now() AND (rel.ends_at IS NULL OR rel.ends_at > now())
+       LIMIT 3`,
+      [input.tenantId, input.schoolId, input.studentId, input.guardianId ?? null]
+    );
+    if (!guardians.rowCount) return;
+
+    const tryEnqueue = async (
+      guardianId: string,
+      channel: 'sms' | 'email' | 'web_push',
+      request:
+        | { channel: 'sms'; to: string; message: string }
+        | { channel: 'email'; to: string; subject: string; text: string }
+        | { channel: 'web_push'; subscriptionId: string; message: string }
+    ): Promise<void> => {
+      try {
+        validateNotificationRequest(request);
+        const outboxId = randomUUID();
+        const encrypted = ServerSecretVault.encrypt(
+          JSON.stringify({ tenantId: input.tenantId, id: outboxId, kind: 'notification', data: request })
+        );
+        await client.query(
+          `INSERT INTO production.notification_outbox (tenant_id, id, channel, encrypted_request, max_attempts)
+           VALUES ($1, $2, $3, $4, 5)`,
+          [input.tenantId, outboxId, channel, encrypted]
+        );
+        await client.query(
+          `INSERT INTO production.logistics_notification_dispatches
+             (tenant_id, school_id, event_type, entity_type, entity_id, student_id, guardian_id, channel, outbox_id, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'queued')`,
+          [input.tenantId, input.schoolId, input.eventType, input.entityType, input.entityId,
+            input.studentId, guardianId, channel, outboxId]
+        );
+      } catch {
+        await client.query(
+          `INSERT INTO production.logistics_notification_dispatches
+             (tenant_id, school_id, event_type, entity_type, entity_id, student_id, guardian_id, channel, outbox_id, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, 'skipped_unconfigured')`,
+          [input.tenantId, input.schoolId, input.eventType, input.entityType, input.entityId,
+            input.studentId, guardianId, channel]
+        );
+      }
+    };
+
+    for (const guardian of guardians.rows) {
+      if (smsEnabled && /^\+[1-9]\d{7,14}$/.test(guardian.phone)) {
+        await tryEnqueue(guardian.guardian_id, 'sms', {
+          channel: 'sms', to: guardian.phone, message: input.message
+        });
+      }
+      if (emailEnabled && guardian.email) {
+        await tryEnqueue(guardian.guardian_id, 'email', {
+          channel: 'email', to: guardian.email, subject: input.subject, text: input.message
+        });
+      }
+      if (pushEnabled && guardian.user_id) {
+        const subs = await client.query<{ id: string }>(
+          `SELECT id FROM production.notification_subscriptions
+           WHERE tenant_id = $1 AND owner_id = $2 AND revoked_at IS NULL
+           ORDER BY created_at DESC LIMIT 2`,
+          [input.tenantId, guardian.user_id]
+        );
+        for (const sub of subs.rows) {
+          await tryEnqueue(guardian.guardian_id, 'web_push', {
+            channel: 'web_push', subscriptionId: sub.id, message: input.message
+          });
+        }
+      }
+    }
   }
 
   private async audit(

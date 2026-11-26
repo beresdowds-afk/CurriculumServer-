@@ -71,8 +71,13 @@ function distanceToSegmentMeters(
 export class LogisticsGpsRepository {
   constructor(
     private readonly pool: DatabasePool,
-    private readonly adapter: TraccarGpsAdapter
+    private readonly adapter: TraccarGpsAdapter | null = null
   ) {}
+
+  private requireAdapter(): TraccarGpsAdapter {
+    if (!this.adapter) throw new LogisticsGpsRepositoryError('PROVIDER_NOT_READY');
+    return this.adapter;
+  }
 
   private requirePermission(actor: AuthorizedPrincipal, permission: string): void {
     if (!actor.hasPermission(permission)) throw new LogisticsGpsRepositoryError('FORBIDDEN');
@@ -143,7 +148,7 @@ export class LogisticsGpsRepository {
       return activeBinding.rows[0];
     });
     try {
-      await this.adapter.verifyDevice(Number(binding.provider_device_id), binding.provider_unique_id);
+      await this.requireAdapter().verifyDevice(Number(binding.provider_device_id), binding.provider_unique_id);
     } catch (error) {
       if (error instanceof TraccarGpsError) throw new LogisticsGpsRepositoryError('PROVIDER_NOT_READY');
       throw error;
@@ -191,7 +196,7 @@ export class LogisticsGpsRepository {
     });
 
     try {
-      await this.adapter.verifyDevice(providerDeviceId, providerUniqueId);
+      await this.requireAdapter().verifyDevice(providerDeviceId, providerUniqueId);
     } catch (error) {
       if (error instanceof TraccarGpsError) throw new LogisticsGpsRepositoryError('PROVIDER_NOT_READY');
       throw error;
@@ -254,10 +259,11 @@ export class LogisticsGpsRepository {
       return { schoolId, ...result.rows[0] };
     });
 
+    const adapter = this.requireAdapter();
     let position: Awaited<ReturnType<TraccarGpsAdapter['latestPosition']>>;
     try {
-      await this.adapter.verifyDevice(Number(binding.provider_device_id), binding.provider_unique_id);
-      position = await this.adapter.latestPosition(Number(binding.provider_device_id));
+      await adapter.verifyDevice(Number(binding.provider_device_id), binding.provider_unique_id);
+      position = await adapter.latestPosition(Number(binding.provider_device_id));
     } catch (error) {
       if (error instanceof TraccarGpsError) throw new LogisticsGpsRepositoryError('PROVIDER_NOT_READY');
       throw error;
@@ -397,6 +403,60 @@ export class LogisticsGpsRepository {
         fixTime: position.fixTime, receivedAt: inserted.rows[0].received_at,
         latitude: position.latitude, longitude: position.longitude,
         speedKph, replayed: false, events
+      };
+    });
+  }
+
+  async listVehicleTelemetry(actor: AuthorizedPrincipal, vehicleIdInput: string): Promise<{
+    vehicleId: string;
+    activeBinding: Record<string, unknown> | null;
+    telemetry: Record<string, unknown>[];
+    events: Record<string, unknown>[];
+  }> {
+    this.requirePermission(actor, 'logistics.gps.read');
+    const vehicleId = uuid(vehicleIdInput);
+    return withTenantTransaction(this.pool, actor.tenant, async client => {
+      const schoolId = await this.schoolContext(client, actor, true);
+      const vehicle = await client.query(
+        `SELECT 1 FROM production.logistics_vehicles WHERE tenant_id = $1 AND school_id = $2 AND id = $3`,
+        [actor.tenantId, schoolId, vehicleId]
+      );
+      if (!vehicle.rowCount) throw new LogisticsGpsRepositoryError('NOT_FOUND');
+      const [binding, telemetry, events] = await Promise.all([
+        client.query<Record<string, unknown>>(
+          `SELECT id, provider, provider_device_id::text AS "providerDeviceId",
+                  provider_unique_id AS "providerUniqueId", status, verified_at AS "verifiedAt"
+           FROM production.logistics_gps_device_bindings
+           WHERE tenant_id = $1 AND school_id = $2 AND vehicle_id = $3 AND status = 'active'
+           LIMIT 1`,
+          [actor.tenantId, schoolId, vehicleId]
+        ),
+        client.query<Record<string, unknown>>(
+          `SELECT id, binding_id AS "bindingId", provider_position_id::text AS "providerPositionId",
+                  fix_time AS "fixTime", provider_server_time AS "providerServerTime",
+                  received_at AS "receivedAt", latitude, longitude, speed_kph AS "speedKph"
+           FROM production.logistics_gps_telemetry
+           WHERE tenant_id = $1 AND school_id = $2 AND vehicle_id = $3
+           ORDER BY fix_time DESC, received_at DESC
+           LIMIT 50`,
+          [actor.tenantId, schoolId, vehicleId]
+        ),
+        client.query<Record<string, unknown>>(
+          `SELECT id, trip_id AS "tripId", route_stop_id AS "routeStopId",
+                  telemetry_id AS "telemetryId", event_type AS "eventType",
+                  occurred_at AS "occurredAt", details
+           FROM production.logistics_gps_events
+           WHERE tenant_id = $1 AND school_id = $2 AND vehicle_id = $3
+           ORDER BY occurred_at DESC
+           LIMIT 50`,
+          [actor.tenantId, schoolId, vehicleId]
+        )
+      ]);
+      return {
+        vehicleId,
+        activeBinding: binding.rows[0] ?? null,
+        telemetry: telemetry.rows,
+        events: events.rows
       };
     });
   }

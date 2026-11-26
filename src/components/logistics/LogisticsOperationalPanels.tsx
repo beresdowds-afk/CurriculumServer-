@@ -296,6 +296,12 @@ export function BoardingOperationsPanel({ authenticated, role }: { authenticated
 
 export function DiningOperationsPanel({ authenticated, role }: { authenticated: boolean; role: string }) {
   const [meals, setMeals] = useState<Meal[]>([]);
+  const [entitlements, setEntitlements] = useState<Array<{
+    id: string; studentId: string; mealPeriods: string[]; startsOn: string; endsOn: string | null; status: string;
+  }>>([]);
+  const [dietaryList, setDietaryList] = useState<Array<{
+    id: string; studentId: string; restriction: string; startsOn: string; endsOn: string | null; revokedAt?: string | null;
+  }>>([]);
   const [loadError, setLoadError] = useState('');
   const [diningHall, setDiningHall] = useState('');
   const [serviceDate, setServiceDate] = useState(new Date().toISOString().slice(0, 10));
@@ -312,16 +318,27 @@ export function DiningOperationsPanel({ authenticated, role }: { authenticated: 
   const [restrictionStart, setRestrictionStart] = useState(new Date().toISOString().slice(0, 10));
   const [restrictionEnd, setRestrictionEnd] = useState('');
   const [dietaryStudentId, setDietaryStudentId] = useState('');
+  const [entitlementStudentId, setEntitlementStudentId] = useState('');
+  const [entitlementPeriods, setEntitlementPeriods] = useState('breakfast, lunch, dinner');
+  const [entitlementStart, setEntitlementStart] = useState(new Date().toISOString().slice(0, 10));
+  const [entitlementEnd, setEntitlementEnd] = useState('');
+  const [entitlementDietaryRef, setEntitlementDietaryRef] = useState('');
   const feedback = useOperationFeedback();
   const canManage = ['tenant_admin', 'principal', 'dining_officer'].includes(role);
   const refresh = useCallback(async () => {
     if (!authenticated) {
       setMeals([]);
+      setEntitlements([]);
+      setDietaryList([]);
       setLoadError('');
       return;
     }
-    const response = await unifiedApiClient.requestLogistics<Envelope<Page<Meal>>>('/dining/meals?page=1&pageSize=100');
-    setMeals(response.data.data);
+    const [mealRes, entitlementRes] = await Promise.all([
+      unifiedApiClient.requestLogistics<Envelope<Page<Meal>>>('/dining/meals?page=1&pageSize=100'),
+      unifiedApiClient.requestLogistics<Envelope<typeof entitlements>>('/dining/entitlements').catch(() => ({ data: [] }))
+    ]);
+    setMeals(mealRes.data.data);
+    setEntitlements(entitlementRes.data);
     setLoadError('');
   }, [authenticated]);
   useEffect(() => { void refresh().catch(reason => setLoadError(message(reason))); }, [refresh]);
@@ -359,7 +376,7 @@ export function DiningOperationsPanel({ authenticated, role }: { authenticated: 
             <button disabled={feedback.busy} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold disabled:opacity-50">Schedule meal</button>
           </form>
         </OperationsPanel>}
-        {canManage && <OperationsPanel title="Authorize dietary restriction">
+        {canManage && <OperationsPanel title="Dietary restrictions and entitlements">
           <form className="space-y-3" onSubmit={event => void submit(event, () =>
             unifiedApiClient.requestLogistics('/dining/dietary-restrictions', {
               method: 'POST', headers: idempotencyHeaders(),
@@ -376,7 +393,47 @@ export function DiningOperationsPanel({ authenticated, role }: { authenticated: 
               <TextInput required label="Starts on" type="date" value={restrictionStart} onChange={event => setRestrictionStart(event.target.value)} />
               <TextInput label="Ends on" type="date" value={restrictionEnd} onChange={event => setRestrictionEnd(event.target.value)} />
             </div>
-            <button disabled={feedback.busy} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold disabled:opacity-50">Save restriction</button>
+            <div className="flex flex-wrap gap-2">
+              <button disabled={feedback.busy} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold disabled:opacity-50">Save restriction</button>
+              <button type="button" disabled={feedback.busy || !dietaryStudentId} onClick={() => void feedback.run(async () => {
+                const res = await unifiedApiClient.requestLogistics<Envelope<typeof dietaryList>>(
+                  `/dining/dietary-restrictions?studentId=${encodeURIComponent(dietaryStudentId)}`
+                );
+                setDietaryList(res.data);
+              }, 'Dietary restrictions loaded.')} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold disabled:opacity-50">Load student restrictions</button>
+            </div>
+          </form>
+          {dietaryList.map(item => (
+            <article key={item.id} className="flex items-center justify-between gap-2 rounded border border-slate-800 p-2 text-xs">
+              <span>{item.restriction} ({item.startsOn})</span>
+              {!item.revokedAt && <button type="button" disabled={feedback.busy} onClick={() => void feedback.run(async () => {
+                await unifiedApiClient.requestLogistics(`/dining/dietary-restrictions/${encodeURIComponent(item.id)}/revoke`, {
+                  method: 'POST', headers: idempotencyHeaders()
+                });
+                setDietaryList(curr => curr.filter(row => row.id !== item.id));
+              }, 'Dietary restriction revoked.')} className="rounded bg-rose-800 px-2 py-1 font-semibold">Revoke</button>}
+            </article>
+          ))}
+          <form className="space-y-3 border-t border-slate-800 pt-3" onSubmit={event => void submit(event, () =>
+            unifiedApiClient.requestLogistics('/dining/entitlements', {
+              method: 'POST', headers: idempotencyHeaders(),
+              body: JSON.stringify({
+                studentId: entitlementStudentId,
+                mealPeriods: entitlementPeriods.split(',').map(v => v.trim()).filter(Boolean),
+                startsOn: entitlementStart,
+                ...(entitlementEnd ? { endsOn: entitlementEnd } : {}),
+                ...(entitlementDietaryRef ? { dietaryProfileReference: entitlementDietaryRef } : {})
+              })
+            }), 'Meal entitlement granted.')}>
+            <h3 className="text-xs font-bold">Grant student meal entitlement</h3>
+            <TextInput required label="Student ID" value={entitlementStudentId} onChange={event => setEntitlementStudentId(event.target.value)} />
+            <TextInput required label="Meal periods (comma-separated)" value={entitlementPeriods} onChange={event => setEntitlementPeriods(event.target.value)} />
+            <div className="grid grid-cols-2 gap-2">
+              <TextInput required label="Starts on" type="date" value={entitlementStart} onChange={event => setEntitlementStart(event.target.value)} />
+              <TextInput label="Ends on" type="date" value={entitlementEnd} onChange={event => setEntitlementEnd(event.target.value)} />
+            </div>
+            <TextInput label="Dietary reference (optional)" value={entitlementDietaryRef} onChange={event => setEntitlementDietaryRef(event.target.value)} />
+            <button disabled={feedback.busy} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold disabled:opacity-50">Grant entitlement</button>
           </form>
         </OperationsPanel>}
         <OperationsPanel title="Record meal attendance">
@@ -403,14 +460,34 @@ export function DiningOperationsPanel({ authenticated, role }: { authenticated: 
           </form>
         </OperationsPanel>
       </div>
-      <OperationsPanel title="Scheduled meals">
-        {meals.length === 0 ? <p className="text-sm text-slate-400">No meal schedules are available.</p> : meals.map(meal => (
-          <article key={meal.id} className="rounded-lg border border-slate-800 p-3 text-xs">
-            <p className="font-semibold">{meal.diningHall} · {meal.servicePeriod} · {meal.serviceDate}</p>
-            <p className="mt-1 text-slate-400">{meal.attendanceCount} served · {new Date(meal.startsAt).toLocaleTimeString()}–{new Date(meal.endsAt).toLocaleTimeString()}</p>
-          </article>
-        ))}
-      </OperationsPanel>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <OperationsPanel title="Scheduled meals">
+          {meals.length === 0 ? <p className="text-sm text-slate-400">No meal schedules are available.</p> : meals.map(meal => (
+            <article key={meal.id} className="rounded-lg border border-slate-800 p-3 text-xs">
+              <p className="font-semibold">{meal.diningHall} · {meal.servicePeriod} · {meal.serviceDate}</p>
+              <p className="mt-1 text-slate-400">{meal.attendanceCount} served · {new Date(meal.startsAt).toLocaleTimeString()}–{new Date(meal.endsAt).toLocaleTimeString()}</p>
+            </article>
+          ))}
+        </OperationsPanel>
+        <OperationsPanel title="Student meal entitlements">
+          {entitlements.length === 0 ? <p className="text-sm text-slate-400">No meal entitlements recorded.</p> : entitlements.map(item => (
+            <article key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 p-3 text-xs">
+              <div>
+                <p className="font-semibold">Student {item.studentId}</p>
+                <p className="mt-1 text-slate-400">{item.mealPeriods.join(', ')} · {item.startsOn} to {item.endsOn || 'ongoing'} · {item.status}</p>
+              </div>
+              {canManage && item.status === 'active' && (
+                <button type="button" disabled={feedback.busy} onClick={() => void feedback.run(async () => {
+                  await unifiedApiClient.requestLogistics(`/dining/entitlements/${encodeURIComponent(item.id)}/revoke`, {
+                    method: 'POST', headers: idempotencyHeaders()
+                  });
+                  await refresh();
+                }, 'Dining entitlement revoked.')} className="rounded bg-rose-800 px-2 py-1 font-semibold">Revoke</button>
+              )}
+            </article>
+          ))}
+        </OperationsPanel>
+      </div>
     </div>
   );
 }
@@ -459,6 +536,10 @@ export function TransportOperationsPanel({ authenticated, role }: { authenticate
   const [passengerEvent, setPassengerEvent] = useState<'boarded' | 'dropped_off'>('boarded');
   const [incidentType, setIncidentType] = useState<'missed_pickup' | 'incident'>('missed_pickup');
   const [incidentDescription, setIncidentDescription] = useState('');
+  const [tripPassengers, setTripPassengers] = useState<Array<{
+    id: string; studentId: string; boardedAt: string | null; droppedOffAt: string | null;
+  }>>([]);
+  const [selectedManifestTripId, setSelectedManifestTripId] = useState('');
   const [loadError, setLoadError] = useState('');
   const feedback = useOperationFeedback();
   const canManage = ['tenant_admin', 'principal', 'transport_manager'].includes(role);
@@ -665,7 +746,7 @@ export function TransportOperationsPanel({ authenticated, role }: { authenticate
                 `/transport/vehicles/${encodeURIComponent(maintenanceVehicleId)}/maintenance`
               );
               setMaintenanceItems(response.data);
-            }, 'Maintenance scheduled.')}>
+            }, 'Maintenance scheduled.')} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold disabled:opacity-50">
               Schedule maintenance
             </button>
             {maintenanceItems.map(item => <article key={item.id} className="flex items-center justify-between gap-2 rounded border border-slate-800 p-2 text-xs">
@@ -762,16 +843,43 @@ export function TransportOperationsPanel({ authenticated, role }: { authenticate
         {trips.length === 0 ? <p className="text-sm text-slate-400">No trips scheduled for this date.</p> : trips.map(trip => (
           <article key={trip.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 p-3 text-xs">
             <span className="break-all">{trip.id} · {trip.status} · route {trip.routeId} · driver {trip.driverId || 'unassigned'} · vehicle {trip.vehicleId || 'unassigned'}</span>
-            {canManage && trip.status === 'scheduled' && <button type="button" onClick={() => void feedback.run(async () => {
-              await unifiedApiClient.requestLogistics(`/transport/trips/${encodeURIComponent(trip.id)}/start`, { method: 'POST', headers: idempotencyHeaders() });
-              await refresh();
-            }, 'Trip started.')} className="rounded bg-slate-800 px-2 py-1">Start trip</button>}
-            {canManage && ['started', 'in_progress'].includes(trip.status) && <button type="button" onClick={() => void feedback.run(async () => {
-              await unifiedApiClient.requestLogistics(`/transport/trips/${encodeURIComponent(trip.id)}/complete`, { method: 'POST', headers: idempotencyHeaders() });
-              await refresh();
-            }, 'Trip completed.')} className="rounded bg-slate-800 px-2 py-1">Complete trip</button>}
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={feedback.busy} onClick={() => void feedback.run(async () => {
+                const res = await unifiedApiClient.requestLogistics<Envelope<typeof tripPassengers>>(
+                  `/transport/trips/${encodeURIComponent(trip.id)}/passengers`
+                );
+                setSelectedManifestTripId(trip.id);
+                setTripPassengers(res.data);
+              }, 'Trip passenger manifest loaded.')} className="rounded border border-slate-700 px-2 py-1">Passengers</button>
+              {canManage && trip.status === 'vehicle_assigned' && <button type="button" onClick={() => void feedback.run(async () => {
+                await unifiedApiClient.requestLogistics(`/transport/trips/${encodeURIComponent(trip.id)}/start`, { method: 'POST', headers: idempotencyHeaders() });
+                await refresh();
+              }, 'Trip started.')} className="rounded bg-indigo-700 px-2 py-1 font-semibold">Start trip</button>}
+              {canManage && ['scheduled', 'driver_assigned', 'vehicle_assigned'].includes(trip.status) && <button type="button" onClick={() => void feedback.run(async () => {
+                await unifiedApiClient.requestLogistics(`/transport/trips/${encodeURIComponent(trip.id)}/cancel`, {
+                  method: 'POST', headers: idempotencyHeaders(), body: JSON.stringify({ reason: 'Cancelled from operations schedule' })
+                });
+                await refresh();
+              }, 'Trip cancelled.')} className="rounded bg-rose-800 px-2 py-1 font-semibold">Cancel trip</button>}
+              {canManage && ['started', 'in_progress'].includes(trip.status) && <button type="button" onClick={() => void feedback.run(async () => {
+                await unifiedApiClient.requestLogistics(`/transport/trips/${encodeURIComponent(trip.id)}/complete`, { method: 'POST', headers: idempotencyHeaders() });
+                await refresh();
+              }, 'Trip completed.')} className="rounded bg-emerald-700 px-2 py-1 font-semibold">Complete trip</button>}
+            </div>
           </article>
         ))}
+        {selectedManifestTripId && (
+          <div className="space-y-2 border-t border-slate-800 pt-3">
+            <h3 className="text-xs font-bold">Passenger manifest for trip {selectedManifestTripId}</h3>
+            {tripPassengers.length === 0 ? (
+              <p className="text-xs text-slate-400">No passenger boarding or drop-off events recorded yet.</p>
+            ) : tripPassengers.map(pax => (
+              <p key={pax.id} className="rounded border border-slate-800 p-2 text-xs">
+                Student {pax.studentId} · Boarded: {pax.boardedAt ? new Date(pax.boardedAt).toLocaleString() : 'no'} · Dropped off: {pax.droppedOffAt ? new Date(pax.droppedOffAt).toLocaleString() : 'no'}
+              </p>
+            ))}
+          </div>
+        )}
       </OperationsPanel>
     </div>
   );

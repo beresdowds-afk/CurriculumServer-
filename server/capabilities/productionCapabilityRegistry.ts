@@ -119,61 +119,117 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
   },
   {
     id: 'question_bank_scoped_writes',
-    description: 'Question Bank and assessment writes requiring principal-bound repositories and item-level scope enforcement.',
+    description: 'Question Bank and assessment writes requiring principal-bound repositories, instance ownership, teacher scope, and review enforcement.',
     routes: [
-      { method: 'POST', path: /^\/(?:question-bank(?:\/.*)?|assessment-blueprints|assessments(?:\/(?!scope-authorizations(?:\/.*)?$|taught-generate$).*?)?)$/ },
-      { method: 'DELETE', path: /^\/question-bank\/items\/[0-9a-f-]+$/i }
+      {
+        method: 'POST',
+        path: exact(
+          '/question-bank',
+          '/question-bank/categories',
+          '/question-bank/seed-past-questions',
+          '/question-bank/seed-theory-questions',
+          '/question-bank/seed-practical-questions',
+          '/question-bank/generate-objective',
+          '/question-bank/generate-theory',
+          '/question-bank/generate-practical',
+          '/assessment-blueprints',
+          '/assessments/exams',
+          '/assessments/records'
+        )
+      },
+      { method: 'PATCH', path: new RegExp(`^/question-bank/categories/${uuid}$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/question-bank/items/${uuid}/(?:submit|review|archive)$`, 'i') },
+      { method: 'DELETE', path: new RegExp(`^/question-bank/items/${uuid}$`, 'i') }
     ],
     requiredRepositories: ['InstanceQuestionBankRepository', 'AuthorizationRepository'],
-    requiredMigrations: [8, 10, 15],
+    requiredMigrations: [8, 10, 15, 25, 35],
     authentication: 'tenant_user_session',
     authorization: {
       rule: 'database_permission_and_resource_scope',
       permissions: ['question_bank.manage', 'question_bank.review', 'assessments.manage']
     },
     tenantContext: 'transaction_local_tenant',
-    acceptanceTests: [],
-    readinessEvidence: [],
-    state: 'implemented'
+    acceptanceTests: [
+      'server/questionBank/instanceQuestionBank.test.ts',
+      'server/questionBank/instanceQuestionBankRoutes.integration.test.ts'
+    ],
+    readinessEvidence: [
+      'tenant_and_application_instance_ownership_enforced',
+      'conflicting_instance_scope_rejection_and_audit',
+      'teacher_subject_class_assignment_scoping',
+      'separate_review_approval_and_archival_preservation',
+      'postgresql_rls_and_route_integration_tests'
+    ],
+    state: 'ready'
   },
   {
     id: 'school_finance_fee_policies',
-    description: 'School-specific immutable fee policy versions and principal approvals.',
+    description: 'School-specific immutable fee policy versions, effective-date resolution, principal approval, and supersession.',
     routes: [
       { method: 'GET', path: exact('/school-finance/schools') },
-      { method: 'GET', path: new RegExp(`^/school-finance/schools/${uuid}/fee-policies$`, 'i') },
-      { method: 'POST', path: new RegExp(`^/school-finance/schools/${uuid}/fee-policies(?:/${uuid}/approve)?$`, 'i') }
+      { method: 'GET', path: new RegExp(`^/school-finance/schools/${uuid}/fee-policies(?:/effective)?$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/school-finance/schools/${uuid}/fee-policies(?:/${uuid}/(?:approve|supersede))?$`, 'i') }
     ],
     requiredRepositories: ['SchoolFinancePolicies', 'AuthorizationRepository'],
-    requiredMigrations: [8, 9, 10, 29],
+    requiredMigrations: [8, 9, 10, 29, 36],
     authentication: 'tenant_user_session',
     authorization: {
-      rule: 'tenant_wide_database_permission_and_principal_role_for_approval',
-      permissions: ['school_finance.policies.read', 'school_finance.policies.create', 'school_finance.policies.approve']
+      rule: 'multi_school_database_permission_and_principal_role_for_approval',
+      permissions: [
+        'school_finance.policies.read',
+        'school_finance.policies.create',
+        'school_finance.policies.approve',
+        'school_finance.policies.supersede'
+      ]
     },
     tenantContext: 'transaction_local_tenant',
-    acceptanceTests: ['server/db/schoolFinancePolicies.integration.test.ts'],
-    readinessEvidence: [],
-    state: 'implemented'
+    acceptanceTests: [
+      'server/db/schoolFinancePolicies.test.ts',
+      'server/db/schoolFinanceRoutes.test.ts',
+      'server/db/schoolFinancePolicies.integration.test.ts',
+      'src/components/AccountManagementTab.test.tsx'
+    ],
+    readinessEvidence: [
+      'immutable_fee_policy_versions_and_supersessions',
+      'effective_policy_resolution_excludes_unapproved_and_superseded',
+      'multi_school_principal_approval_enforcement',
+      'account_management_ui_non_payment_disclosure'
+    ],
+    state: 'ready'
   },
   {
     id: 'school_finance_settlement_account_requests',
-    description: 'Principal proposals and proprietor approvals of school settlement accounts; no provider activation.',
+    description: 'Principal proposals, proprietor governance, and fail-closed OPay/Paystack/Flutterwave verification for school settlement accounts; payment execution remains disabled.',
     routes: [
-      { method: 'GET', path: new RegExp(`^/school-finance/schools/${uuid}/settlement-accounts(?:/${uuid})?$`, 'i') },
-      { method: 'POST', path: new RegExp(`^/school-finance/schools/${uuid}/settlement-accounts(?:/${uuid}/approve)?$`, 'i') }
+      { method: 'GET', path: new RegExp(`^/school-finance/schools/${uuid}/settlement-accounts(?:/active|/${uuid}(?:/events)?)?$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/school-finance/schools/${uuid}/settlement-accounts(?:/${uuid}/(?:approve|reject|verify|activate|suspend|revoke|replace|verification-callback))?$`, 'i') }
     ],
     requiredRepositories: ['SchoolSettlementAccounts', 'AuthorizationRepository'],
-    requiredMigrations: [8, 9, 10, 29, 30],
+    requiredMigrations: [8, 9, 10, 29, 30, 37],
     authentication: 'tenant_user_session',
     authorization: {
-      rule: 'tenant_wide_database_permission_and_principal_or_proprietor_role',
-      permissions: ['school_finance.settlement.read', 'school_finance.settlement.request', 'school_finance.settlement.approve']
+      rule: 'multi_school_database_permission_and_principal_or_proprietor_role',
+      permissions: [
+        'school_finance.settlement.read',
+        'school_finance.settlement.request',
+        'school_finance.settlement.approve',
+        'school_finance.settlement.verify',
+        'school_finance.settlement.manage'
+      ]
     },
     tenantContext: 'transaction_local_tenant',
-    acceptanceTests: ['server/db/schoolFinancePolicies.integration.test.ts'],
-    readinessEvidence: [],
-    state: 'implemented'
+    acceptanceTests: [
+      'server/db/schoolSettlementAccounts.test.ts',
+      'server/db/schoolFinanceRoutes.test.ts',
+      'server/db/schoolFinancePolicies.integration.test.ts'
+    ],
+    readinessEvidence: [
+      'fail_closed_opay_paystack_flutterwave_verification_adapters',
+      'encrypted_nuban_and_provider_reference_vault_storage',
+      'single_active_default_settlement_account_constraint',
+      'signed_idempotent_verification_callbacks_and_immutable_events'
+    ],
+    state: 'ready'
   },
   {
     id: 'school_identity',
@@ -424,30 +480,38 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
   },
   {
     id: 'campus_logistics',
-    description: 'Tenant-authorized campus gate security, exeat workflows, dining, transport events, and hostel occupancy.',
+    description: 'Tenant-authorized campus gate security, guardian pickup passes, exeat workflows, dining, transport events, GPS telemetry, digital library, hostel occupancy, and immutable audit trail.',
     routes: [
       { method: 'GET', path: exact(
-        '/logistics/configuration', '/logistics/occupancy', '/logistics/gate/events',
+        '/logistics/configuration', '/logistics/occupancy',
+        '/logistics/guardians', '/logistics/pickup-passes',
+        '/logistics/gate/locations', '/logistics/gate/events', '/logistics/gate/incidents',
         '/logistics/hostel/allocations', '/logistics/hostel/register',
-        '/logistics/exeats', '/logistics/dining/meals', '/logistics/dining/dietary-restrictions',
+        '/logistics/exeats', '/logistics/dining/meals', '/logistics/dining/entitlements', '/logistics/dining/dietary-restrictions',
         '/logistics/library/resources', '/logistics/library/storage', '/logistics/transport/routes', '/logistics/transport/drivers',
-        '/logistics/transport/vehicles', '/logistics/transport/student-routes', '/logistics/transport/trips'
+        '/logistics/transport/vehicles', '/logistics/transport/student-routes', '/logistics/transport/trips',
+        '/logistics/audit'
       ) },
       { method: 'GET', path: new RegExp(`^/logistics/exeats/${uuid}$`, 'i') },
-      { method: 'GET', path: new RegExp(`^/logistics/transport/vehicles/${uuid}/maintenance$`, 'i') },
-      { method: 'GET', path: new RegExp(`^/logistics/transport/trips/${uuid}/incidents$`, 'i') },
-      { method: 'GET', path: new RegExp(`^/logistics/library/resources/${uuid}/download$`, 'i') },
+      { method: 'GET', path: new RegExp(`^/logistics/transport/vehicles/${uuid}/(?:maintenance|telemetry)$`, 'i') },
+      { method: 'GET', path: new RegExp(`^/logistics/transport/trips/${uuid}/(?:incidents|passengers)$`, 'i') },
+      { method: 'GET', path: new RegExp(`^/logistics/library/resources/${uuid}/(?:download|usage)$`, 'i') },
       { method: 'PATCH', path: exact('/logistics/configuration') },
       { method: 'PUT', path: exact('/logistics/library/storage') },
       { method: 'PUT', path: new RegExp(`^/logistics/library/resources/${uuid}/file$`, 'i') },
       { method: 'POST', path: exact(
+        '/logistics/guardians',
         '/logistics/pickup-passes',
+        '/logistics/gate/locations',
         '/logistics/gate/scans',
+        '/logistics/gate/incidents',
         '/logistics/exeats',
+        '/logistics/exeats/evaluate-overdue',
         '/logistics/library/resources',
         '/logistics/hostel/register',
         '/logistics/hostel/assignments',
         '/logistics/dining/meals',
+        '/logistics/dining/entitlements',
         '/logistics/dining/dietary-restrictions',
         '/logistics/transport/routes',
         '/logistics/transport/drivers',
@@ -455,15 +519,20 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
         '/logistics/transport/student-routes',
         '/logistics/transport/trips'
       ) },
+      { method: 'POST', path: new RegExp(`^/logistics/guardians/${uuid}/(?:verify|students)$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/guardian-students/${uuid}/pickup-authorizations$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/pickup-passes/${uuid}/revoke$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/gate/locations/${uuid}/officers$`, 'i') },
       { method: 'POST', path: new RegExp(`^/logistics/hostel/assignments/${uuid}/revoke$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/dining/entitlements/${uuid}/revoke$`, 'i') },
       { method: 'POST', path: new RegExp(`^/logistics/dining/dietary-restrictions/${uuid}/revoke$`, 'i') },
       { method: 'POST', path: new RegExp(`^/logistics/transport/drivers/${uuid}/qualification$`, 'i') },
       { method: 'POST', path: new RegExp(`^/logistics/transport/vehicles/${uuid}/(?:compliance|maintenance)$`, 'i') },
       { method: 'POST', path: new RegExp(`^/logistics/transport/maintenance/${uuid}/complete$`, 'i') },
       { method: 'POST', path: new RegExp(`^/logistics/transport/student-routes/${uuid}/end$`, 'i') },
-      { method: 'POST', path: new RegExp(`^/logistics/transport/trips/${uuid}/(?:complete|incidents)$`, 'i') },
-      { method: 'POST', path: new RegExp(`^/logistics/library/resources/${uuid}/visibility$`, 'i') },
-      { method: 'POST', path: new RegExp(`^/logistics/exeats/${uuid}/(?:decisions|departure-authorization|gate-movements)$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/transport/trips/${uuid}/(?:complete|cancel|incidents)$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/library/resources/${uuid}/(?:visibility|publication)$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/logistics/exeats/${uuid}/(?:decisions|departure-authorization|gate-movements|cancel)$`, 'i') },
       { method: 'POST', path: new RegExp(`^/logistics/dining/meals/${uuid}/attendance$`, 'i') },
       { method: 'POST', path: new RegExp(`^/logistics/transport/trips/${uuid}/passenger-events$`, 'i') },
       { method: 'PATCH', path: new RegExp(`^/logistics/transport/trips/${uuid}/assignment$`, 'i') },
@@ -472,18 +541,26 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
       { method: 'POST', path: new RegExp(`^/logistics/transport/vehicles/${uuid}/telemetry/sync$`, 'i') },
       { method: 'POST', path: new RegExp(`^/logistics/transport/gps-device-bindings/${uuid}/revoke$`, 'i') }
     ],
-    requiredRepositories: ['LogisticsRepository', 'LogisticsGpsRepository', 'AuthorizationRepository'],
-    requiredMigrations: [11, 12, 13, 26, 27, 28],
+    requiredRepositories: ['LogisticsRepository', 'LogisticsGpsRepository', 'LogisticsLibraryStorageService', 'AuthorizationRepository'],
+    requiredMigrations: [11, 12, 13, 26, 27, 28, 38],
     authentication: 'tenant_user_session',
     authorization: {
       rule: 'database_permission_and_school_configuration',
       permissions: [
         'logistics.configuration.read',
         'logistics.configuration.manage',
+        'logistics.guardians.manage',
+        'logistics.gate.read',
         'logistics.gate.manage',
         'logistics.hostel.read',
         'logistics.hostel.manage',
+        'logistics.exeat.read',
+        'logistics.exeat.request',
+        'logistics.exeat.approve',
+        'logistics.dining.read',
         'logistics.dining.manage',
+        'logistics.dining.entitlement.manage',
+        'logistics.dining.attendance.record',
         'logistics.dietary.read',
         'logistics.dietary.manage',
         'logistics.dietary.exception',
@@ -494,18 +571,31 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
         'logistics.gps.manage',
         'logistics.library.read',
         'logistics.library.manage',
-        'logistics.library.storage.manage'
+        'logistics.library.storage.manage',
+        'logistics.audit.read'
       ]
     },
     tenantContext: 'transaction_local_tenant',
     acceptanceTests: [
       'server/logistics/logisticsRepository.test.ts',
+      'server/logistics/logisticsRoutes.test.ts',
+      'server/logistics/logisticsFeatureTemplate.test.ts',
+      'server/logistics/logisticsLibraryStorageService.test.ts',
+      'server/logistics/traccarGpsAdapter.test.ts',
+      'server/logistics/googleLogisticsStorageAdapters.test.ts',
       'server/logistics/logisticsRepository.integration.test.ts',
       'server/logistics/boardingTransport.integration.test.ts',
       'server/notifications/notificationService.test.ts'
     ],
-    readinessEvidence: [],
-    state: 'implemented'
+    readinessEvidence: [
+      'postgresql_rls_scoped_logistics_workflows',
+      'guardian_pickup_passes_and_gate_incidents_verified',
+      'exeat_notifications_and_overdue_evaluation_verified',
+      'dining_entitlements_and_transport_manifests_verified',
+      'library_mime_allowlist_and_publication_controls_verified',
+      'immutable_logistics_audit_trail_and_api_acceptance'
+    ],
+    state: 'ready'
   },
   {
     id: 'application_template_discovery',
@@ -671,40 +761,25 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
   },
   {
     id: 'instance_question_bank_and_assessments',
-    description: 'Strictly school-instance-owned Question Bank, categories, assessment blueprints, exam configurations, and assessment records.',
+    description: 'Strictly school-instance-owned Question Bank read endpoints for categories, items, blueprints, exam configurations, and assessment records.',
     routes: [
-      { method: 'GET', path: exact('/question-bank', '/question-bank/categories', '/assessment-blueprints', '/assessments/exams', '/assessments/records') },
-      { method: 'POST', path: exact(
-        '/question-bank',
-        '/question-bank/categories',
-        '/question-bank/seed-past-questions',
-        '/question-bank/seed-theory-questions',
-        '/question-bank/seed-practical-questions',
-        '/question-bank/generate-objective',
-        '/question-bank/generate-theory',
-        '/question-bank/generate-practical',
-        '/assessment-blueprints',
-        '/assessments/exams',
-        '/assessments/records'
-      ) },
-      { method: 'POST', path: /^\/question-bank\/items\/[0-9a-f-]+\/review$/i },
-      { method: 'DELETE', path: /^\/question-bank\/items\/[0-9a-f-]+$/i }
+      { method: 'GET', path: exact('/question-bank', '/question-bank/categories', '/assessment-blueprints', '/assessments/exams', '/assessments/records') }
     ],
-    requiredRepositories: ['InstanceQuestionBankRepository'],
-    requiredMigrations: [15],
+    requiredRepositories: ['InstanceQuestionBankRepository', 'AuthorizationRepository'],
+    requiredMigrations: [8, 10, 15, 25, 35],
     authentication: 'tenant_user_session',
     authorization: {
-      rule: 'database_permission',
+      rule: 'database_permission_and_resource_scope',
       permissions: [
         'question_bank.read',
-        'question_bank.manage',
-        'question_bank.review',
-        'assessments.read',
-        'assessments.manage'
+        'assessments.read'
       ]
     },
     tenantContext: 'transaction_local_tenant',
-    acceptanceTests: ['server/questionBank/instanceQuestionBank.test.ts'],
+    acceptanceTests: [
+      'server/questionBank/instanceQuestionBank.test.ts',
+      'server/questionBank/instanceQuestionBankRoutes.integration.test.ts'
+    ],
     readinessEvidence: ['tenant_isolated_instance_question_bank', 'instance_assessment_persistence'],
     state: 'ready'
   },

@@ -4,8 +4,9 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AccountManagementTab } from './AccountManagementTab';
 
-test('school accounts disclose unavailable payment and accounting functionality', () => {
+test('school accounts disclose unavailable payment and accounting functionality without obsolete unavailable banner', () => {
   const html = renderToStaticMarkup(<AccountManagementTab />);
+  assert.doesNotMatch(html, /Access is unavailable until the school finance capability passes operational readiness checks/);
   assert.match(html, /Student invoices, balances, payments, receipts, reconciliation, payroll and financial reports are not yet available/);
   assert.match(html, /separate from Curriculum Server subscription billing/);
   assert.doesNotMatch(html, /Pay now|Generate receipt|Reconcile deposit/);

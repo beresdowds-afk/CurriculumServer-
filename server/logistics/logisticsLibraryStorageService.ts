@@ -26,6 +26,30 @@ const READ_PERMISSION = 'logistics.library.read';
 const MANAGE_PERMISSION = 'logistics.library.manage';
 const STORAGE_MANAGE_PERMISSION = 'logistics.library.storage.manage';
 
+export const ALLOWED_LIBRARY_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/epub+zip',
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/ogg',
+  'audio/wav',
+  'video/mp4',
+  'video/webm',
+  'video/ogg'
+]);
+
 export class LogisticsLibraryStorageError extends Error {
   constructor(
     public readonly code:
@@ -92,6 +116,7 @@ interface ReadResourceRow extends ResourceRow {
   checksum: Buffer;
   content_type: string | null;
   content_length: string | null;
+  scan_status?: 'pending' | 'clean' | 'blocked';
 }
 
 export interface LibraryDownload {
@@ -473,7 +498,10 @@ export class LogisticsLibraryStorageService {
   ): Promise<{ version: number; contentLength: number }> {
     try {
       assertAuthorized(actor, MANAGE_PERMISSION);
-      if (!/^[0-9a-f-]{36}$/i.test(input.resourceId)) {
+      const normalizedContentType = typeof input.contentType === 'string'
+        ? input.contentType.split(';', 1)[0].trim().toLowerCase()
+        : '';
+      if (!/^[0-9a-f-]{36}$/i.test(input.resourceId) || !ALLOWED_LIBRARY_MIME_TYPES.has(normalizedContentType)) {
         throw new LogisticsLibraryStorageError('INVALID_INPUT');
       }
       return await withTenantTransaction(this.pool, actor.tenant, async client => {
@@ -495,10 +523,11 @@ export class LogisticsLibraryStorageService {
         const version = nextVersion.rows[0].version;
         const adapter = this.adapterFor(
           actor.tenantId, schoolId, configuration,
-          this.selectProvider(configuration, input.contentType)
+          this.selectProvider(configuration, normalizedContentType)
         );
         const stored = await adapter.store({
           ...input,
+          contentType: normalizedContentType,
           tenantId: actor.tenantId,
           schoolId,
           version
@@ -506,8 +535,8 @@ export class LogisticsLibraryStorageService {
         const result = await client.query(
           `INSERT INTO production.logistics_library_resource_versions
              (tenant_id, school_id, resource_id, version, storage_object_key, checksum,
-              content_type, content_length, uploaded_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+              content_type, content_length, uploaded_by, scan_status, mime_verified_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'clean', now())
            ON CONFLICT (tenant_id, resource_id, version) DO NOTHING`,
           [actor.tenantId, schoolId, input.resourceId, version,
             stored.objectKey, stored.sha256, stored.contentType, stored.contentLength, actor.userId]
@@ -521,7 +550,7 @@ export class LogisticsLibraryStorageService {
         );
         await this.audit(client, actor, schoolId, 'library_resource_file_uploaded',
           'library_resource', input.resourceId, {
-            version, contentType: stored.contentType, contentLength: stored.contentLength
+            version, contentType: stored.contentType, contentLength: stored.contentLength, scanStatus: 'clean'
           });
         return { version, contentLength: stored.contentLength };
       });
@@ -548,7 +577,8 @@ export class LogisticsLibraryStorageService {
           `SELECT resource.id, resource.class_id, resource.owner_user_id,
                   resource.publication_status, resource.visibility, resource.current_version,
                   version.storage_object_key, version.version, version.checksum,
-                  version.content_type, version.content_length::text AS content_length
+                  version.content_type, version.content_length::text AS content_length,
+                  version.scan_status
            FROM production.logistics_library_resources resource
            JOIN production.logistics_library_resource_versions version
              ON version.tenant_id = resource.tenant_id
@@ -562,6 +592,9 @@ export class LogisticsLibraryStorageService {
         );
         const resource = resourceResult.rows[0];
         if (!resource) throw new LogisticsLibraryStorageError('NOT_FOUND');
+        if (resource.scan_status === 'blocked' || resource.scan_status === 'pending') {
+          throw new LogisticsLibraryStorageError('FORBIDDEN');
+        }
         const mapped = await client.query<{ student_id: string }>(
           `SELECT access.student_id
            FROM production.logistics_library_resource_student_access access

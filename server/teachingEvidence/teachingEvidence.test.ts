@@ -846,6 +846,13 @@ function createStatefulTeachingPool() {
       return ok<R>(qbExamConfigs.filter(e => e.tenant_id === values[0] && e.application_instance_id === values[1]));
     }
 
+    if (trimmed.includes('FROM production.application_instances')) {
+      const owned =
+        (values[0] === TENANT_A && values[1] === INSTANCE_A) ||
+        (values[0] === TENANT_B && values[1] === INSTANCE_B);
+      return ok<R>(owned ? [{ id: values[1] }] : []);
+    }
+
     // Optional AI Gateway context queries
     if (trimmed.includes('FROM production.schools')) {
       return ok<R>([{ name: 'Royal Scholars Academy' }]);

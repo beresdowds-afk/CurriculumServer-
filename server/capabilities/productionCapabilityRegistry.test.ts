@@ -7,13 +7,9 @@ import {
 import { createProductionCapabilityGateMiddleware } from './productionCapabilityMiddleware';
 
 const notReady = [
-  'school_finance_fee_policies',
-  'school_finance_settlement_account_requests',
   'attendance_device_ingestion',
   'attendance_platform_device_provisioning',
-  'attendance_school_device_management',
-  'campus_logistics',
-  'question_bank_scoped_writes'
+  'attendance_school_device_management'
 ];
 
 const readyPrompt1Capabilities = [
@@ -87,31 +83,84 @@ test('database-backed capabilities remain blocked until operational readiness is
   }
 });
 
-test('deferred handlers map to their canonical unready capability', () => {
-  const cases = [
+test('school finance fee policies and settlement account routes pass while wider payments stay blocked', () => {
+  const sampleId = '9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8';
+  for (const [method, path, capabilityId] of [
     ['GET', '/school-finance/schools', 'school_finance_fee_policies'],
-    ['GET', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/fee-policies', 'school_finance_fee_policies'],
-    ['POST', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/fee-policies', 'school_finance_fee_policies'],
-    ['POST', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/fee-policies/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/approve', 'school_finance_fee_policies'],
-    ['GET', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/settlement-accounts', 'school_finance_settlement_account_requests'],
-    ['GET', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/settlement-accounts/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8', 'school_finance_settlement_account_requests'],
-    ['POST', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/settlement-accounts', 'school_finance_settlement_account_requests'],
-    ['POST', '/school-finance/schools/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/settlement-accounts/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/approve', 'school_finance_settlement_account_requests'],
+    ['GET', `/school-finance/schools/${sampleId}/fee-policies`, 'school_finance_fee_policies'],
+    ['GET', `/school-finance/schools/${sampleId}/fee-policies/effective`, 'school_finance_fee_policies'],
+    ['POST', `/school-finance/schools/${sampleId}/fee-policies`, 'school_finance_fee_policies'],
+    ['POST', `/school-finance/schools/${sampleId}/fee-policies/${sampleId}/approve`, 'school_finance_fee_policies'],
+    ['POST', `/school-finance/schools/${sampleId}/fee-policies/${sampleId}/supersede`, 'school_finance_fee_policies'],
+    ['GET', `/school-finance/schools/${sampleId}/settlement-accounts`, 'school_finance_settlement_account_requests'],
+    ['GET', `/school-finance/schools/${sampleId}/settlement-accounts/active`, 'school_finance_settlement_account_requests'],
+    ['GET', `/school-finance/schools/${sampleId}/settlement-accounts/${sampleId}`, 'school_finance_settlement_account_requests'],
+    ['GET', `/school-finance/schools/${sampleId}/settlement-accounts/${sampleId}/events`, 'school_finance_settlement_account_requests'],
+    ['POST', `/school-finance/schools/${sampleId}/settlement-accounts`, 'school_finance_settlement_account_requests'],
+    ['POST', `/school-finance/schools/${sampleId}/settlement-accounts/${sampleId}/approve`, 'school_finance_settlement_account_requests'],
+    ['POST', `/school-finance/schools/${sampleId}/settlement-accounts/${sampleId}/reject`, 'school_finance_settlement_account_requests'],
+    ['POST', `/school-finance/schools/${sampleId}/settlement-accounts/${sampleId}/verify`, 'school_finance_settlement_account_requests'],
+    ['POST', `/school-finance/schools/${sampleId}/settlement-accounts/${sampleId}/activate`, 'school_finance_settlement_account_requests'],
+    ['POST', `/school-finance/schools/${sampleId}/settlement-accounts/${sampleId}/suspend`, 'school_finance_settlement_account_requests'],
+    ['POST', `/school-finance/schools/${sampleId}/settlement-accounts/${sampleId}/revoke`, 'school_finance_settlement_account_requests'],
+    ['POST', `/school-finance/schools/${sampleId}/settlement-accounts/${sampleId}/replace`, 'school_finance_settlement_account_requests'],
+    ['POST', `/school-finance/schools/${sampleId}/settlement-accounts/${sampleId}/verification-callback`, 'school_finance_settlement_account_requests']
+  ] as const) {
+    assert.deepEqual(evaluateProductionCapabilityGate(method, path), {
+      allowed: true,
+      capabilityId
+    }, `${method} ${path}`);
+  }
+  for (const [method, path] of [
+    ['POST', `/school-finance/schools/${sampleId}/invoices`],
+    ['POST', `/school-finance/schools/${sampleId}/payments`],
+    ['GET', `/school-finance/schools/${sampleId}/payroll`],
+    ['GET', `/school-finance/schools/${sampleId}/reports`]
+  ] as const) {
+    assert.deepEqual(evaluateProductionCapabilityGate(method, path), {
+      allowed: false,
+      reason: 'unknown_route'
+    });
+  }
+});
+
+test('campus_logistics handlers pass the production capability gate while unimplemented logistics device routes remain blocked', () => {
+  const sampleId = '9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8';
+  const cases = [
+    ['GET', '/logistics/guardians', 'campus_logistics'],
+    ['POST', '/logistics/guardians', 'campus_logistics'],
+    ['POST', `/logistics/guardians/${sampleId}/verify`, 'campus_logistics'],
+    ['POST', `/logistics/guardians/${sampleId}/students`, 'campus_logistics'],
+    ['POST', `/logistics/guardian-students/${sampleId}/pickup-authorizations`, 'campus_logistics'],
+    ['GET', '/logistics/pickup-passes', 'campus_logistics'],
     ['POST', '/logistics/pickup-passes', 'campus_logistics'],
+    ['POST', `/logistics/pickup-passes/${sampleId}/revoke`, 'campus_logistics'],
+    ['GET', '/logistics/gate/locations', 'campus_logistics'],
+    ['POST', '/logistics/gate/locations', 'campus_logistics'],
+    ['POST', `/logistics/gate/locations/${sampleId}/officers`, 'campus_logistics'],
     ['GET', '/logistics/gate/events', 'campus_logistics'],
+    ['GET', '/logistics/gate/incidents', 'campus_logistics'],
+    ['POST', '/logistics/gate/incidents', 'campus_logistics'],
     ['GET', '/logistics/hostel/register', 'campus_logistics'],
     ['POST', '/logistics/hostel/register', 'campus_logistics'],
     ['POST', '/logistics/hostel/assignments', 'campus_logistics'],
     ['GET', '/logistics/exeats', 'campus_logistics'],
     ['POST', '/logistics/exeats', 'campus_logistics'],
-    ['POST', '/logistics/exeats/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/decisions', 'campus_logistics'],
-    ['POST', '/logistics/dining/meals/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/attendance', 'campus_logistics'],
+    ['POST', `/logistics/exeats/${sampleId}/decisions`, 'campus_logistics'],
+    ['POST', `/logistics/exeats/${sampleId}/cancel`, 'campus_logistics'],
+    ['POST', '/logistics/exeats/evaluate-overdue', 'campus_logistics'],
+    ['POST', `/logistics/dining/meals/${sampleId}/attendance`, 'campus_logistics'],
     ['POST', '/logistics/dining/meals', 'campus_logistics'],
+    ['GET', '/logistics/dining/entitlements', 'campus_logistics'],
+    ['POST', '/logistics/dining/entitlements', 'campus_logistics'],
+    ['POST', `/logistics/dining/entitlements/${sampleId}/revoke`, 'campus_logistics'],
     ['POST', '/logistics/dining/dietary-restrictions', 'campus_logistics'],
     ['GET', '/logistics/dining/dietary-restrictions', 'campus_logistics'],
-    ['POST', '/logistics/transport/trips/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/passenger-events', 'campus_logistics'],
-    ['PATCH', '/logistics/transport/trips/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/assignment', 'campus_logistics'],
-    ['POST', '/logistics/transport/trips/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/start', 'campus_logistics'],
+    ['POST', `/logistics/transport/trips/${sampleId}/passenger-events`, 'campus_logistics'],
+    ['GET', `/logistics/transport/trips/${sampleId}/passengers`, 'campus_logistics'],
+    ['PATCH', `/logistics/transport/trips/${sampleId}/assignment`, 'campus_logistics'],
+    ['POST', `/logistics/transport/trips/${sampleId}/start`, 'campus_logistics'],
+    ['POST', `/logistics/transport/trips/${sampleId}/cancel`, 'campus_logistics'],
     ['GET', '/logistics/transport/routes', 'campus_logistics'],
     ['POST', '/logistics/transport/routes', 'campus_logistics'],
     ['GET', '/logistics/transport/drivers', 'campus_logistics'],
@@ -120,28 +169,32 @@ test('deferred handlers map to their canonical unready capability', () => {
     ['POST', '/logistics/transport/vehicles', 'campus_logistics'],
     ['GET', '/logistics/transport/trips', 'campus_logistics'],
     ['POST', '/logistics/transport/trips', 'campus_logistics'],
-    ['POST', '/logistics/transport/trips/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/complete', 'campus_logistics'],
-    ['POST', '/logistics/transport/vehicles/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/gps-device', 'campus_logistics'],
-    ['POST', '/logistics/transport/vehicles/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/telemetry/sync', 'campus_logistics'],
-    ['POST', '/logistics/transport/gps-device-bindings/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/revoke', 'campus_logistics'],
+    ['POST', `/logistics/transport/trips/${sampleId}/complete`, 'campus_logistics'],
+    ['POST', `/logistics/transport/vehicles/${sampleId}/gps-device`, 'campus_logistics'],
+    ['GET', `/logistics/transport/vehicles/${sampleId}/telemetry`, 'campus_logistics'],
+    ['POST', `/logistics/transport/vehicles/${sampleId}/telemetry/sync`, 'campus_logistics'],
+    ['POST', `/logistics/transport/gps-device-bindings/${sampleId}/revoke`, 'campus_logistics'],
     ['GET', '/logistics/library/resources', 'campus_logistics'],
     ['POST', '/logistics/library/resources', 'campus_logistics'],
     ['GET', '/logistics/library/storage', 'campus_logistics'],
     ['PUT', '/logistics/library/storage', 'campus_logistics'],
-    ['PUT', '/logistics/library/resources/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/file', 'campus_logistics'],
-    ['GET', '/logistics/library/resources/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/download', 'campus_logistics'],
-    ['POST', '/logistics/library/resources/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/visibility', 'campus_logistics']
+    ['PUT', `/logistics/library/resources/${sampleId}/file`, 'campus_logistics'],
+    ['GET', `/logistics/library/resources/${sampleId}/download`, 'campus_logistics'],
+    ['GET', `/logistics/library/resources/${sampleId}/usage`, 'campus_logistics'],
+    ['POST', `/logistics/library/resources/${sampleId}/visibility`, 'campus_logistics'],
+    ['POST', `/logistics/library/resources/${sampleId}/publication`, 'campus_logistics'],
+    ['GET', '/logistics/audit', 'campus_logistics']
   ] as const;
   for (const [method, path, capabilityId] of cases) {
     assert.deepEqual(evaluateProductionCapabilityGate(method, path), {
-      allowed: false,
-      reason: 'capability_not_ready',
-      capabilityId,
-      problems: capabilityActivationProblems(
-        PRODUCTION_CAPABILITIES.find(item => item.id === capabilityId)!
-      )
+      allowed: true,
+      capabilityId
     }, `${method} ${path}`);
   }
+  assert.deepEqual(evaluateProductionCapabilityGate('POST', '/logistics/device-management'), {
+    allowed: false,
+    reason: 'unknown_route'
+  });
 });
 
 test('attendance ingestion and register routes stay blocked until end-to-end readiness is evidenced', () => {
@@ -176,6 +229,50 @@ test('attendance provisioning and school device-management routes remain blocked
     assert.equal(decision.allowed, false, `${method} ${path}`);
     assert.equal(decision.reason, 'capability_not_ready');
     assert.equal(decision.capabilityId, capabilityId);
+  }
+});
+
+test('question bank read and write capabilities have no route overlap and do not expose CBT/vault/marking/results/remedial', () => {
+  const sampleId = '9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8';
+  const expected: Array<[string, string, string]> = [
+    ['GET', '/question-bank', 'instance_question_bank_and_assessments'],
+    ['GET', '/question-bank/categories', 'instance_question_bank_and_assessments'],
+    ['GET', '/assessment-blueprints', 'instance_question_bank_and_assessments'],
+    ['GET', '/assessments/exams', 'instance_question_bank_and_assessments'],
+    ['GET', '/assessments/records', 'instance_question_bank_and_assessments'],
+    ['POST', '/question-bank', 'question_bank_scoped_writes'],
+    ['POST', '/question-bank/categories', 'question_bank_scoped_writes'],
+    ['PATCH', `/question-bank/categories/${sampleId}`, 'question_bank_scoped_writes'],
+    ['POST', `/question-bank/items/${sampleId}/submit`, 'question_bank_scoped_writes'],
+    ['POST', `/question-bank/items/${sampleId}/review`, 'question_bank_scoped_writes'],
+    ['POST', `/question-bank/items/${sampleId}/archive`, 'question_bank_scoped_writes'],
+    ['DELETE', `/question-bank/items/${sampleId}`, 'question_bank_scoped_writes'],
+    ['POST', '/assessment-blueprints', 'question_bank_scoped_writes'],
+    ['POST', '/assessments/exams', 'question_bank_scoped_writes'],
+    ['POST', '/assessments/records', 'question_bank_scoped_writes']
+  ];
+  for (const [method, path, expectedId] of expected) {
+    const matches = PRODUCTION_CAPABILITIES.filter(cap =>
+      cap.routes.some(route => route.method === method && route.path.test(path))
+    );
+    assert.equal(matches.length, 1, `Expected single non-overlapping capability for ${method} ${path}`);
+    assert.deepEqual(evaluateProductionCapabilityGate(method, path), {
+      allowed: true,
+      capabilityId: expectedId
+    });
+  }
+
+  for (const [method, path] of [
+    ['POST', '/assessments/cbt/sessions'],
+    ['POST', '/assessments/vault/seal'],
+    ['POST', '/assessments/marking/scripts'],
+    ['POST', '/assessments/results/publish'],
+    ['POST', '/assessments/remedial/plans']
+  ] as const) {
+    assert.deepEqual(evaluateProductionCapabilityGate(method, path), {
+      allowed: false,
+      reason: 'unknown_route'
+    });
   }
 });
 
@@ -291,7 +388,7 @@ test('unready routes return the established unavailable response', () => {
   const output: { status?: number; body?: Record<string, unknown> } = {};
   const req = {
     method: 'GET',
-    path: '/logistics/gate/events',
+    path: '/attendance/register',
     correlationId: 'capability-test'
   };
   const res = {
@@ -303,7 +400,7 @@ test('unready routes return the established unavailable response', () => {
   });
   assert.equal(output.status, 503);
   assert.equal(output.body?.code, 'PRODUCTION_PERSISTENCE_UNAVAILABLE');
-  assert.equal(output.body?.capabilityId, 'campus_logistics');
+  assert.equal(output.body?.capabilityId, 'attendance_device_ingestion');
 });
 
 test('the capability gate is mounted before API route registrations', () => {

@@ -301,3 +301,5 @@ export function createAuthorizationMiddleware(deps: AuthorizationMiddlewareDepen
     internalService
   };
 }
+
+export type AuthorizationMiddleware = ReturnType<typeof createAuthorizationMiddleware>;

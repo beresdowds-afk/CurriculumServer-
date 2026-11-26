@@ -17,6 +17,7 @@ export interface InstanceQuestionCategory {
   subjectReferenceId?: string | null;
   createdBy: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface InstanceQuestionItem {
@@ -46,10 +47,20 @@ export interface InstanceQuestionItem {
   reviewerId?: string | null;
   approvalTimestamp?: string | null;
   exposureCount: number;
+  archivedAt?: string | null;
+  archivedBy?: string | null;
+  archiveReason?: string | null;
   metadata: Record<string, unknown>;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface QuestionDeleteOrArchiveResult {
+  found: boolean;
+  deleted: boolean;
+  archived: boolean;
+  question?: InstanceQuestionItem;
 }
 
 export interface InstanceAssessmentBlueprint {
