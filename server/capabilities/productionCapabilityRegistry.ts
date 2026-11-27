@@ -357,63 +357,102 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
   },
   {
     id: 'attendance_platform_device_provisioning',
-    description: 'Platform-level attendance device catalogue, compatibility checks, and durable provisioning workflows.',
+    description: 'Platform-level attendance device catalogue administration, adapter registry/verification, compatibility checks, and durable 12-state provisioning workflows.',
     routes: [
-      { method: 'POST', path: exact('/platform/attendance/provisioning-requests') },
       { method: 'GET', path: exact('/platform/attendance/device-catalogue') },
+      { method: 'POST', path: exact(
+        '/platform/attendance/device-catalogue',
+        '/platform/attendance/adapters',
+        '/platform/attendance/provisioning-requests'
+      ) },
       { method: 'GET', path: new RegExp(`^/platform/attendance/(?:provisioning-requests|device-catalogue)/${uuid}$`, 'i') },
-      { method: 'POST', path: new RegExp(`^/platform/attendance/provisioning-requests/${uuid}/(?:validate|execute)$`, 'i') }
+      { method: 'PATCH', path: new RegExp(`^/platform/attendance/device-catalogue/${uuid}$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/platform/attendance/device-catalogue/${uuid}/(?:enable|disable)$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/platform/attendance/adapters/[A-Za-z0-9._:-]+/versions/[A-Za-z0-9._:-]+/verify$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/platform/attendance/provisioning-requests/${uuid}/(?:validate|execute|retry)$`, 'i') }
     ],
-    requiredRepositories: ['SchoolProvisioningRepository', 'AttendanceProvisioningRepository', 'AttendanceProvisioningWorkflow'],
-    requiredMigrations: [31, 32, 33],
+    requiredRepositories: [
+      'SchoolProvisioningRepository',
+      'AttendanceProvisioningRepository',
+      'AttendanceProvisioningWorkflow',
+      'AttendanceAdapterRegistry'
+    ],
+    requiredMigrations: [31, 32, 33, 39],
     authentication: 'platform_administrator',
     authorization: {
       rule: 'verified_platform_administrator_and_control_plane_transaction',
       permissions: ['attendance.devices.provision']
     },
     tenantContext: 'control_plane_transaction',
-    acceptanceTests: ['server/attendance/provisioningWorkflow.test.ts'],
+    acceptanceTests: [
+      'server/attendance/provisioningWorkflow.test.ts',
+      'server/attendance/provisioningAndCatalogue.test.ts',
+      'server/attendance/attendanceLifecycle.integration.test.ts'
+    ],
     readinessEvidence: [],
-    state: 'not_started'
+    state: 'implemented'
   },
   {
     id: 'attendance_school_device_management',
-    description: 'Tenant-scoped school attendance capability and allocated-device status and lifecycle requests.',
+    description: 'Tenant-scoped school attendance capability, allocated-device status, health diagnostics, lifecycle controls, location reassignment, and device credential rotation/revocation.',
     routes: [
       { method: 'GET', path: exact('/schools/me/attendance/devices', '/schools/me/attendance/capability') },
-      { method: 'POST', path: new RegExp(`^/schools/me/attendance/devices/${uuid}/(?:test|suspend|reactivate|revoke)$`, 'i') }
+      { method: 'GET', path: new RegExp(`^/schools/me/attendance/devices/${uuid}$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/schools/me/attendance/devices/${uuid}/(?:test|suspend|reactivate|revoke|decommission|reassign-location)$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/schools/me/attendance/devices/${uuid}/credentials/(?:rotate|revoke)$`, 'i') }
     ],
-    requiredRepositories: ['SchoolProvisioningRepository', 'AttendanceProvisioningRepository', 'AttendanceProvisioningWorkflow', 'AuthorizationRepository'],
-    requiredMigrations: [31, 32],
+    requiredRepositories: ['AttendanceDeviceManagementService', 'AttendanceProvisioningRepository', 'AuthorizationRepository'],
+    requiredMigrations: [8, 10, 31, 32, 39],
     authentication: 'tenant_user_session',
     authorization: {
       rule: 'tenant_membership_and_resource_scoped_attendance_permission',
-      permissions: ['attendance.read', 'attendance.devices.manage', 'attendance.devices.suspend', 'attendance.devices.revoke']
+      permissions: [
+        'attendance.read',
+        'attendance.devices.manage',
+        'attendance.devices.activate',
+        'attendance.devices.suspend',
+        'attendance.devices.revoke',
+        'attendance.credentials.manage'
+      ]
     },
     tenantContext: 'transaction_local_tenant',
-    acceptanceTests: ['server/attendance/provisioningWorkflow.test.ts'],
+    acceptanceTests: [
+      'server/attendance/deviceManagement.test.ts',
+      'server/attendance/attendanceLifecycle.integration.test.ts'
+    ],
     readinessEvidence: [],
-    state: 'not_started'
+    state: 'implemented'
   },
   {
     id: 'attendance_device_ingestion',
-    description: 'Authenticated attendance device enrollment, event ingestion, PostgreSQL register, offline sync, and guardian notification intents.',
+    description: 'Authenticated attendance device enrollment, HMAC-SHA256 ingestion with replay protection, schedule classification, PostgreSQL register, manual adjustments, offline sync, and verified guardian notification outbox intents.',
     routes: [
-      { method: 'POST', path: exact('/attendance/devices', '/attendance/credentials', '/attendance/device-events', '/attendance/device-events/batch', '/attendance/heartbeat', '/attendance/enrollment-ack') },
+      { method: 'POST', path: exact(
+        '/attendance/devices',
+        '/attendance/credentials',
+        '/attendance/device-events',
+        '/attendance/device-events/batch',
+        '/attendance/heartbeat',
+        '/attendance/enrollment-ack'
+      ) },
       { method: 'GET', path: exact('/attendance/sync-status', '/attendance/register') },
       { method: 'PATCH', path: new RegExp(`^/attendance/records/${uuid}/adjustments$`, 'i') }
     ],
-    requiredRepositories: ['AttendanceDeviceRepository', 'AuthorizationRepository', 'NotificationService'],
-    requiredMigrations: [31, 27],
+    requiredRepositories: ['AttendanceDeviceIngestionService', 'AuthorizationRepository', 'NotificationService'],
+    requiredMigrations: [8, 10, 27, 31, 32, 34, 39],
     authentication: 'tenant_user_session',
     authorization: {
       rule: 'device_hmac_and_database_permission_with_school_scope',
       permissions: ['attendance.devices.manage', 'attendance.credentials.manage', 'attendance.read', 'attendance.adjust']
     },
     tenantContext: 'transaction_local_tenant',
-    acceptanceTests: ['server/attendance/deviceAdapter.test.ts'],
+    acceptanceTests: [
+      'server/attendance/deviceAdapter.test.ts',
+      'server/attendance/deviceIngestion.test.ts',
+      'server/attendance/attendanceLifecycle.integration.test.ts'
+    ],
     readinessEvidence: [],
-    state: 'not_started'
+    state: 'implemented'
   },
   {
     id: 'administrative_permissions',

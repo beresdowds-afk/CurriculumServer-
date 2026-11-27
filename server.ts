@@ -80,6 +80,8 @@ import { ApplicationTemplateRepository } from './server/db/applicationTemplateRe
 import { createApiCapabilityGateMiddleware } from './server/capabilities/productionCapabilityMiddleware';
 import { AttendanceProvisioningRepository } from './server/attendance/attendanceProvisioningRepository';
 import { createAttendanceProvisioningRouter } from './server/attendance/provisioningRoutes';
+import { createAttendanceDeviceManagementRouter } from './server/attendance/deviceManagementRoutes';
+import { createAttendanceDeviceIngestionRouter } from './server/attendance/deviceIngestionRoutes';
 import { createSchoolAdministrationGuards } from './server/authorization/schoolAdministrationGuards';
 import { LogisticsError, LogisticsRepository } from './server/logistics/logisticsRepository';
 import { LogisticsGpsRepository, LogisticsGpsRepositoryError } from './server/logistics/logisticsGpsRepository';
@@ -522,6 +524,13 @@ const protectedBillingRateLimiter = createSlidingWindowRateLimiter({
   maxRequests: Math.max(10, Number(process.env.BILLING_PAYMENTS_RATE_LIMIT_MAX || 120)),
   serviceLabel: 'protected-billing-operations',
   keyGenerator: req => req.ip || 'anonymous'
+});
+
+const attendanceRateLimiter = createSlidingWindowRateLimiter({
+  windowMs: 60_000,
+  maxRequests: Math.max(10, Number(process.env.ATTENDANCE_RATE_LIMIT_MAX || 240)),
+  serviceLabel: 'attendance-devices',
+  keyGenerator: req => req.get('X-Device-Identity')?.trim() || req.ip || 'anonymous'
 });
 
 function requireSharedServiceAccess(
@@ -5657,6 +5666,19 @@ app.use('/api/v1', createSchoolFinanceRouter({
   getPool: () => postgresRuntime.getPool(),
   authorizationMiddleware
 }));
+
+app.use(
+  '/api/v1',
+  attendanceRateLimiter,
+  createAttendanceDeviceManagementRouter({
+    getPool: () => postgresRuntime.getPool(),
+    authorizationMiddleware
+  }),
+  createAttendanceDeviceIngestionRouter({
+    getPool: () => postgresRuntime.getPool(),
+    authorizationMiddleware
+  })
+);
 
 app.get('/api/v1/schools/me/students', schoolAdministrationGuards.studentRead, async (req: Request, res: Response) => {
   try {

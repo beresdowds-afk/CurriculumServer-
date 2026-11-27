@@ -1,0 +1,756 @@
+IMPLEMENTATION PROMPT: Complete Attendance Device Provisioning, Management and Ingestion
+
+Repository: "beresdowds-afk/CurriculumServer-"
+Application: Curriculum Flow
+Implementation scope: Three integrated attendance-device capabilities
+
+1. Attendance device provisioning.
+2. Attendance device management.
+3. Attendance device ingestion.
+
+Objective: Complete the production-grade attendance device infrastructure by extending the existing PostgreSQL schema, provisioning workflow, device adapter foundations, authorization architecture and application configuration. Deliver the three features as one coherent, tenant-isolated device management and attendance ingestion system.
+
+This is an implementation task, not a design-only exercise. Inspect the repository, implement the missing functionality, add migrations only where necessary, run tests, and provide an evidence-based completion report.
+
+---
+
+PHASE 1 — Repository inspection and implementation baseline
+
+Before modifying any code, inspect the current "main" branch and establish the actual state of the attendance subsystem.
+
+Inspect at minimum:
+
+- "src/db/migrations/031_attendance_device_ingestion.sql"
+- "src/db/migrations/032_attendance_device_provisioning.sql"
+- "src/db/migrations/033_attendance_candidate_models.sql"
+- "server/attendance/deviceAdapter.ts"
+- "server/attendance/deviceAdapter.test.ts"
+- "server/attendance/provisioningWorkflow.ts"
+- "server/attendance/attendanceProvisioningRepository.ts"
+- "server/attendance/provisioningRoutes.ts"
+- "src/data/attendanceDeviceProvisioningTemplate.ts"
+- "src/data/applicationInstanceConfiguration.ts"
+- "src/data/applicationRegistryData.ts"
+- "server/capabilities/productionCapabilityRegistry.ts"
+- "server/capabilities/productionCapabilityMiddleware.ts"
+- "server.ts"
+- "server/db/postgres.ts"
+- "server/db/tenantContext.ts"
+- Existing authorization repositories, permissions and middleware.
+- Existing notification service and migration 027 outbox implementation.
+- Existing audit and secret-vault implementations.
+- Attendance-related documentation and tests.
+
+Also inspect the actual database migration runner, route mounting, capability-gate matching and test conventions.
+
+Produce an internal implementation map identifying:
+
+1. Existing working components.
+2. Existing components that are only scaffolding.
+3. Missing repositories, services, routes and UI.
+4. Missing database constraints or indexes.
+5. Missing permissions and authorization checks.
+6. Missing vendor integrations.
+7. Dependencies that cannot yet be verified because Central IAM or external hardware is unavailable.
+
+Do not replace working foundations merely because they are incomplete.
+
+---
+
+PHASE 2 — Complete attendance device provisioning
+
+Extend the existing "AttendanceProvisioningRepository", "provisioningWorkflow.ts" and "provisioningRoutes.ts".
+
+2.1 Provisioning request and compatibility validation
+
+Complete the provisioning lifecycle:
+
+"requested → compatibility_check → allocation_pending → allocated → enrollment_pending → enrolled → configuration_pending → configured → connection_verification → integration_verification → activation_pending → active"
+
+Preserve the existing valid failure, retry, rejection, suspension and revocation transitions.
+
+Implement:
+
+- Catalogue-based model validation.
+- Modality compatibility.
+- Supported event-type validation.
+- Firmware compatibility validation.
+- Required offline-sync capability validation.
+- Required integration-method validation.
+- Intended school-location validation.
+- Student/staff population compatibility.
+- Quantity and allocation validation.
+- Explicit reasons when a request is incompatible.
+
+Do not mark a catalogue entry compatible merely because a manufacturer or model name exists.
+
+2.2 Platform catalogue administration
+
+Implement platform-administrator operations for:
+
+- Listing and retrieving catalogue models.
+- Creating and updating model metadata.
+- Enabling or disabling a model.
+- Registering adapter metadata and versions.
+- Recording supported firmware and event types.
+- Recording verified integration methods.
+- Recording operational limitations.
+- Reviewing and recording adapter verification evidence.
+
+Catalogue modifications must be audited.
+
+A model may be marked "implemented_tested" only when an actual adapter exists and the required tests have passed. Candidate models and test simulators must remain distinguishable from production-verified hardware.
+
+2.3 Provisioning execution
+
+Implement the missing validate and execute operations declared in the capability registry.
+
+Execution must:
+
+- Allocate the requested quantity of devices.
+- Bind every allocation to the correct tenant, school and application instance.
+- Associate devices with approved installation locations.
+- Associate the intended student/staff population.
+- Create or register immutable device identities.
+- Provision credentials through the existing server-side secret-vault architecture.
+- Persist encrypted signing credentials in the control plane.
+- Record credential versions and rotation history.
+- Complete enrollment and configuration steps only when evidence exists.
+- Execute actual connection and event-delivery checks where the adapter supports them.
+- Persist every workflow step and outcome.
+- Support safe retries and idempotent execution.
+- Prevent duplicate allocation and duplicate device identity registration.
+
+The workflow must never claim successful configuration or connection when no real device interaction occurred.
+
+Where physical hardware or provider credentials are unavailable, record the step as pending or blocked with an explicit reason. Do not substitute simulated success.
+
+2.4 Activation
+
+A device may become active only when:
+
+- The school's attendance capability is approved and active.
+- The model and adapter are verified.
+- Device allocation is complete.
+- Device enrolment is complete.
+- Credential issuance is successful.
+- Configuration is complete.
+- Connection verification succeeds.
+- Time synchronization succeeds.
+- Event delivery testing succeeds.
+- Attendance acceptance testing succeeds.
+
+Preserve the existing "REQUIRED_ACTIVATION_STEPS" logic and strengthen it where necessary.
+
+---
+
+PHASE 3 — Implement school attendance device management
+
+Create a dedicated school-scoped management service and routes, reusing existing repositories and state machines.
+
+Implement the routes declared in the production capability registry:
+
+- "GET /schools/me/attendance/devices"
+- "GET /schools/me/attendance/capability"
+- "POST /schools/me/attendance/devices/:id/test"
+- "POST /schools/me/attendance/devices/:id/suspend"
+- "POST /schools/me/attendance/devices/:id/reactivate"
+- "POST /schools/me/attendance/devices/:id/revoke"
+
+Add further endpoints only where they are necessary and consistent with existing API conventions.
+
+3.1 Device inventory
+
+The school must be able to retrieve:
+
+- Device identity and display name.
+- Manufacturer and model.
+- Device category and supported modalities.
+- Installation location.
+- Assigned school and application instance.
+- Permitted population.
+- Current lifecycle status.
+- Firmware version.
+- Adapter and integration status.
+- Last successful heartbeat.
+- Last successful event.
+- Connectivity and health status.
+- Provisioning history.
+- Credential status and version, without revealing credentials.
+
+Do not expose signing keys, biometric templates, raw biometric images or sensitive credential material.
+
+3.2 Lifecycle management
+
+Implement controlled operations for:
+
+- Device connectivity testing.
+- Suspension.
+- Reactivation.
+- Credential rotation.
+- Credential revocation.
+- Device revocation.
+- Decommissioning where appropriate.
+- Reassignment only through an explicit audited workflow.
+
+Every state change must use a validated state transition.
+
+A revoked device must no longer authenticate or submit events.
+
+A suspended device must not submit accepted attendance events.
+
+Reactivation must require the appropriate verification checks.
+
+3.3 School authorization
+
+Use the established verified tenant principal, database permission checks and transaction-local tenant context.
+
+Enforce:
+
+- Tenant membership.
+- School ownership.
+- Application-instance ownership.
+- Resource-level access.
+- Role and permission requirements.
+- Principal or other authorized administrative approval where the operation requires it.
+
+Never trust tenant IDs, school IDs, device ownership or actor identities supplied in the request body.
+
+A user from one school must never retrieve or manipulate another school's devices.
+
+Add audit events for every privileged operation.
+
+---
+
+PHASE 4 — Implement authenticated attendance device ingestion
+
+Build a real ingestion service using the existing "deviceAdapter.ts" foundations.
+
+Create dedicated ingestion repository, service and route modules, following the existing project conventions.
+
+4.1 Device authentication
+
+Use the existing HMAC-SHA256 signing and verification primitives, extending them where necessary.
+
+The authentication protocol must bind the signature to:
+
+- HTTP method.
+- Exact request path.
+- Timestamp.
+- Unique nonce.
+- SHA-256 hash of the exact request body.
+
+Use constant-time signature comparison.
+
+Before accepting an event:
+
+1. Resolve the device identity using a trusted lookup.
+2. Retrieve the encrypted credential from the control plane.
+3. Decrypt it through the existing secret vault.
+4. Verify the request signature.
+5. Validate timestamp freshness.
+6. Validate nonce format.
+7. Atomically reject previously used nonces.
+8. Verify that the device credential is not revoked.
+9. Verify that the device is active.
+10. Verify the device's tenant, school, application instance and location assignment.
+11. Verify that the school attendance capability is active.
+
+Do not authenticate using a serial number, device identity, IP address or request header alone.
+
+Do not log signing keys, raw credentials or sensitive payloads.
+
+Use the appropriate control-plane transaction for pre-tenant authentication and a tenant-scoped transaction for event persistence.
+
+4.2 Single-event ingestion
+
+Implement:
+
+"POST /attendance/device-events"
+
+The endpoint must accept only the canonical normalized event format or a verified adapter's normalized output.
+
+Validate:
+
+- Event UUID.
+- Device identity.
+- Credential reference.
+- Verification method and result.
+- Event type.
+- Location.
+- Occurrence timestamp.
+- Sequence number where supported.
+- Payload version.
+- Firmware version.
+
+Reject unexpected fields and invalid timestamps.
+
+Do not accept raw biometric images, facial images, fingerprint templates or unnecessary personal information.
+
+4.3 Offline batch ingestion
+
+Implement:
+
+"POST /attendance/device-events/batch"
+
+Support offline devices that upload accumulated events after reconnection.
+
+Implement:
+
+- Bounded batch sizes.
+- Per-event validation.
+- Device sequence-number tracking.
+- Duplicate detection.
+- Idempotent processing.
+- Out-of-order event handling.
+- Delayed event handling.
+- Partial batch acceptance where appropriate.
+- Explicit per-event results.
+- Safe retry behavior.
+
+A duplicate must never create a second attendance record.
+
+A replayed request must not bypass nonce or event idempotency controls.
+
+Never allow an old event to silently overwrite a newer attendance decision.
+
+4.4 Event persistence and processing
+
+Use the existing tables:
+
+- "attendance.device_events"
+- "attendance.event_processing"
+- "attendance.device_nonces"
+
+Treat raw accepted device events as immutable evidence.
+
+Persist the event and its processing state transactionally.
+
+Record processing outcomes such as:
+
+- "received"
+- "authenticating"
+- "validating"
+- "processing"
+- "accepted"
+- "rejected"
+- "duplicate"
+- "review_required"
+- "retry_pending"
+
+Use explicit error classifications without leaking secrets or sensitive personal information.
+
+Do not discard failed events silently.
+
+---
+
+PHASE 5 — Convert accepted events into authoritative attendance
+
+Implement the service that resolves an authenticated device event into a canonical attendance record.
+
+Use the existing:
+
+- "attendance.credentials"
+- "attendance.records"
+- "attendance.adjustments"
+- Student and staff repositories.
+- School class and academic configuration.
+
+5.1 Credential resolution
+
+Resolve the event's credential reference against the school's active credential records.
+
+Enforce:
+
+- Credential belongs to the authenticated device's school.
+- Credential is not revoked.
+- Credential maps to exactly one valid student or staff member.
+- Student/staff record belongs to the same school.
+- Student/staff status permits attendance processing.
+- Device is authorized for the relevant population.
+
+Do not accept arbitrary student or staff IDs from a device event as proof of identity.
+
+5.2 Attendance classification
+
+Support the existing event types:
+
+- "school_arrival"
+- "school_departure"
+- "classroom_arrival"
+- "classroom_departure"
+- "clock_in"
+- "clock_out"
+
+Resolve attendance status using the school's actual attendance configuration and schedule.
+
+Support appropriate outcomes such as:
+
+- Present.
+- Late.
+- Early departure.
+- Review required.
+
+Do not invent school schedules or assume that a particular time constitutes lateness.
+
+If no valid school schedule or classification rule exists, preserve the event and mark it for review rather than inventing a result.
+
+Prevent duplicate attendance records for the same person, date and attendance context.
+
+5.3 Attendance register
+
+Implement:
+
+- "GET /attendance/register"
+- "GET /attendance/sync-status"
+
+The register must support appropriate date, class, population and attendance-type filters.
+
+Enforce school-level authorization and tenant isolation.
+
+5.4 Manual correction
+
+Implement the registered adjustment route:
+
+"PATCH /attendance/records/:id/adjustments"
+
+Corrections must:
+
+- Require an authorized school user.
+- Require a reason.
+- Preserve the original attendance state.
+- Record the new state.
+- Record actor and timestamp.
+- Be immutable audit evidence.
+- Never alter or delete the original device event.
+
+---
+
+PHASE 6 — Heartbeat, device health and notifications
+
+6.1 Heartbeat
+
+Implement:
+
+"POST /attendance/heartbeat"
+
+The heartbeat must use authenticated device credentials.
+
+Update:
+
+- Last heartbeat timestamp.
+- Device connectivity state.
+- Firmware version where provided.
+- Device health-check history.
+- Relevant sequence information.
+
+Implement an explicit offline/degraded determination using configurable thresholds. Do not assume that absence of a heartbeat proves a device is physically disconnected.
+
+6.2 Enrollment acknowledgement
+
+Implement:
+
+"POST /attendance/enrollment-ack"
+
+Only authenticated devices and authorized enrollment workflows may acknowledge successful enrolment.
+
+The acknowledgement must be tied to the correct device and provisioning request.
+
+6.3 Guardian notifications
+
+Use the existing notification service and migration 027 outbox infrastructure.
+
+Use "attendance.notification_intents" as the durable attendance notification intent record.
+
+Where the event and school policy require a notification:
+
+- Resolve verified guardian relationships from the authoritative school records.
+- Create an idempotent notification intent.
+- Enqueue delivery through the existing outbox.
+- Record delivery status and failure information.
+- Prevent duplicate notifications during event retries.
+
+Do not send notifications to unverified guardian contacts.
+
+Do not claim a notification was delivered merely because an intent was created or an outbox item was queued.
+
+If guardian identity resolution or notification delivery is not operational, retain the event and expose the blocked state.
+
+---
+
+PHASE 7 — Hardware adapters and honest integration status
+
+The existing candidate catalogue includes:
+
+- ZKTeco SpeedFace-V5L and uFace800 Plus.
+- Hikvision DS-K1T342MFWX-E1 and DS-K1T671MF-L.
+- Anviz FaceDeep 5 and W2 Pro.
+- Suprema BioStation 3 and BioStation 2a.
+
+These are candidate models, not verified integrations.
+
+Implement a vendor-neutral adapter registry and adapter contract that supports:
+
+- Payload normalization.
+- Authentication requirements.
+- Supported event types.
+- Firmware compatibility.
+- Offline synchronization.
+- Credential management.
+- Device configuration capabilities.
+- Health reporting.
+- Adapter versioning.
+
+Implement a real vendor adapter only when its protocol, authentication mechanism and behavior can be verified and tested.
+
+Do not invent undocumented endpoints, vendor APIs, firmware capabilities or device command formats.
+
+If no physical hardware is available, implement test fixtures and contract tests clearly labelled as simulators. A simulator must never qualify a production catalogue entry as "implemented_tested".
+
+The generic gateway adapter must remain clearly distinguishable from manufacturer-specific adapters.
+
+---
+
+PHASE 8 — Database integrity and security
+
+Review migrations 031–033 before adding new migrations.
+
+If additional schema changes are necessary, create the next sequential migration using the project's migration conventions.
+
+Ensure:
+
+- Tenant and school foreign-key integrity.
+- Application-instance ownership integrity.
+- Appropriate unique constraints.
+- Idempotency constraints.
+- Event immutability.
+- Credential revocation enforcement.
+- Secure nonce persistence.
+- Appropriate indexes.
+- Transactional state changes.
+- RLS on tenant-owned tables.
+- Correct control-plane protection for encrypted credentials.
+- No cross-tenant data leakage.
+
+Do not weaken or remove existing RLS policies.
+
+Do not expose control-plane credentials to tenant database roles.
+
+Review the runtime database role grants and ensure the new operations use the least privilege compatible with existing repository architecture.
+
+Add audit evidence for provisioning, activation, credential rotation, suspension, reactivation, revocation, event rejection, attendance adjustment and other privileged operations.
+
+---
+
+PHASE 9 — Complete the production capability registry
+
+The repository already defines three distinct capability registrations:
+
+- "attendance_platform_device_provisioning"
+- "attendance_school_device_management"
+- "attendance_device_ingestion"
+
+Complete the route registration, repository declarations, migration dependencies, permission definitions, acceptance tests and readiness evidence for each.
+
+Do not collapse these into one broad capability.
+
+They may share repositories and services, but they have distinct authorization boundaries:
+
+Platform provisioning
+
+- Platform administrator.
+- Control-plane transaction.
+- Catalogue administration and provisioning orchestration.
+
+School device management
+
+- Verified tenant user.
+- School-scoped transaction.
+- Device inventory and lifecycle management.
+
+Device ingestion
+
+- Authenticated device.
+- Verified device credential.
+- School-scoped event persistence.
+
+Ensure every implemented route is correctly mapped to its capability.
+
+Ensure the capability gate blocks unfinished operations.
+
+Only mark a capability "ready" after its complete acceptance tests and operational readiness evidence exist.
+
+Do not set "ready" merely because the route exists or unit tests pass.
+
+The attendance feature template must remain non-provisionable until all required capabilities and external dependencies are genuinely ready.
+
+Central IAM dependency
+
+Inspect "docs/architecture/CENTRAL_IAM_STAGE1_BASELINE.md".
+
+Do not assume Central IAM is production-ready if its documented blockers remain.
+
+Use the actual verified authentication and authorization mechanisms available in the repository. If an essential IAM dependency cannot be completed within this task, keep the affected capability blocked and document the exact dependency.
+
+Never bypass authentication or substitute a permissive development-only identity.
+
+---
+
+PHASE 10 — Frontend integration
+
+Inspect the existing attendance feature UI and navigation.
+
+Implement the school-facing device management interface using the actual APIs.
+
+The interface should support:
+
+- Attendance capability status.
+- Device inventory.
+- Device detail.
+- Provisioning status.
+- Device health.
+- Last heartbeat.
+- Device test.
+- Suspension and reactivation.
+- Revocation.
+- Clear error and blocked-dependency messages.
+
+Only expose actions permitted by the current user's verified permissions.
+
+Do not restore the former fabricated attendance fixtures or present simulated devices, scans or attendance events as real operational data.
+
+Do not create a parallel attendance subsystem.
+
+---
+
+PHASE 11 — Required tests
+
+Implement unit, repository, integration and API-level acceptance tests.
+
+Provisioning tests
+
+- Valid provisioning request.
+- Invalid model/category combination.
+- Unsupported event type.
+- Unsupported firmware.
+- Missing verified adapter.
+- Idempotent request.
+- Idempotency conflict.
+- Duplicate allocation prevention.
+- Correct tenant/application-instance binding.
+- Invalid state transition rejection.
+- Activation blocked when any required step is missing.
+- Failed provisioning retry.
+- Credential issuance and revocation.
+
+Device management tests
+
+- Authorized device inventory retrieval.
+- Cross-tenant device access rejection.
+- Cross-school device access rejection.
+- Unauthorized device mutation rejection.
+- Valid suspension.
+- Reactivation checks.
+- Revocation.
+- Revoked device authentication rejection.
+- Credential rotation.
+- Audit history preservation.
+
+Ingestion tests
+
+- Valid HMAC request.
+- Invalid signature.
+- Changed request body.
+- Expired timestamp.
+- Replayed nonce.
+- Revoked credential.
+- Suspended device.
+- Unknown device.
+- Wrong school assignment.
+- Wrong location.
+- Invalid event.
+- Unexpected payload field.
+- Duplicate event.
+- Duplicate batch event.
+- Out-of-order event.
+- Delayed event.
+- Invalid credential reference.
+- Student/staff ownership mismatch.
+- Database transaction rollback.
+- Concurrent duplicate submission.
+- Notification intent idempotency.
+
+Attendance tests
+
+- Student arrival.
+- Student departure.
+- Classroom arrival and departure.
+- Staff clock-in and clock-out.
+- Late-arrival classification using configured school schedule.
+- Missing schedule review handling.
+- Duplicate attendance prevention.
+- Manual correction with mandatory reason.
+- Immutable original device evidence.
+
+Capability-gate tests
+
+Verify that all three capability registrations remain blocked until their own acceptance evidence is complete.
+
+Verify that every implemented route maps to the correct capability and that overlapping route definitions do not create accidental access.
+
+Add PostgreSQL-backed tests for RLS, tenant isolation, transaction behavior and concurrent idempotency.
+
+---
+
+PHASE 12 — Build, verification and completion report
+
+Run the relevant project checks, including:
+
+- "npm run lint"
+- "npm test"
+- "npm run build:all"
+- All new attendance unit and integration tests.
+- PostgreSQL acceptance tests using a disposable database.
+
+Use the actual scripts defined in "package.json". Do not report a test as passed if it was not executed.
+
+Produce a completion report containing:
+
+1. Repository commit SHA inspected.
+2. Files created.
+3. Files modified.
+4. Database migrations added.
+5. Routes implemented.
+6. Repositories and services implemented.
+7. Permissions and authorization changes.
+8. Hardware adapters actually verified.
+9. Tests executed and their actual results.
+10. Capability-gate status for each of the three features.
+11. Remaining blockers.
+12. Exact commands needed to reproduce verification.
+
+Provide a feature-by-feature status:
+
+Feature| Implemented| Acceptance tested| Production ready
+Attendance device provisioning| Evidence required| Evidence required| Evidence required
+Attendance device management| Evidence required| Evidence required| Evidence required
+Attendance device ingestion| Evidence required| Evidence required| Evidence required
+
+Do not claim all three features are production-ready if external hardware, verified adapter integration, Central IAM, notification delivery or other essential dependencies remain unresolved.
+
+NON-NEGOTIABLE IMPLEMENTATION RULES
+
+1. Inspect before editing.
+2. Extend existing foundations; do not duplicate them.
+3. Preserve tenant isolation and RLS.
+4. Never trust client-supplied tenant, school, device or actor identity.
+5. Never expose device signing keys or raw biometric material.
+6. Never treat a device serial number as authentication.
+7. Never manufacture hardware verification or successful attendance.
+8. Never bypass the production capability gate.
+9. Never activate a device before every required activation step is evidenced.
+10. Never silently discard device events or failed processing attempts.
+11. Preserve audit history and immutable raw device evidence.
+12. Do not modify unrelated application features or remove existing functionality.
+
+Deliverable: One integrated, tested attendance-device subsystem covering provisioning, management and ingestion, with truthful production-readiness states and an evidence-based completion report.

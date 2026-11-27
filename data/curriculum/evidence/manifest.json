@@ -1404,5 +1404,119 @@
     "fileSizeBytes": 68,
     "sourceVersion": "NERDC-CIRC-2026-04",
     "processingStatus": "PRESERVED"
+  },
+  {
+    "documentId": "doc_evid_1795769408830_el1t5",
+    "sourceId": "src-nerdc-math-sss",
+    "originalFileName": "nerdc_official_math_2026.json",
+    "storagePath": "/app/applet/data/curriculum/evidence/doc_evid_1795769408830_el1t5_nerdc_official_math_2026.json",
+    "sourceUrlOrOrigin": "https://www.nerdc.gov.ng/curriculum/senior_secondary/mathematics.json",
+    "retrievalTimestamp": "2026-11-27T08:50:08.831Z",
+    "publicationMetadata": {
+      "gazetteNumber": "GAZ-NERDC-FED-2026",
+      "issuingYear": 2026,
+      "issuingBody": "Nigerian Educational Research and Development Council",
+      "title": "nerdc_official_math_2026.json"
+    },
+    "fileType": "application/json",
+    "sha256Checksum": "f8410b0acdee2c40cf473af26930b8d5e073abec359ff6acc4aec5db6bca6707",
+    "fileSizeBytes": 179,
+    "sourceVersion": "NERDC-2026-V1.0",
+    "processingStatus": "PRESERVED"
+  },
+  {
+    "documentId": "doc_evid_1795769408840_uczz6",
+    "sourceId": "src-nerdc-chem-sss",
+    "originalFileName": "ministerial_circular_chem_2026.txt",
+    "storagePath": "/app/applet/data/curriculum/evidence/doc_evid_1795769408840_uczz6_ministerial_circular_chem_2026.txt",
+    "sourceUrlOrOrigin": "manual_upload:director_curriculum@education.gov.ng",
+    "retrievalTimestamp": "2026-11-27T08:50:08.840Z",
+    "publicationMetadata": {
+      "gazetteNumber": "GAZ-NERDC-FED-2026",
+      "issuingYear": 2026,
+      "issuingBody": "Nigerian Educational Research and Development Council",
+      "title": "ministerial_circular_chem_2026.txt"
+    },
+    "fileType": "text/plain",
+    "sha256Checksum": "ca8ac1a95b17a0e79239e2f1563c49b0347d5202e5922efee9400bdc6d9c49de",
+    "fileSizeBytes": 68,
+    "sourceVersion": "NERDC-CIRC-2026-04",
+    "processingStatus": "PRESERVED"
+  },
+  {
+    "documentId": "doc_evid_1795769515283_ujg5y",
+    "sourceId": "src-nerdc-math-sss",
+    "originalFileName": "nerdc_official_math_2026.json",
+    "storagePath": "/app/applet/data/curriculum/evidence/doc_evid_1795769515283_ujg5y_nerdc_official_math_2026.json",
+    "sourceUrlOrOrigin": "https://www.nerdc.gov.ng/curriculum/senior_secondary/mathematics.json",
+    "retrievalTimestamp": "2026-11-27T08:51:55.283Z",
+    "publicationMetadata": {
+      "gazetteNumber": "GAZ-NERDC-FED-2026",
+      "issuingYear": 2026,
+      "issuingBody": "Nigerian Educational Research and Development Council",
+      "title": "nerdc_official_math_2026.json"
+    },
+    "fileType": "application/json",
+    "sha256Checksum": "f8410b0acdee2c40cf473af26930b8d5e073abec359ff6acc4aec5db6bca6707",
+    "fileSizeBytes": 179,
+    "sourceVersion": "NERDC-2026-V1.0",
+    "processingStatus": "PRESERVED"
+  },
+  {
+    "documentId": "doc_evid_1795769515287_ta804",
+    "sourceId": "src-nerdc-chem-sss",
+    "originalFileName": "ministerial_circular_chem_2026.txt",
+    "storagePath": "/app/applet/data/curriculum/evidence/doc_evid_1795769515287_ta804_ministerial_circular_chem_2026.txt",
+    "sourceUrlOrOrigin": "manual_upload:director_curriculum@education.gov.ng",
+    "retrievalTimestamp": "2026-11-27T08:51:55.288Z",
+    "publicationMetadata": {
+      "gazetteNumber": "GAZ-NERDC-FED-2026",
+      "issuingYear": 2026,
+      "issuingBody": "Nigerian Educational Research and Development Council",
+      "title": "ministerial_circular_chem_2026.txt"
+    },
+    "fileType": "text/plain",
+    "sha256Checksum": "ca8ac1a95b17a0e79239e2f1563c49b0347d5202e5922efee9400bdc6d9c49de",
+    "fileSizeBytes": 68,
+    "sourceVersion": "NERDC-CIRC-2026-04",
+    "processingStatus": "PRESERVED"
+  },
+  {
+    "documentId": "doc_evid_1795769654705_77sxp",
+    "sourceId": "src-nerdc-math-sss",
+    "originalFileName": "nerdc_official_math_2026.json",
+    "storagePath": "/app/applet/data/curriculum/evidence/doc_evid_1795769654705_77sxp_nerdc_official_math_2026.json",
+    "sourceUrlOrOrigin": "https://www.nerdc.gov.ng/curriculum/senior_secondary/mathematics.json",
+    "retrievalTimestamp": "2026-11-27T08:54:14.705Z",
+    "publicationMetadata": {
+      "gazetteNumber": "GAZ-NERDC-FED-2026",
+      "issuingYear": 2026,
+      "issuingBody": "Nigerian Educational Research and Development Council",
+      "title": "nerdc_official_math_2026.json"
+    },
+    "fileType": "application/json",
+    "sha256Checksum": "f8410b0acdee2c40cf473af26930b8d5e073abec359ff6acc4aec5db6bca6707",
+    "fileSizeBytes": 179,
+    "sourceVersion": "NERDC-2026-V1.0",
+    "processingStatus": "PRESERVED"
+  },
+  {
+    "documentId": "doc_evid_1795769654709_30pog",
+    "sourceId": "src-nerdc-chem-sss",
+    "originalFileName": "ministerial_circular_chem_2026.txt",
+    "storagePath": "/app/applet/data/curriculum/evidence/doc_evid_1795769654709_30pog_ministerial_circular_chem_2026.txt",
+    "sourceUrlOrOrigin": "manual_upload:director_curriculum@education.gov.ng",
+    "retrievalTimestamp": "2026-11-27T08:54:14.709Z",
+    "publicationMetadata": {
+      "gazetteNumber": "GAZ-NERDC-FED-2026",
+      "issuingYear": 2026,
+      "issuingBody": "Nigerian Educational Research and Development Council",
+      "title": "ministerial_circular_chem_2026.txt"
+    },
+    "fileType": "text/plain",
+    "sha256Checksum": "ca8ac1a95b17a0e79239e2f1563c49b0347d5202e5922efee9400bdc6d9c49de",
+    "fileSizeBytes": 68,
+    "sourceVersion": "NERDC-CIRC-2026-04",
+    "processingStatus": "PRESERVED"
   }
 ]

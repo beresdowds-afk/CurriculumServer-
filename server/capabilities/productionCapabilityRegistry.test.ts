@@ -197,34 +197,49 @@ test('campus_logistics handlers pass the production capability gate while unimpl
   });
 });
 
-test('attendance ingestion and register routes stay blocked until end-to-end readiness is evidenced', () => {
-  for (const [method, path] of [
-    ['POST', '/attendance/devices'],
-    ['POST', '/attendance/credentials'],
-    ['POST', '/attendance/device-events'],
-    ['POST', '/attendance/device-events/batch'],
-    ['POST', '/attendance/heartbeat'],
-    ['GET', '/attendance/sync-status'],
-    ['POST', '/attendance/enrollment-ack'],
-    ['GET', '/attendance/register'],
-    ['PATCH', '/attendance/records/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/adjustments']
-  ]) {
-    const decision = evaluateProductionCapabilityGate(method, path);
-    assert.equal(decision.allowed, false, `${method} ${path}`);
-    assert.equal(decision.reason, 'capability_not_ready');
-    assert.equal(decision.capabilityId, 'attendance_device_ingestion');
-  }
-});
-
-test('attendance provisioning and school device-management routes remain blocked', () => {
-  for (const [method, path, capabilityId] of [
-    ['POST', '/platform/attendance/provisioning-requests', 'attendance_platform_device_provisioning'],
+test('attendance provisioning, school device-management, and ingestion routes remain blocked without overlap', () => {
+  const sampleId = '9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8';
+  const expected: Array<[string, string, string]> = [
+    ['POST', '/attendance/devices', 'attendance_device_ingestion'],
+    ['POST', '/attendance/credentials', 'attendance_device_ingestion'],
+    ['POST', '/attendance/device-events', 'attendance_device_ingestion'],
+    ['POST', '/attendance/device-events/batch', 'attendance_device_ingestion'],
+    ['POST', '/attendance/heartbeat', 'attendance_device_ingestion'],
+    ['GET', '/attendance/sync-status', 'attendance_device_ingestion'],
+    ['POST', '/attendance/enrollment-ack', 'attendance_device_ingestion'],
+    ['GET', '/attendance/register', 'attendance_device_ingestion'],
+    ['PATCH', `/attendance/records/${sampleId}/adjustments`, 'attendance_device_ingestion'],
     ['GET', '/platform/attendance/device-catalogue', 'attendance_platform_device_provisioning'],
-    ['POST', '/platform/attendance/provisioning-requests/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/execute', 'attendance_platform_device_provisioning'],
-    ['GET', '/schools/me/attendance/devices', 'attendance_school_device_management'],
+    ['POST', '/platform/attendance/device-catalogue', 'attendance_platform_device_provisioning'],
+    ['GET', `/platform/attendance/device-catalogue/${sampleId}`, 'attendance_platform_device_provisioning'],
+    ['PATCH', `/platform/attendance/device-catalogue/${sampleId}`, 'attendance_platform_device_provisioning'],
+    ['POST', `/platform/attendance/device-catalogue/${sampleId}/enable`, 'attendance_platform_device_provisioning'],
+    ['POST', `/platform/attendance/device-catalogue/${sampleId}/disable`, 'attendance_platform_device_provisioning'],
+    ['POST', '/platform/attendance/adapters', 'attendance_platform_device_provisioning'],
+    ['POST', '/platform/attendance/adapters/signed-gw/versions/1.0.0/verify', 'attendance_platform_device_provisioning'],
+    ['POST', '/platform/attendance/provisioning-requests', 'attendance_platform_device_provisioning'],
+    ['GET', `/platform/attendance/provisioning-requests/${sampleId}`, 'attendance_platform_device_provisioning'],
+    ['POST', `/platform/attendance/provisioning-requests/${sampleId}/validate`, 'attendance_platform_device_provisioning'],
+    ['POST', `/platform/attendance/provisioning-requests/${sampleId}/execute`, 'attendance_platform_device_provisioning'],
+    ['POST', `/platform/attendance/provisioning-requests/${sampleId}/retry`, 'attendance_platform_device_provisioning'],
     ['GET', '/schools/me/attendance/capability', 'attendance_school_device_management'],
-    ['POST', '/schools/me/attendance/devices/9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8/revoke', 'attendance_school_device_management']
-  ]) {
+    ['GET', '/schools/me/attendance/devices', 'attendance_school_device_management'],
+    ['GET', `/schools/me/attendance/devices/${sampleId}`, 'attendance_school_device_management'],
+    ['POST', `/schools/me/attendance/devices/${sampleId}/test`, 'attendance_school_device_management'],
+    ['POST', `/schools/me/attendance/devices/${sampleId}/suspend`, 'attendance_school_device_management'],
+    ['POST', `/schools/me/attendance/devices/${sampleId}/reactivate`, 'attendance_school_device_management'],
+    ['POST', `/schools/me/attendance/devices/${sampleId}/revoke`, 'attendance_school_device_management'],
+    ['POST', `/schools/me/attendance/devices/${sampleId}/decommission`, 'attendance_school_device_management'],
+    ['POST', `/schools/me/attendance/devices/${sampleId}/reassign-location`, 'attendance_school_device_management'],
+    ['POST', `/schools/me/attendance/devices/${sampleId}/credentials/rotate`, 'attendance_school_device_management'],
+    ['POST', `/schools/me/attendance/devices/${sampleId}/credentials/revoke`, 'attendance_school_device_management']
+  ];
+
+  for (const [method, path, capabilityId] of expected) {
+    const matches = PRODUCTION_CAPABILITIES.filter(cap =>
+      cap.routes.some(route => route.method === method && route.path.test(path))
+    );
+    assert.equal(matches.length, 1, `Expected single registration for ${method} ${path}`);
     const decision = evaluateProductionCapabilityGate(method, path);
     assert.equal(decision.allowed, false, `${method} ${path}`);
     assert.equal(decision.reason, 'capability_not_ready');

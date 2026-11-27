@@ -41,6 +41,11 @@ export interface CatalogueCompatibilityDescriptor {
   offlineSync: boolean;
   supportedFirmware: readonly string[];
   enabledAdapter: boolean;
+  enabled?: boolean;
+  modalities?: readonly string[];
+  integrationMethod?: string;
+  credentialManagement?: boolean;
+  configurationCapabilities?: readonly string[];
 }
 
 export interface AttendanceProvisioningRequestDescriptor {
@@ -48,6 +53,11 @@ export interface AttendanceProvisioningRequestDescriptor {
   requiredEventTypes: readonly string[];
   firmwareVersion?: string;
   requiresOfflineSync: boolean;
+  requiredModalities?: readonly string[];
+  preferredIntegrationMethod?: string;
+  requiredCapabilities?: readonly string[];
+  intendedLocations?: readonly string[];
+  quantity?: number;
 }
 
 export const MAX_PROVISIONING_ATTEMPTS = 5;
@@ -96,20 +106,50 @@ export function validateCatalogueCompatibility(
 ): { compatible: boolean; reasons: string[] } {
   if (!catalogue) return { compatible: false, reasons: ['MODEL_NOT_CATALOGUED'] };
   const reasons: string[] = [];
+  if (catalogue.enabled === false) {
+    reasons.push('MODEL_DISABLED');
+  }
   if (catalogue.verificationStatus !== 'implemented_tested' || !catalogue.enabledAdapter) {
     reasons.push('ADAPTER_NOT_VERIFIED');
   }
   if (catalogue.category !== request.category) reasons.push('DEVICE_CATEGORY_MISMATCH');
+  if (request.requiredModalities?.length && catalogue.modalities?.length &&
+      request.requiredModalities.some(mod => !catalogue.modalities!.includes(mod))) {
+    reasons.push('MODALITY_UNSUPPORTED');
+  }
   if (request.requiredEventTypes.some(type => !catalogue.supportedEventTypes.includes(type))) {
     reasons.push('REQUIRED_EVENT_TYPE_UNSUPPORTED');
   }
   if (request.requiresOfflineSync && !catalogue.offlineSync) reasons.push('OFFLINE_SYNC_UNSUPPORTED');
+  if (request.preferredIntegrationMethod && request.preferredIntegrationMethod !== 'unknown' &&
+      catalogue.integrationMethod && catalogue.integrationMethod !== request.preferredIntegrationMethod) {
+    reasons.push('INTEGRATION_METHOD_MISMATCH');
+  }
+  if (request.preferredIntegrationMethod === 'unknown') {
+    reasons.push('INTEGRATION_METHOD_UNVERIFIED');
+  }
+  if (request.requiredCapabilities?.length) {
+    const caps = new Set(catalogue.configurationCapabilities ?? []);
+    if (catalogue.offlineSync) caps.add('offline_sync');
+    if (catalogue.credentialManagement) caps.add('credential_management');
+    if (request.requiredCapabilities.some(cap => !caps.has(cap))) {
+      reasons.push('REQUIRED_CAPABILITY_UNSUPPORTED');
+    }
+  }
   if (request.firmwareVersion && catalogue.supportedFirmware.length > 0 &&
       !catalogue.supportedFirmware.includes(request.firmwareVersion)) {
     reasons.push('FIRMWARE_UNVERIFIED');
   }
   if (request.firmwareVersion && catalogue.supportedFirmware.length === 0) {
     reasons.push('FIRMWARE_COMPATIBILITY_UNKNOWN');
+  }
+  if (request.intendedLocations !== undefined &&
+      (request.intendedLocations.length === 0 ||
+       request.intendedLocations.some(loc => !loc.trim()))) {
+    reasons.push('INVALID_INTENDED_LOCATIONS');
+  }
+  if (request.quantity !== undefined && (!Number.isInteger(request.quantity) || request.quantity < 1)) {
+    reasons.push('INVALID_QUANTITY');
   }
   return { compatible: reasons.length === 0, reasons };
 }

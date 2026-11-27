@@ -1501,9 +1501,266 @@ class UnifiedApiClient {
     void record;
     throw {
       success: false,
-      error: 'Attendance writes are unavailable until the authenticated PostgreSQL attendance capability is operational.',
+      error: 'Attendance records are generated from authenticated device events or manual adjustments on existing records.',
       code: 'ATTENDANCE_NOT_READY'
     };
+  }
+
+  private buildSchoolQuerySuffix(params: Record<string, string | undefined>): string {
+    const qs = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value && value.trim()) qs.set(key, value.trim());
+    }
+    const raw = qs.toString();
+    return raw ? `?${raw}` : '';
+  }
+
+  public async getAttendanceCapability<T = {
+    tenantId: string;
+    schoolId: string;
+    applicationInstanceId: string | null;
+    status: string;
+    blockedReason: string | null;
+    requestedConfiguration: Record<string, unknown>;
+    heartbeatThresholds: { degradedSeconds: number; offlineSeconds: number };
+    requestedAt: string | null;
+    activatedAt: string | null;
+    summary: {
+      totalDevices: number;
+      activeDevices: number;
+      suspendedDevices: number;
+      revokedDevices: number;
+    };
+  }>(schoolId?: string): Promise<T> {
+    const suffix = this.buildSchoolQuerySuffix({ schoolId });
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: T }>(
+      `/api/v1/schools/me/attendance/capability${suffix}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async listAttendanceDevices<T = Array<{
+    id: string;
+    deviceIdentity: string;
+    displayName: string;
+    manufacturer: string | null;
+    model: string | null;
+    deviceType: string;
+    modalities: string[];
+    approvedLocation: string;
+    locationId: string | null;
+    schoolId: string;
+    applicationInstanceId: string | null;
+    permittedPopulation: string;
+    allowedEventTypes: string[];
+    status: string;
+    statusReason: string | null;
+    firmwareVersion: string | null;
+    adapterId: string | null;
+    adapterVersion: string | null;
+    integrationStatus: string;
+    lastHeartbeatAt: string | null;
+    lastEventAt: string | null;
+    lastSequenceNumber: number | null;
+    connectivityStatus: 'online' | 'degraded' | 'offline' | 'unknown';
+    connectivityNote: string;
+    credentialStatus: 'active' | 'revoked' | 'not_issued';
+    credentialVersion: number | null;
+    enrollmentAcknowledgedAt: string | null;
+    revokedAt: string | null;
+    decommissionedAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>>(schoolId?: string): Promise<T> {
+    const suffix = this.buildSchoolQuerySuffix({ schoolId });
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: T }>(
+      `/api/v1/schools/me/attendance/devices${suffix}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async getAttendanceDeviceDetail<T = Record<string, unknown>>(
+    deviceId: string,
+    schoolId?: string
+  ): Promise<T> {
+    const suffix = this.buildSchoolQuerySuffix({ schoolId });
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: T }>(
+      `/api/v1/schools/me/attendance/devices/${encodeURIComponent(deviceId)}${suffix}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async testAttendanceDevice<T = Record<string, unknown>>(
+    deviceId: string,
+    schoolId?: string
+  ): Promise<T> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: T }>(
+      `/api/v1/schools/me/attendance/devices/${encodeURIComponent(deviceId)}/test`,
+      { method: 'POST', body: JSON.stringify(schoolId ? { schoolId } : {}) }
+    );
+    return res.data;
+  }
+
+  public async suspendAttendanceDevice<T = Record<string, unknown>>(
+    deviceId: string,
+    reason: string,
+    schoolId?: string
+  ): Promise<T> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: T }>(
+      `/api/v1/schools/me/attendance/devices/${encodeURIComponent(deviceId)}/suspend`,
+      { method: 'POST', body: JSON.stringify({ reason, ...(schoolId ? { schoolId } : {}) }) }
+    );
+    return res.data;
+  }
+
+  public async reactivateAttendanceDevice<T = Record<string, unknown>>(
+    deviceId: string,
+    reason: string,
+    schoolId?: string
+  ): Promise<T> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: T }>(
+      `/api/v1/schools/me/attendance/devices/${encodeURIComponent(deviceId)}/reactivate`,
+      { method: 'POST', body: JSON.stringify({ reason, ...(schoolId ? { schoolId } : {}) }) }
+    );
+    return res.data;
+  }
+
+  public async revokeAttendanceDevice<T = Record<string, unknown>>(
+    deviceId: string,
+    reason: string,
+    schoolId?: string
+  ): Promise<T> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: T }>(
+      `/api/v1/schools/me/attendance/devices/${encodeURIComponent(deviceId)}/revoke`,
+      { method: 'POST', body: JSON.stringify({ reason, ...(schoolId ? { schoolId } : {}) }) }
+    );
+    return res.data;
+  }
+
+  public async decommissionAttendanceDevice<T = Record<string, unknown>>(
+    deviceId: string,
+    reason: string,
+    schoolId?: string
+  ): Promise<T> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: T }>(
+      `/api/v1/schools/me/attendance/devices/${encodeURIComponent(deviceId)}/decommission`,
+      { method: 'POST', body: JSON.stringify({ reason, ...(schoolId ? { schoolId } : {}) }) }
+    );
+    return res.data;
+  }
+
+  public async rotateAttendanceDeviceCredential<T = Record<string, unknown>>(
+    deviceId: string,
+    reason: string,
+    schoolId?: string
+  ): Promise<T> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: T }>(
+      `/api/v1/schools/me/attendance/devices/${encodeURIComponent(deviceId)}/credentials/rotate`,
+      { method: 'POST', body: JSON.stringify({ reason, ...(schoolId ? { schoolId } : {}) }) }
+    );
+    return res.data;
+  }
+
+  public async revokeAttendanceDeviceCredential<T = Record<string, unknown>>(
+    deviceId: string,
+    reason: string,
+    schoolId?: string
+  ): Promise<T> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: T }>(
+      `/api/v1/schools/me/attendance/devices/${encodeURIComponent(deviceId)}/credentials/revoke`,
+      { method: 'POST', body: JSON.stringify({ reason, ...(schoolId ? { schoolId } : {}) }) }
+    );
+    return res.data;
+  }
+
+  public async getAttendanceRegister<T = Array<{
+    id: string;
+    schoolId: string;
+    population: 'student' | 'staff';
+    studentId: string | null;
+    staffId: string | null;
+    personName: string | null;
+    personCode: string | null;
+    classId: string | null;
+    className: string | null;
+    attendanceDate: string;
+    attendanceType: 'school' | 'classroom' | 'staff_shift';
+    status: string;
+    sourceEventId: string | null;
+    lastSourceEventId: string | null;
+    sourceLocation: string | null;
+    sourceType: string;
+    occurredAt: string | null;
+    firstEventAt: string | null;
+    lastEventAt: string | null;
+    reviewReason: string | null;
+    adjustmentCount: number;
+  }>>(filters: {
+    schoolId?: string;
+    date?: string;
+    classId?: string;
+    population?: string;
+    attendanceType?: string;
+    status?: string;
+  } = {}): Promise<T> {
+    const suffix = this.buildSchoolQuerySuffix(filters);
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: T }>(
+      `/api/v1/attendance/register${suffix}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async getAttendanceSyncStatus<T = {
+    schoolId: string;
+    devices: Array<{
+      deviceId: string;
+      deviceIdentity: string;
+      displayName: string;
+      status: string;
+      approvedLocation: string;
+      connectivityStatus: 'online' | 'degraded' | 'offline' | 'unknown';
+      lastHeartbeatAt: string | null;
+      lastEventAt: string | null;
+      lastSequenceNumber: number | null;
+    }>;
+    processingSummary: {
+      accepted: number;
+      reviewRequired: number;
+      rejected: number;
+      duplicate: number;
+      retryPending: number;
+    };
+  }>(schoolId?: string): Promise<T> {
+    const suffix = this.buildSchoolQuerySuffix({ schoolId });
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: T }>(
+      `/api/v1/attendance/sync-status${suffix}`,
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async adjustAttendanceRecord<T = {
+    adjustmentId: string;
+    attendanceRecordId: string;
+    previousState: { status: string; sourceType: string; reviewReason: string | null };
+    newState: { status: string; sourceType: string; reviewReason: string | null };
+    reason: string;
+    actorUserId: string;
+    adjustedAt: string;
+    sourceEventId: string | null;
+  }>(
+    recordId: string,
+    payload: { status: string; reason: string; schoolId?: string }
+  ): Promise<T> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: T }>(
+      `/api/v1/attendance/records/${encodeURIComponent(recordId)}/adjustments`,
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    );
+    return res.data;
   }
 
   // =============================================================

@@ -98,7 +98,15 @@ export const PERMISSIONS = {
   logisticsLibraryRead: 'logistics.library.read',
   logisticsLibraryManage: 'logistics.library.manage',
   logisticsLibraryStorageManage: 'logistics.library.storage.manage',
-  logisticsAuditRead: 'logistics.audit.read'
+  logisticsAuditRead: 'logistics.audit.read',
+  attendanceRead: 'attendance.read',
+  attendanceAdjust: 'attendance.adjust',
+  attendanceDevicesManage: 'attendance.devices.manage',
+  attendanceDevicesActivate: 'attendance.devices.activate',
+  attendanceDevicesSuspend: 'attendance.devices.suspend',
+  attendanceDevicesRevoke: 'attendance.devices.revoke',
+  attendanceCredentialsManage: 'attendance.credentials.manage',
+  attendanceDevicesProvision: 'attendance.devices.provision'
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

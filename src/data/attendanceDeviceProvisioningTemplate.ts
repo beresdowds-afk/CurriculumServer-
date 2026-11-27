@@ -6,8 +6,8 @@ export const ATTENDANCE_DEVICE_PROVISIONING_TEMPLATE = {
   provisionable: false,
   productionReadiness: 'blocked_pending_iam_ingestion_and_verified_adapter',
   dependencies: ['feat_school_administration_identity', 'feat_student_registration'],
-  requiredBackendCapabilities: ['attendance_device_ingestion', 'attendance_device_provisioning'],
-  requiredDatabaseMigrations: [31, 32, 33],
+  requiredBackendCapabilities: ['attendance_device_ingestion', 'attendance_platform_device_provisioning', 'attendance_school_device_management'],
+  requiredDatabaseMigrations: [31, 32, 33, 39],
   requiredPermissions: [
     'attendance.read',
     'attendance.devices.manage',
