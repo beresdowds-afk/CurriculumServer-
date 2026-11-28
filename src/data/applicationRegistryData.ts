@@ -134,6 +134,78 @@ export const INITIAL_REGISTERED_FEATURES: RegisteredFeature[] = [
     ]
   },
   {
+    featureId: 'whatsapp_sms_broadcast',
+    name: 'SMS & WhatsApp Communication Gateway',
+    description: 'Central multi-tenant SMS & WhatsApp authentication OTP, guardian notifications, targeted messaging, scheduled/emergency broadcasts, consent governance, and quota enforcement via CMAG.',
+    applicationAssociation: 'app_curriculum_flow',
+    dependencies: ['feat_school_administration_identity'],
+    requiredPermissions: [
+      'shared.messaging.discover',
+      'shared.messaging.authorize',
+      'shared.messaging.health',
+      'messaging.config.read',
+      'messaging.config.manage',
+      'messaging.templates.manage',
+      'messaging.preferences.manage',
+      'messaging.send',
+      'messaging.broadcast',
+      'messaging.emergency',
+      'messaging.retry',
+      'messaging.reports.read'
+    ],
+    apiDependencies: [
+      '/api/v1/shared/messaging/discovery',
+      '/api/v1/shared/messaging/authorization',
+      '/api/v1/shared/messaging/health',
+      '/api/v1/schools/auth/otp/request',
+      '/api/v1/schools/auth/otp/verify',
+      '/api/v1/flow/auth/otp/request',
+      '/api/v1/flow/auth/otp/verify',
+      '/api/v1/messaging/overview',
+      '/api/v1/messaging/config',
+      '/api/v1/messaging/templates',
+      '/api/v1/messaging/preferences',
+      '/api/v1/messaging/send',
+      '/api/v1/messaging/broadcasts',
+      '/api/v1/messaging/queue'
+    ],
+    databaseRequirements: [
+      'production.notification_outbox',
+      'production.notification_attempts',
+      'production.cmag_tenant_configs',
+      'production.cmag_application_configs',
+      'production.cmag_sender_identities',
+      'production.cmag_message_templates',
+      'production.cmag_recipient_preferences',
+      'production.cmag_auth_challenges',
+      'production.cmag_broadcasts',
+      'production.cmag_usage_daily',
+      'production.cmag_delivery_receipts',
+      'production.cmag_audit_events'
+    ],
+    storageRequirements: [],
+    configOptions: {
+      templateId: 'messaging-gateway',
+      templateVersion: '1.0.0',
+      centralServiceId: 'central_messaging',
+      supportedChannels: ['sms', 'whatsapp', 'email'],
+      requiresProviderCredentialsForLiveDelivery: true
+    },
+    version: '1.0.0',
+    availabilityStatus: 'available',
+    honestyStatus: 'fully_implemented',
+    readiness: [
+      'designed',
+      'implemented',
+      'database_migrated',
+      'api_operational',
+      'authorization_verified',
+      'acceptance_tested',
+      'provisionable',
+      'production_approved'
+    ]
+  },
+  {
     featureId: 'feat_logistics_support',
     name: 'Campus Logistics & Support',
     description: 'Versioned logistics feature template for gate security, guardian pickup, hostels, exeats, dining, transport, and library operations.',

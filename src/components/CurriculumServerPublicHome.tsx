@@ -24,6 +24,11 @@ import {
   ExternalLink,
   Laptop
 } from 'lucide-react';
+import { LandingFooter } from './LandingFooter';
+import { EditFooterModal } from './EditFooterModal';
+import { homepageClient } from '../services/homepageClient';
+import { createDefaultLandingFooter } from '../data/homepageTemplatesData';
+import type { LandingFooterConfig } from '../types/homepageEngine';
 
 interface CurriculumServerPublicHomeProps {
   onGetStarted: () => void;
@@ -31,16 +36,41 @@ interface CurriculumServerPublicHomeProps {
   onOpenControlPlaneLogin: () => void;
   onOpenCustomerPortalLogin?: () => void;
   onNavigateToConsole?: () => void;
+  initialFooter?: LandingFooterConfig;
+  canEditFooter?: boolean;
 }
 
 export const CurriculumServerPublicHome: React.FC<CurriculumServerPublicHomeProps> = ({
   onGetStarted,
   onExploreFlow,
   onOpenControlPlaneLogin,
-  onOpenCustomerPortalLogin
+  onOpenCustomerPortalLogin,
+  initialFooter,
+  canEditFooter = true
 }) => {
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
   const [pricingCycle, setPricingCycle] = useState<'monthly' | 'yearly' | 'lease_to_own'>('yearly');
+  const [footerConfig, setFooterConfig] = useState<LandingFooterConfig>(() =>
+    initialFooter || homepageClient.getCachedPlatformFooter('curriculum_server')
+  );
+  const [isEditFooterOpen, setIsEditFooterOpen] = useState(false);
+
+  React.useEffect(() => {
+    if (initialFooter) {
+      setFooterConfig(initialFooter);
+      return;
+    }
+    let mounted = true;
+    void homepageClient.getPlatformFooter('curriculum_server').then(cfg => {
+      if (mounted) setFooterConfig(cfg);
+    });
+    const unsub = homepageClient.subscribePlatformFooter('curriculum_server', setFooterConfig);
+    return () => {
+      mounted = false;
+      unsub();
+    };
+  }, [initialFooter]);
+
   const toggleFaq = (idx: number) => {
     setActiveFaq(prev => prev === idx ? null : idx);
   };
@@ -681,58 +711,37 @@ export const CurriculumServerPublicHome: React.FC<CurriculumServerPublicHomeProp
       {/* ------------------------------------------------------------- */}
       {/* 9. ENTERPRISE FOOTER                                          */}
       {/* ------------------------------------------------------------- */}
-      <footer className="bg-[#05070B] py-12 text-slate-400 text-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-4 gap-8">
-          <div>
-            <div className="flex items-center gap-2 text-white font-bold text-sm">
-              <Server className="w-4 h-4 text-purple-400" />
-              <span>CURRICULUM SERVER</span>
-            </div>
-            <p className="mt-3 leading-relaxed">
-              Authoritative multi-architecture educational SaaS platform providing sovereign instance provisioning, PostgreSQL relational storage, and NERDC curriculum management.
-            </p>
-          </div>
+      <LandingFooter
+        variant="curriculum_server"
+        footer={footerConfig}
+        canEditFooter={canEditFooter}
+        onEditFooter={() => setIsEditFooterOpen(true)}
+        onExploreFlow={onExploreFlow}
+        onOpenControlPlaneLogin={onOpenControlPlaneLogin}
+        onOpenCustomerPortalLogin={onOpenCustomerPortalLogin}
+      />
 
-          <div>
-            <h4 className="text-white font-bold text-xs uppercase tracking-wider mb-3">Applications</h4>
-            <ul className="space-y-2">
-              <li><button onClick={onExploreFlow} className="hover:text-white transition-colors">Curriculum Flow ERP</button></li>
-              <li><span className="text-slate-500">Research & Policy Analytics</span></li>
-              <li><span className="text-slate-500">CBT Sovereign Engine</span></li>
-              <li><span className="text-slate-500">NERDC Annual Worker</span></li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="text-white font-bold text-xs uppercase tracking-wider mb-3">Architecture & Security</h4>
-            <ul className="space-y-2">
-              <li><a href="#iiape" className="hover:text-white transition-colors">IIAPE Engine</a></li>
-              <li><a href="#overview" className="hover:text-white transition-colors">PostgreSQL 16 LTS</a></li>
-              <li><a href="#overview" className="hover:text-white transition-colors">Customer Storage Choice</a></li>
-              <li><span className="hover:text-white transition-colors">SHA-256 Tamper Ledger</span></li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="text-white font-bold text-xs uppercase tracking-wider mb-3">Governance</h4>
-            <ul className="space-y-2">
-              <li><button onClick={onOpenControlPlaneLogin} className="hover:text-white transition-colors">Platform Admin Access</button></li>
-              <li><button onClick={onOpenCustomerPortalLogin} className="hover:text-white transition-colors">Customer Self-Service</button></li>
-              <li><span>Statutory NERDC Alignment</span></li>
-              <li><span>NDPR / FERPA Compliance</span></li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10 pt-6 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© {new Date().getFullYear()} Curriculum Server Enterprise. All rights reserved.</p>
-          <div className="flex items-center gap-6">
-            <span>Unified Architecture v1.4.0</span>
-            <span aria-hidden="true">·</span>
-            <span>Independent Frontend Deployments</span>
-          </div>
-        </div>
-      </footer>
+      <EditFooterModal
+        isOpen={isEditFooterOpen}
+        title="Edit Footer — Curriculum Server"
+        accentTone="purple"
+        initialValues={{
+          copyrightText: footerConfig.copyrightText,
+          institutionalAddress: footerConfig.institutionalAddress,
+          email: footerConfig.email,
+          phoneNumber: footerConfig.phoneNumber
+        }}
+        defaultValues={createDefaultLandingFooter('curriculum_server')}
+        onLiveChange={(vals) => {
+          setFooterConfig(prev => ({ ...prev, ...vals }));
+        }}
+        onSave={async (vals) => {
+          const res = await homepageClient.updatePlatformFooter('curriculum_server', vals);
+          setFooterConfig(res.config);
+          setIsEditFooterOpen(false);
+        }}
+        onCancel={() => setIsEditFooterOpen(false)}
+      />
     </div>
   );
 };

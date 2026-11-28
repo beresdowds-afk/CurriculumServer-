@@ -47,5 +47,18 @@ closed. Every channel also requires its opt-in flag to be exactly `true`:
   are FCM, Mozilla, and Apple push service hosts; adding other push services
   requires reviewing the endpoint allowlist.
 
-No routes, UI, workflow event integration, worker scheduling, production capability
-enablement, credentials, or live-provider delivery verification are included.
+## CMAG Extension (`server/messaging/` + Migration `040`)
+
+`server/messaging/` builds the **Curriculum Messaging & Authentication Gateway (CMAG)**
+directly on top of `production.notification_outbox` and `production.notification_attempts`
+(extended in `src/db/migrations/040_central_messaging_and_auth_gateway.sql`) while
+preserving `NotificationService` for Email and Web Push workflows:
+
+- Adds control-plane tables (`control_plane.cmag_*`) for central provider secrets,
+  circuit-breaker state, sender/template approvals, platform OTPs, and platform outbox/alerts.
+- Adds tenant-scoped tables (`production.cmag_*`) with forced RLS for school configs,
+  localized templates, opt-ins/quiet hours, quotas, broadcasts, webhooks, and audit events.
+- Adds `SendchampProviderAdapter`, `MetaWhatsAppProviderAdapter`, and `TermiiSmsProviderAdapter`
+  with HMAC-SHA256 webhook verification, replay protection, explicit failover, and background worker scheduling.
+- See `docs/architecture/CMAG_CENTRAL_MESSAGING_GATEWAY.md` for full operational & readiness details.
+

@@ -53,7 +53,7 @@ function bearer(req: Request): string {
 }
 
 function internalServiceOperationForRequest(req: Request): string | undefined {
-  const match = req.path.match(/^\/api\/v1\/shared\/(curriculum|textbooks|vehicle-tracking)(?:\/|$)/);
+  const match = req.path.match(/^\/api\/v1\/shared\/(curriculum|textbooks|vehicle-tracking|messaging)(?:\/|$)/);
   if (!match) return undefined;
   const service = match[1].replace(/-/g, '_');
   if (req.method === 'GET' && req.path === `/api/v1/shared/${match[1]}/discovery`) {

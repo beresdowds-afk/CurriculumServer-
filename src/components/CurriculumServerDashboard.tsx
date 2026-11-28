@@ -60,7 +60,8 @@ import {
   HelpCircle,
   Zap,
   ArrowRight,
-  Bot
+  Bot,
+  Layout
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -98,6 +99,7 @@ interface CurriculumServerDashboardProps {
   onNavigateToDomainPortal?: () => void;
   onOpenUniversalWizard?: () => void;
   onOpenGovernanceModal?: (tenant: TenantSchoolApp) => void;
+  onOpenLandingPageEditor?: (tenant: TenantSchoolApp) => void;
 }
 
 export type SaaSActiveTab = 
@@ -128,7 +130,8 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
   onNavigateToLanding = () => {},
   onNavigateToDomainPortal = () => {},
   onOpenUniversalWizard,
-  onOpenGovernanceModal = (_t) => {}
+  onOpenGovernanceModal = (_t) => {},
+  onOpenLandingPageEditor
 }) => {
   const [activeTab, setActiveTab] = useState<SaaSActiveTab>('provisioned_schools');
   const [searchQuery, setSearchQuery] = useState('');
@@ -909,6 +912,17 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
                         <span>Governance & Hierarchy</span>
                       </button>
 
+                      {onOpenLandingPageEditor && (
+                        <button
+                          onClick={() => onOpenLandingPageEditor(tenant)}
+                          className="w-full py-2 rounded-xl bg-purple-950/60 hover:bg-purple-900/60 text-purple-200 border border-purple-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
+                          title="Open Landing Page & Footer Editor"
+                        >
+                          <Layout className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Landing Page Editor</span>
+                        </button>
+                      )}
+
                       {/* Primary Launch Instance Button */}
                       <button
                         onClick={() => onSelectTenantToLaunch(tenant)}
@@ -970,6 +984,16 @@ export const CurriculumServerDashboard: React.FC<CurriculumServerDashboardProps>
                           >
                             <Key className="w-3.5 h-3.5" />
                           </button>
+                          {onOpenLandingPageEditor && (
+                            <button
+                              onClick={() => onOpenLandingPageEditor(t)}
+                              className="px-2.5 py-1 rounded-lg bg-purple-900/70 hover:bg-purple-800 text-purple-100 border border-purple-700 font-semibold inline-flex items-center gap-1 whitespace-nowrap"
+                              title="Landing Page Editor"
+                            >
+                              <Layout className="w-3 h-3" />
+                              <span>Landing Page</span>
+                            </button>
+                          )}
                           <button
                             onClick={() => onSelectTenantToLaunch(t)}
                             className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold inline-flex items-center gap-1"

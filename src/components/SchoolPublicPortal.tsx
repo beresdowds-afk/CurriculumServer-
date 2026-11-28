@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   SchoolBrandProfile, 
   TenantSchoolApp, 
@@ -34,8 +34,12 @@ import {
   Laptop,
   Flame,
   Globe,
-  Compass
+  Compass,
+  Pencil
 } from 'lucide-react';
+import type { FooterEditableFields } from '../types/homepageEngine';
+import { homepageClient, formatFooterAddress } from '../services/homepageClient';
+import { EditFooterModal } from './EditFooterModal';
 
 interface SchoolPublicPortalProps {
   tenant: TenantSchoolApp;
@@ -50,6 +54,8 @@ interface SchoolPublicPortalProps {
   onSelectTenant?: (tenant: TenantSchoolApp) => void;
   allTenants?: TenantSchoolApp[];
   onNavigateToPlatformLanding?: () => void;
+  initialFooter?: Partial<FooterEditableFields>;
+  canEditFooter?: boolean;
 }
 
 export const SchoolPublicPortal: React.FC<SchoolPublicPortalProps> = ({
@@ -64,7 +70,9 @@ export const SchoolPublicPortal: React.FC<SchoolPublicPortalProps> = ({
   onNavigateToTab,
   onSelectTenant,
   allTenants = [],
-  onNavigateToPlatformLanding
+  onNavigateToPlatformLanding,
+  initialFooter,
+  canEditFooter = true
 }) => {
   const [activeNavSection, setActiveNavSection] = useState<'home' | 'about' | 'academics' | 'admissions' | 'calendar' | 'contact'>('home');
   const [selectedAdmissionGrade, setSelectedAdmissionGrade] = useState<'JSS 1' | 'JSS 2' | 'JSS 3' | 'SS 1' | 'SS 2' | 'SS 3'>('JSS 1');
@@ -88,10 +96,12 @@ export const SchoolPublicPortal: React.FC<SchoolPublicPortalProps> = ({
   const [transferSuccess, setTransferSuccess] = useState(false);
   const [transferCertificateCode, setTransferCertificateCode] = useState('');
   const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
 
   const handleTransferSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmittingTransfer(true);
+    setTransferError(null);
     try {
       const res = await fetch('/api/v1/transfers/apply', {
         method: 'POST',
@@ -112,7 +122,7 @@ export const SchoolPublicPortal: React.FC<SchoolPublicPortalProps> = ({
         setTransferCertificateCode(data.data.transferCertificateCode);
         setTransferSuccess(true);
       } else {
-        alert(data.error || 'Transfer application failed');
+        setTransferError(data.error || 'Transfer application failed');
       }
     } catch {
       setTransferCertificateCode(`CERT-TRF-${Math.floor(100000 + Math.random() * 900000)}`);
@@ -132,6 +142,52 @@ export const SchoolPublicPortal: React.FC<SchoolPublicPortalProps> = ({
   const crestLogoUrl = effectiveBrand?.crestLogoUrl;
   const motto = effectiveBrand?.motto || 'Excellence in Academics, Character & Leadership';
   const tenantDomain = tenant.customDomain || tenant.subdomain || `${tenant.schoolSlug}.curriculumflow.com`;
+
+  const defaultFooterValues: FooterEditableFields = {
+    copyrightText: initialFooter?.copyrightText || `© ${new Date().getFullYear()} ${schoolName}. All Rights Reserved`,
+    institutionalAddress: initialFooter?.institutionalAddress || 'Plot 44, Academic Way, Victoria Island / Ikeja GRA, Lagos, Nigeria',
+    email: initialFooter?.email || tenant.principalEmail || `info@${tenant.schoolSlug}.edu.ng`,
+    phoneNumber: initialFooter?.phoneNumber || tenant.principalPhone || '+234 803 111 2233'
+  };
+
+  const [footerValues, setFooterValues] = useState<FooterEditableFields>(defaultFooterValues);
+  const [isEditFooterOpen, setIsEditFooterOpen] = useState(false);
+
+  useEffect(() => {
+    if (initialFooter) {
+      setFooterValues({
+        copyrightText: initialFooter.copyrightText || defaultFooterValues.copyrightText,
+        institutionalAddress: initialFooter.institutionalAddress || defaultFooterValues.institutionalAddress,
+        email: initialFooter.email || defaultFooterValues.email,
+        phoneNumber: initialFooter.phoneNumber || defaultFooterValues.phoneNumber
+      });
+      return;
+    }
+    let mounted = true;
+    homepageClient.getPublicHomepage(tenant.id).then(cfg => {
+      if (!mounted || !cfg) return;
+      const resolvedAddress = formatFooterAddress(cfg.contact);
+      setFooterValues({
+        copyrightText: cfg.contact.copyrightText || defaultFooterValues.copyrightText,
+        institutionalAddress: resolvedAddress || defaultFooterValues.institutionalAddress,
+        email: cfg.contact.primaryEmail || defaultFooterValues.email,
+        phoneNumber: cfg.contact.primaryPhone || defaultFooterValues.phoneNumber
+      });
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [tenant.id, schoolName]);
+
+  const handleSaveFooter = async (values: FooterEditableFields) => {
+    const res = await homepageClient.updateInstanceFooter(tenant.id, values);
+    setFooterValues({
+      copyrightText: res.config.contact.copyrightText || values.copyrightText,
+      institutionalAddress: formatFooterAddress(res.config.contact) || values.institutionalAddress,
+      email: res.config.contact.primaryEmail || values.email,
+      phoneNumber: res.config.contact.primaryPhone || values.phoneNumber
+    });
+  };
 
   const scrollToSection = (id: string, sectionKey: 'home' | 'about' | 'academics' | 'admissions' | 'calendar' | 'contact') => {
     setActiveNavSection(sectionKey);
@@ -170,15 +226,15 @@ export const SchoolPublicPortal: React.FC<SchoolPublicPortalProps> = ({
           <div className="flex items-center gap-3 sm:gap-6 flex-wrap text-slate-300">
             <span className="flex items-center gap-1.5 font-medium">
               <MapPin className="w-3.5 h-3.5" style={{ color: accentColor }} />
-              <span>Plot 44, Academic Way, Victoria Island / Ikeja GRA, Lagos</span>
+              <span>{footerValues.institutionalAddress}</span>
             </span>
             <span className="hidden md:flex items-center gap-1.5">
               <Phone className="w-3.5 h-3.5" style={{ color: accentColor }} />
-              <span>+234 803 111 2233</span>
+              <span>{footerValues.phoneNumber}</span>
             </span>
             <span className="hidden lg:flex items-center gap-1.5">
               <Mail className="w-3.5 h-3.5" style={{ color: accentColor }} />
-              <span>admissions@{tenant.schoolSlug}.edu.ng</span>
+              <span>{footerValues.email}</span>
             </span>
           </div>
 
@@ -1017,7 +1073,7 @@ export const SchoolPublicPortal: React.FC<SchoolPublicPortalProps> = ({
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-white">Campus Address</h4>
-                    <p className="text-xs text-slate-400">Plot 44, Academic Way, Victoria Island / Ikeja GRA, Lagos, Nigeria</p>
+                    <p className="text-xs text-slate-400">{footerValues.institutionalAddress}</p>
                   </div>
                 </div>
 
@@ -1027,7 +1083,7 @@ export const SchoolPublicPortal: React.FC<SchoolPublicPortalProps> = ({
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-white">Admissions & Front Desk</h4>
-                    <p className="text-xs text-slate-400">+234 803 111 2233 / +234 802 999 8877</p>
+                    <p className="text-xs text-slate-400">{footerValues.phoneNumber}</p>
                   </div>
                 </div>
 
@@ -1037,10 +1093,13 @@ export const SchoolPublicPortal: React.FC<SchoolPublicPortalProps> = ({
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-white">Official School Email</h4>
-                    <p className="text-xs text-slate-400">info@{tenant.schoolSlug}.edu.ng</p>
+                    <p className="text-xs text-slate-400">{footerValues.email}</p>
                   </div>
                 </div>
               </div>
+              {transferError && (
+                <p className="text-xs text-rose-400 font-medium">{transferError}</p>
+              )}
             </div>
 
             {/* Quick Inquiry Box */}
@@ -1095,26 +1154,57 @@ export const SchoolPublicPortal: React.FC<SchoolPublicPortalProps> = ({
       {/* ============================================================ */}
       {/* 8. PUBLIC FOOTER                                             */}
       {/* ============================================================ */}
-      <footer className="py-10 px-4 sm:px-6 lg:px-8 bg-slate-950 border-t border-slate-900 text-xs text-slate-500 text-center">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-300">{schoolName}</span>
-            <span>•</span>
-            <span>{tenantDomain}</span>
+      <footer className="py-10 px-4 sm:px-6 lg:px-8 bg-slate-950 border-t border-slate-900 text-xs text-slate-400">
+        <div className="max-w-7xl mx-auto flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-bold text-slate-200">{schoolName}</span>
+              <span>•</span>
+              <span>{footerValues.institutionalAddress}</span>
+              <span>•</span>
+              <span>{footerValues.email}</span>
+              <span>•</span>
+              <span>{footerValues.phoneNumber}</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {canEditFooter && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditFooterOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-emerald-300 hover:text-white font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                >
+                  <Pencil className="w-3 h-3" />
+                  <span>Edit Footer</span>
+                </button>
+              )}
+              <button 
+                onClick={onOpenAuthModal}
+                className="text-slate-300 hover:text-emerald-400 transition-colors font-medium cursor-pointer whitespace-nowrap"
+              >
+                Staff Portal Sign In
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={onOpenAuthModal}
-              className="text-slate-400 hover:text-emerald-400 transition-colors font-medium cursor-pointer"
-            >
-              Staff Portal Sign In
-            </button>
-            <span>•</span>
-            <span>© {new Date().getFullYear()} All Rights Reserved</span>
+          <div className="pt-4 border-t border-slate-900/80 flex flex-col sm:flex-row items-center justify-between gap-2 text-slate-500">
+            <span>{footerValues.copyrightText}</span>
+            <span>{tenantDomain}</span>
           </div>
         </div>
       </footer>
+
+      <EditFooterModal
+        isOpen={isEditFooterOpen}
+        title={`Edit ${schoolName} Footer`}
+        subtitle="Update copyright text, institutional address, email, and phone number. Changes render live."
+        accentTone="emerald"
+        initialValues={footerValues}
+        defaultValues={defaultFooterValues}
+        onLiveChange={setFooterValues}
+        onSave={handleSaveFooter}
+        onCancel={() => setIsEditFooterOpen(false)}
+      />
     </div>
   );
 };

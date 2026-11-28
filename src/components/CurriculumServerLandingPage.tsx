@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   TenantSchoolApp, 
   CurriculumServerSaaSMetrics,
@@ -46,9 +46,17 @@ import {
   Radio,
   Sliders,
   Server,
-  School
+  School,
+  MapPin,
+  Mail,
+  Phone,
+  Pencil
 } from 'lucide-react';
 import { OPTIONAL_FEATURE_DEFINITIONS } from '../mockCurriculumServerData';
+import type { FooterEditableFields, LandingFooterConfig } from '../types/homepageEngine';
+import { createDefaultLandingFooter } from '../data/homepageTemplatesData';
+import { homepageClient } from '../services/homepageClient';
+import { EditFooterModal } from './EditFooterModal';
 
 interface CurriculumServerLandingPageProps {
   tenants: TenantSchoolApp[];
@@ -66,6 +74,8 @@ interface CurriculumServerLandingPageProps {
   onEnterSelfService?: () => void;
   onOpenIsolationTests?: () => void;
   onOpenApiWebhooks?: () => void;
+  initialFooter?: LandingFooterConfig;
+  canEditFooter?: boolean;
 }
 
 export const CurriculumServerLandingPage: React.FC<CurriculumServerLandingPageProps> = ({
@@ -83,13 +93,51 @@ export const CurriculumServerLandingPage: React.FC<CurriculumServerLandingPagePr
   onOpenAuthModal,
   onEnterSelfService,
   onOpenIsolationTests,
-  onOpenApiWebhooks
+  onOpenApiWebhooks,
+  initialFooter,
+  canEditFooter = true
 }) => {
   // Navigation & Interactive UI state
   const [resourcesDropdownOpen, setResourcesDropdownOpen] = useState(false);
   const [activeWorkflowStep, setActiveWorkflowStep] = useState<number>(1);
   const [isVideoDemoOpen, setIsVideoDemoOpen] = useState<boolean>(false);
   const [activeFaqIndex, setActiveFaqIndex] = useState<number | null>(0);
+  const [footerConfig, setFooterConfig] = useState<LandingFooterConfig>(() =>
+    initialFooter || homepageClient.getCachedPlatformFooter('curriculum_server')
+  );
+  const [isEditFooterOpen, setIsEditFooterOpen] = useState(false);
+
+  useEffect(() => {
+    if (initialFooter) {
+      setFooterConfig(initialFooter);
+      return;
+    }
+    let mounted = true;
+    homepageClient.getPlatformFooter('curriculum_server').then(cfg => {
+      if (mounted) setFooterConfig(cfg);
+    });
+    const unsubscribe = homepageClient.subscribePlatformFooter('curriculum_server', cfg => {
+      if (mounted) setFooterConfig(cfg);
+    });
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [initialFooter]);
+
+  const defaultFooter = createDefaultLandingFooter('curriculum_server');
+
+  const handleLiveFooterChange = (values: FooterEditableFields) => {
+    setFooterConfig(prev => ({
+      ...prev,
+      ...values
+    }));
+  };
+
+  const handleSaveFooter = async (values: FooterEditableFields) => {
+    const result = await homepageClient.updatePlatformFooter('curriculum_server', values);
+    setFooterConfig(result.config);
+  };
   
   // Interactive Pricing & Calculator state
   const [pricingCycle, setPricingCycle] = useState<'monthly' | 'yearly' | 'lease_to_own'>('yearly');
@@ -1297,10 +1345,32 @@ export const CurriculumServerLandingPage: React.FC<CurriculumServerLandingPagePr
             <p className="text-xs text-slate-400 max-w-sm leading-relaxed">
               The sovereign multi-tenant academic cloud engine powering CURRICULUM FLOW instances across Nigeria and Africa. Built for scale, verified security, and educational sovereignty.
             </p>
-            <div className="flex items-center gap-2 text-[11px] text-emerald-400 font-mono">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>All Systems Operational (99.99% Uptime)</span>
+            <div className="space-y-2 pt-1 text-xs text-slate-300">
+              <div className="flex items-start gap-2">
+                <MapPin className="w-3.5 h-3.5 text-purple-400 shrink-0 mt-0.5" />
+                <span>{footerConfig.institutionalAddress}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Mail className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span>{footerConfig.email}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Phone className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span>{footerConfig.phoneNumber}</span>
+              </div>
             </div>
+            {canEditFooter && (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsEditFooterOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-purple-300 hover:text-white text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                >
+                  <Pencil className="w-3 h-3" />
+                  <span>Edit Footer</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Column 2: Product */}
@@ -1342,8 +1412,8 @@ export const CurriculumServerLandingPage: React.FC<CurriculumServerLandingPagePr
         </div>
 
         {/* Bottom copyright line */}
-        <div className="max-w-7xl mx-auto pt-8 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-slate-500">
-          <p>© 2026 CURRICULUM SERVER Inc. All rights reserved.</p>
+        <div className="max-w-7xl mx-auto pt-8 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-slate-400">
+          <p>{footerConfig.copyrightText}</p>
           <button
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             className="hover:text-white transition-colors cursor-pointer"
@@ -1352,6 +1422,28 @@ export const CurriculumServerLandingPage: React.FC<CurriculumServerLandingPagePr
           </button>
         </div>
       </footer>
+
+      <EditFooterModal
+        isOpen={isEditFooterOpen}
+        title="Edit Curriculum Server Footer"
+        subtitle="Modify copyright text, institutional address, email, and phone number. Changes appear live immediately."
+        accentTone="purple"
+        initialValues={{
+          copyrightText: footerConfig.copyrightText,
+          institutionalAddress: footerConfig.institutionalAddress,
+          email: footerConfig.email,
+          phoneNumber: footerConfig.phoneNumber
+        }}
+        defaultValues={{
+          copyrightText: defaultFooter.copyrightText,
+          institutionalAddress: defaultFooter.institutionalAddress,
+          email: defaultFooter.email,
+          phoneNumber: defaultFooter.phoneNumber
+        }}
+        onLiveChange={handleLiveFooterChange}
+        onSave={handleSaveFooter}
+        onCancel={() => setIsEditFooterOpen(false)}
+      />
 
       {/* ============================================================ */}
       {/* 10. INTERACTIVE WATCH DEMO MODAL                              */}

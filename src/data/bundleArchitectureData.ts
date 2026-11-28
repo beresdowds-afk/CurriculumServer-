@@ -447,7 +447,9 @@ export const CURRICULUM_FLOW_BUNDLES: CurriculumFlowBundle[] = [
 
 // Helper to calculate total price for any combination of bundles
 export function calculateBundlePricing(
-  selectedBundleKeys: CurriculumFlowBundleKey[],
+  selectedBundleKeys:
+    | CurriculumFlowBundleKey[]
+    | Partial<Record<CurriculumFlowBundleKey, boolean>>,
   billingCycleOrIsYearly: 'monthly' | 'yearly' | boolean = 'yearly'
 ): {
   subtotalNGN: number;
@@ -463,7 +465,13 @@ export function calculateBundlePricing(
     ? billingCycleOrIsYearly 
     : billingCycleOrIsYearly === 'yearly';
 
-  const selectedBundles = CURRICULUM_FLOW_BUNDLES.filter(b => selectedBundleKeys.includes(b.key));
+  const normalizedBundleKeys: CurriculumFlowBundleKey[] = Array.isArray(selectedBundleKeys)
+    ? selectedBundleKeys
+    : (Object.entries(selectedBundleKeys || {}) as [CurriculumFlowBundleKey, boolean | undefined][])
+        .filter(([, enabled]) => Boolean(enabled))
+        .map(([key]) => key);
+
+  const selectedBundles = CURRICULUM_FLOW_BUNDLES.filter(b => normalizedBundleKeys.includes(b.key));
   
   const subtotalMonthlyNGN = selectedBundles.reduce((sum, b) => sum + b.monthlyPriceNGN, 0);
   const subtotalYearlyNGN = selectedBundles.reduce((sum, b) => sum + b.yearlyPriceNGN, 0);

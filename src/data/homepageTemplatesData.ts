@@ -7,8 +7,34 @@ import {
   InstanceHeroConfig, 
   InstanceAuthPresentationConfig, 
   InstanceContactInfo, 
-  HomepageSectionConfig 
+  HomepageSectionConfig,
+  LandingFooterAppKey,
+  LandingFooterConfig
 } from '../types/homepageEngine';
+
+export function createDefaultLandingFooter(appKey: LandingFooterAppKey): LandingFooterConfig {
+  const year = new Date().getFullYear();
+  if (appKey === 'curriculum_server') {
+    return {
+      appKey: 'curriculum_server',
+      copyrightText: `© ${year} Curriculum Server Enterprise. All rights reserved.`,
+      institutionalAddress: 'Plot 14, Sovereign Cloud Avenue, Victoria Island, Lagos, Nigeria',
+      email: 'contact@curriculumserver.com.ng',
+      phoneNumber: '+234 800 287 7428',
+      updatedAt: new Date().toISOString(),
+      updatedBy: 'system_default'
+    };
+  }
+  return {
+    appKey: 'curriculum_flow',
+    copyrightText: `© ${year} Curriculum Flow Academic OS. All rights reserved.`,
+    institutionalAddress: 'Km 12, Academic Boulevard, Ikeja GRA, Lagos State, Nigeria',
+    email: 'hello@curriculumflow.com.ng',
+    phoneNumber: '+234 803 555 0192',
+    updatedAt: new Date().toISOString(),
+    updatedBy: 'system_default'
+  };
+}
 
 export const HOMEPAGE_TEMPLATES: HomepageTemplateDefinition[] = [
   {
@@ -137,9 +163,11 @@ export function createDefaultPresetConfiguration(
     typography = 'Manrope';
   }
 
+  const safeSlug = (schoolSlug || instanceId || 'school').toString();
+  const safeName = (institutionName || safeSlug).toString();
   const branding: InstanceBrandingConfig = {
-    institutionName,
-    shortName: schoolSlug.toUpperCase().substring(0, 6),
+    institutionName: safeName,
+    shortName: safeSlug.toUpperCase().substring(0, 6),
     tagline: isExamOrg 
       ? 'Rigorous Assessment, Uncompromised Standard & Secure Certification'
       : isUniversity 

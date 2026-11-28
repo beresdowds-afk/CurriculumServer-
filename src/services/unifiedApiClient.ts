@@ -66,7 +66,17 @@ import type {
   UpdateSchoolProfileRequest,
   UpdateSchoolStaffRequest,
   UpdateSchoolStudentRequest,
-  UpsertStudentMedicalProfileRequest
+  UpsertStudentMedicalProfileRequest,
+  CmagOtpRequestPayload,
+  CmagOtpRequestResponse,
+  CmagOtpVerifyPayload,
+  CmagOtpVerifyResponse,
+  CmagPlatformOverviewResponse,
+  CmagTenantOverviewResponse,
+  CmagTargetedSendRequest,
+  CmagBroadcastRequest,
+  CmagQueueMetrics,
+  CmagProviderSummary
 } from '../../packages/shared-types/src/apiContracts';
 import { TenantSchoolApp } from '../types';
 import { RegisteredApplication, RegisteredFeature } from '../types/applicationRegistry';
@@ -1943,6 +1953,296 @@ class UnifiedApiClient {
       },
       'school_flow'
     );
+  }
+
+  // =============================================================
+  // CENTRAL MESSAGING & AUTHENTICATION GATEWAY (CMAG)
+  // =============================================================
+
+  public async requestPlatformOtp(payload: CmagOtpRequestPayload): Promise<CmagOtpRequestResponse> {
+    const res = await this.request<{ success: boolean; data: CmagOtpRequestResponse }>(
+      '/api/v1/server/auth/otp/request',
+      { method: 'POST', body: JSON.stringify(payload) },
+      'none'
+    );
+    return res.data;
+  }
+
+  public async verifyPlatformOtp(payload: CmagOtpVerifyPayload): Promise<CmagOtpVerifyResponse> {
+    const res = await this.request<{ success: boolean; data: CmagOtpVerifyResponse }>(
+      '/api/v1/server/auth/otp/verify',
+      { method: 'POST', body: JSON.stringify(payload) },
+      'none'
+    );
+    if (res.data?.token) {
+      this.setControlPlaneToken(res.data.token);
+    }
+    return res.data;
+  }
+
+  public async requestSchoolOtp(payload: CmagOtpRequestPayload): Promise<CmagOtpRequestResponse> {
+    const res = await this.request<{ success: boolean; data: CmagOtpRequestResponse }>(
+      '/api/v1/schools/auth/otp/request',
+      { method: 'POST', body: JSON.stringify(payload) },
+      'none'
+    );
+    return res.data;
+  }
+
+  public async verifySchoolOtp(payload: CmagOtpVerifyPayload): Promise<CmagOtpVerifyResponse> {
+    const res = await this.request<{ success: boolean; data: CmagOtpVerifyResponse }>(
+      '/api/v1/schools/auth/otp/verify',
+      { method: 'POST', body: JSON.stringify(payload) },
+      'none'
+    );
+    if (res.data?.token) {
+      this.setSchoolFlowToken(res.data.token, res.data.tenantId);
+    }
+    return res.data;
+  }
+
+  public async requestFlowOtp(payload: CmagOtpRequestPayload): Promise<CmagOtpRequestResponse> {
+    const res = await this.request<{ success: boolean; data: CmagOtpRequestResponse }>(
+      '/api/v1/flow/auth/otp/request',
+      { method: 'POST', body: JSON.stringify(payload) },
+      'none'
+    );
+    return res.data;
+  }
+
+  public async verifyFlowOtp(payload: CmagOtpVerifyPayload): Promise<CmagOtpVerifyResponse> {
+    const res = await this.request<{ success: boolean; data: CmagOtpVerifyResponse }>(
+      '/api/v1/flow/auth/otp/verify',
+      { method: 'POST', body: JSON.stringify(payload) },
+      'none'
+    );
+    if (res.data?.token) {
+      this.setSchoolFlowToken(res.data.token, res.data.tenantId);
+    }
+    return res.data;
+  }
+
+  public async getPlatformMessagingOverview(): Promise<CmagPlatformOverviewResponse> {
+    const res = await this.requestAuthenticatedControlPlane<{ success: boolean; data: CmagPlatformOverviewResponse }>(
+      '/api/v1/platform/messaging/overview',
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async updatePlatformMessagingConfig(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const res = await this.requestAuthenticatedControlPlane<{ success: boolean; data: Record<string, unknown> }>(
+      '/api/v1/platform/messaging/config',
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async upsertPlatformProviderConfig(
+    providerId: string,
+    payload: {
+      channel: 'sms' | 'whatsapp' | 'email';
+      displayName?: string;
+      enabled: boolean;
+      isPrimary?: boolean;
+      priority?: number;
+      environment?: 'development' | 'staging' | 'production';
+      senderName?: string;
+      whatsappSenderNumber?: string;
+      credentials?: Record<string, string>;
+      webhookSecret?: string;
+    }
+  ): Promise<CmagProviderSummary> {
+    const res = await this.requestAuthenticatedControlPlane<{ success: boolean; data: CmagProviderSummary }>(
+      `/api/v1/platform/messaging/providers/${encodeURIComponent(providerId)}`,
+      { method: 'PUT', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async suspendPlatformProvider(providerId: string, reason: string): Promise<{ suspended: boolean }> {
+    const res = await this.requestAuthenticatedControlPlane<{ success: boolean; data: { suspended: boolean } }>(
+      `/api/v1/platform/messaging/providers/${encodeURIComponent(providerId)}/suspend`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
+    );
+    return res.data;
+  }
+
+  public async resumePlatformProvider(providerId: string): Promise<{ suspended: boolean }> {
+    const res = await this.requestAuthenticatedControlPlane<{ success: boolean; data: { suspended: boolean } }>(
+      `/api/v1/platform/messaging/providers/${encodeURIComponent(providerId)}/resume`,
+      { method: 'POST', body: JSON.stringify({}) }
+    );
+    return res.data;
+  }
+
+  public async registerPlatformSender(payload: {
+    scope: 'platform' | 'tenant';
+    tenantId?: string;
+    channel: 'sms' | 'whatsapp';
+    providerId: string;
+    senderValue: string;
+    approvalStatus?: 'pending' | 'submitted' | 'approved' | 'rejected';
+    isDefault?: boolean;
+  }): Promise<Record<string, unknown>> {
+    const res = await this.requestAuthenticatedControlPlane<{ success: boolean; data: Record<string, unknown> }>(
+      '/api/v1/platform/messaging/senders',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async registerPlatformWhatsappTemplate(payload: {
+    providerId: string;
+    templateName: string;
+    locale: string;
+    category: 'AUTHENTICATION' | 'UTILITY' | 'MARKETING';
+    approvalStatus?: 'draft' | 'submitted' | 'approved' | 'rejected' | 'paused';
+    headerText?: string;
+    bodyText: string;
+    footerText?: string;
+  }): Promise<Record<string, unknown>> {
+    const res = await this.requestAuthenticatedControlPlane<{ success: boolean; data: Record<string, unknown> }>(
+      '/api/v1/platform/messaging/whatsapp-templates',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async suspendMessagingTenant(tenantId: string, reason: string): Promise<Record<string, unknown>> {
+    const res = await this.requestAuthenticatedControlPlane<{ success: boolean; data: Record<string, unknown> }>(
+      `/api/v1/platform/messaging/tenants/${encodeURIComponent(tenantId)}/suspend`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
+    );
+    return res.data;
+  }
+
+  public async resumeMessagingTenant(tenantId: string): Promise<Record<string, unknown>> {
+    const res = await this.requestAuthenticatedControlPlane<{ success: boolean; data: Record<string, unknown> }>(
+      `/api/v1/platform/messaging/tenants/${encodeURIComponent(tenantId)}/resume`,
+      { method: 'POST', body: JSON.stringify({}) }
+    );
+    return res.data;
+  }
+
+  public async dispatchCmagQueueNow(limit = 20): Promise<{ processed: number; sent: number; failed: number }> {
+    const res = await this.requestAuthenticatedControlPlane<{
+      success: boolean;
+      data: { processed: number; sent: number; failed: number };
+    }>('/api/v1/platform/messaging/dispatch-now', {
+      method: 'POST',
+      body: JSON.stringify({ limit })
+    });
+    return res.data;
+  }
+
+  public async retryPlatformMessage(outboxId: string): Promise<{ retried: boolean }> {
+    const res = await this.requestAuthenticatedControlPlane<{ success: boolean; data: { retried: boolean } }>(
+      `/api/v1/platform/messaging/messages/${encodeURIComponent(outboxId)}/retry`,
+      { method: 'POST', body: JSON.stringify({}) }
+    );
+    return res.data;
+  }
+
+  public async sendPlatformMessage(payload: {
+    channel: 'sms' | 'whatsapp' | 'email';
+    to: string;
+    message: string;
+    subject?: string;
+    purpose?: string;
+    category?: string;
+    senderName?: string;
+    senderNumber?: string;
+  }): Promise<Record<string, unknown>> {
+    const res = await this.requestAuthenticatedControlPlane<{ success: boolean; data: Record<string, unknown> }>(
+      '/api/v1/platform/messaging/send',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async getSchoolMessagingOverview(): Promise<CmagTenantOverviewResponse> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: CmagTenantOverviewResponse }>(
+      '/api/v1/messaging/overview',
+      { method: 'GET' }
+    );
+    return res.data;
+  }
+
+  public async updateSchoolMessagingConfig(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: Record<string, unknown> }>(
+      '/api/v1/messaging/config',
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async upsertSchoolMessagingTemplate(payload: {
+    templateKey: string;
+    locale: string;
+    channel: 'sms' | 'whatsapp' | 'email';
+    category: string;
+    title: string;
+    bodyTemplate: string;
+    whatsappTemplateName?: string;
+    sensitiveDataPolicy?: 'standard' | 'strict_redacted';
+  }): Promise<Record<string, unknown>> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: Record<string, unknown> }>(
+      '/api/v1/messaging/templates',
+      { method: 'PUT', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async upsertSchoolMessagingPreference(payload: {
+    recipientType: 'guardian' | 'staff' | 'student' | 'user';
+    recipientId: string;
+    preferredChannel?: 'sms' | 'whatsapp' | 'email';
+    preferredLocale?: string;
+    smsOptIn?: boolean;
+    whatsappOptIn?: boolean;
+    emailOptIn?: boolean;
+    marketingOptIn?: boolean;
+    quietHoursStart?: string | null;
+    quietHoursEnd?: string | null;
+  }): Promise<Record<string, unknown>> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: Record<string, unknown> }>(
+      '/api/v1/messaging/preferences',
+      { method: 'PUT', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async sendSchoolMessage(payload: CmagTargetedSendRequest): Promise<Record<string, unknown>> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: Record<string, unknown> }>(
+      '/api/v1/messaging/send',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async createSchoolBroadcast(payload: CmagBroadcastRequest): Promise<Record<string, unknown>> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: Record<string, unknown> }>(
+      '/api/v1/messaging/broadcasts',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async retrySchoolMessage(outboxId: string): Promise<{ retried: boolean }> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: { retried: boolean } }>(
+      `/api/v1/messaging/messages/${encodeURIComponent(outboxId)}/retry`,
+      { method: 'POST', body: JSON.stringify({}) }
+    );
+    return res.data;
+  }
+
+  public async getSchoolMessagingQueue(): Promise<CmagQueueMetrics> {
+    const res = await this.requestAuthenticatedSchoolFlow<{ success: boolean; data: CmagQueueMetrics }>(
+      '/api/v1/messaging/queue',
+      { method: 'GET' }
+    );
+    return res.data;
   }
 
   // =============================================================

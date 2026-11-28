@@ -5,6 +5,7 @@ import {
   SystemAdminRoleType,
   AuthProviderType 
 } from '../types';
+import { unifiedApiClient } from '../services/unifiedApiClient';
 import { 
   ShieldCheck, 
   Mail, 
@@ -63,10 +64,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [fullName, setFullName] = useState('');
   const [staffId, setStaffId] = useState('');
   
-  // Phone verification state
+  // Phone verification state (CMAG SMS / WhatsApp OTP)
+  const [tenantIdInput, setTenantIdInput] = useState(
+    () => unifiedApiClient.getActiveTenantId() || ''
+  );
+  const [otpChannel, setOtpChannel] = useState<'sms' | 'whatsapp'>('sms');
   const [countryCode, setCountryCode] = useState('+234');
   const [phoneNumber, setPhoneNumber] = useState(currentAccount.phone ? currentAccount.phone.replace('+234 ', '').replace('+234', '') : '803 111 2233');
   const [otpCode, setOtpCode] = useState('');
+  const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [maskedRecipient, setMaskedRecipient] = useState<string>('');
   const [otpSent, setOtpSent] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
   
@@ -162,20 +169,59 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }, 750);
   };
 
-  const handleSendPhoneOtp = () => {
-    const fullPhone = `${countryCode} ${phoneNumber.trim()}`;
-    if (!phoneNumber || phoneNumber.length < 7) {
+  const formatE164Phone = () => {
+    const digits = phoneNumber.replace(/\D/g, '').replace(/^0+/, '');
+    return `${countryCode}${digits}`;
+  };
+
+  const handleSendPhoneOtp = async () => {
+    const e164Phone = formatE164Phone();
+    const resolvedTenantId = tenantIdInput.trim() || unifiedApiClient.getActiveTenantId() || '';
+    if (!/^\+[1-9]\d{7,14}$/.test(e164Phone)) {
       setErrorMsg('Please enter a valid mobile phone number.');
       return;
     }
+    if (!resolvedTenantId) {
+      setErrorMsg('Enter your School Tenant ID before requesting an SMS or WhatsApp OTP.');
+      return;
+    }
     setErrorMsg(null);
-    setOtpSent(true);
-    setResendTimer(60);
-    setSuccessMsg(`6-digit verification code sent to ${fullPhone} via SMS.`);
+    setSuccessMsg(null);
+    setIsSubmitting(true);
+    try {
+      const receipt = await unifiedApiClient.requestSchoolOtp({
+        tenantId: resolvedTenantId,
+        applicationId: 'app_curriculum_flow',
+        phone: e164Phone,
+        email: currentAccount.email || undefined,
+        preferredChannel: otpChannel,
+        purpose: mode === 'mfa_challenge' ? 'mfa_verify' : 'account_verify'
+      });
+      setChallengeId(receipt.challengeId);
+      setMaskedRecipient(receipt.maskedDestination || receipt.maskedRecipient || e164Phone);
+      setOtpSent(true);
+      const secondsUntilResend = receipt.resendAvailableAt
+        ? Math.max(0, Math.ceil((new Date(receipt.resendAvailableAt).getTime() - Date.now()) / 1000))
+        : 45;
+      setResendTimer(secondsUntilResend);
+      setSuccessMsg(
+        `6-digit verification code queued via ${receipt.channel.toUpperCase()} to ${receipt.maskedDestination || e164Phone}.`
+      );
+    } catch (err) {
+      const candidate = err as { error?: string; message?: string };
+      setErrorMsg(candidate?.error || candidate?.message || 'Unable to dispatch verification OTP.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleVerifyPhoneOtp = (e: React.FormEvent) => {
+  const handleVerifyPhoneOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    const resolvedTenantId = tenantIdInput.trim() || unifiedApiClient.getActiveTenantId() || '';
+    if (!challengeId) {
+      setErrorMsg('Request a verification code first.');
+      return;
+    }
     if (!otpCode || otpCode.length !== 6) {
       setErrorMsg('Please enter the 6-digit OTP code received.');
       return;
@@ -184,13 +230,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsSubmitting(true);
     setErrorMsg(null);
 
-    setTimeout(() => {
-      setIsSubmitting(false);
-      const fullPhone = `${countryCode} ${phoneNumber.trim()}`;
-      
+    try {
+      const e164Phone = formatE164Phone();
+      await unifiedApiClient.verifySchoolOtp({
+        tenantId: resolvedTenantId,
+        applicationId: 'app_curriculum_flow',
+        challengeId,
+        phone: e164Phone,
+        email: currentAccount.email || undefined,
+        purpose: mode === 'mfa_challenge' ? 'mfa_verify' : 'account_verify',
+        code: otpCode.trim(),
+        issueSession: mode === 'mfa_challenge'
+      });
+
       const updated: UserAuthAccount = {
         ...currentAccount,
-        phone: fullPhone,
+        phone: e164Phone,
         isPhoneVerified: true,
         authProviders: Array.from(new Set([...currentAccount.authProviders, 'phone_otp'])),
         lastLoginAt: new Date().toISOString(),
@@ -207,11 +262,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return;
       }
 
-      setSuccessMsg(`Mobile number ${fullPhone} verified & linked successfully!`);
+      setSuccessMsg(`Mobile number ${e164Phone} verified via CMAG!`);
       setTimeout(() => {
         onClose();
       }, 900);
-    }, 600);
+    } catch (err) {
+      const candidate = err as { error?: string; message?: string };
+      setErrorMsg(candidate?.error || candidate?.message || 'OTP verification failed or expired.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleQuickSwitch = (account: UserAuthAccount) => {
@@ -583,6 +643,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               {!otpSent ? (
                 <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                        School Tenant ID
+                      </label>
+                      <input
+                        type="text"
+                        value={tenantIdInput}
+                        onChange={(e) => setTenantIdInput(e.target.value)}
+                        placeholder="School tenant UUID"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                        Delivery Channel
+                      </label>
+                      <select
+                        value={otpChannel}
+                        onChange={(e) => setOtpChannel(e.target.value as 'sms' | 'whatsapp')}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                      >
+                        <option value="sms">SMS</option>
+                        <option value="whatsapp">WhatsApp</option>
+                      </select>
+                    </div>
+                  </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                       Enter Official Mobile Number
@@ -593,12 +680,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         onChange={(e) => setCountryCode(e.target.value)}
                         className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                       >
-                        <option value="+234">🇳🇬 Nigeria (+234)</option>
-                        <option value="+1">🇺🇸 USA (+1)</option>
-                        <option value="+44">🇬🇧 UK (+44)</option>
-                        <option value="+233">🇬🇭 Ghana (+233)</option>
-                        <option value="+254">🇰🇪 Kenya (+254)</option>
-                        <option value="+27">🇿🇦 South Africa (+27)</option>
+                        <option value="+234">Nigeria (+234)</option>
+                        <option value="+1">USA (+1)</option>
+                        <option value="+44">UK (+44)</option>
+                        <option value="+233">Ghana (+233)</option>
+                        <option value="+254">Kenya (+254)</option>
+                        <option value="+27">South Africa (+27)</option>
                       </select>
                       <input
                         type="tel"
@@ -612,11 +699,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                   <button
                     type="button"
+                    disabled={isSubmitting}
                     onClick={handleSendPhoneOtp}
-                    className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-lg shadow-emerald-950/40 flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-bold transition-all shadow-lg shadow-emerald-950/40 flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Smartphone className="w-4 h-4" />
-                    <span>Send 6-Digit SMS Verification Code</span>
+                    <span>{isSubmitting ? 'Dispatching OTP…' : `Send 6-Digit ${otpChannel.toUpperCase()} Verification Code`}</span>
                   </button>
                 </div>
               ) : (
@@ -624,30 +712,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-xs font-semibold text-slate-300">
-                        Enter 6-Digit Verification Code (SMS / WhatsApp)
+                        Enter 6-Digit Verification Code ({otpChannel.toUpperCase()})
                       </label>
                       <span className="text-[11px] text-emerald-400 font-mono">
-                        Sent to {countryCode} {phoneNumber}
+                        Sent to {maskedRecipient || `${countryCode} ${phoneNumber}`}
                       </span>
                     </div>
                     <div className="relative">
                       <KeyRound className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
                       <input
                         type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
                         maxLength={6}
                         required
                         value={otpCode}
                         onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                        placeholder="e.g. 948215"
-                        className="w-full bg-slate-950 border border-emerald-500/80 rounded-xl pl-9 pr-24 py-2.5 text-sm text-white font-mono tracking-widest placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-center"
+                        placeholder="Enter 6-digit code"
+                        className="w-full bg-slate-950 border border-emerald-500/80 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white font-mono tracking-widest placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-center"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setOtpCode('948215')}
-                        className="absolute right-2 top-2 px-2 py-1 rounded bg-emerald-950 text-[10px] font-bold text-emerald-300 border border-emerald-700/60 hover:bg-emerald-900"
-                      >
-                        Auto-fill OTP
-                      </button>
                     </div>
                   </div>
 

@@ -653,11 +653,11 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     id: 'central_shared_service_foundation',
     description: 'Tenant-authorized discovery, authorization and health foundations for centrally owned shared services.',
     routes: [
-      { method: 'GET', path: /^\/shared\/(?:curriculum|textbooks|vehicle-tracking)\/(?:discovery|health)$/ },
-      { method: 'POST', path: /^\/shared\/(?:curriculum|textbooks|vehicle-tracking)\/authorization$/ }
+      { method: 'GET', path: /^\/shared\/(?:curriculum|textbooks|vehicle-tracking|messaging)\/(?:discovery|health)$/ },
+      { method: 'POST', path: /^\/shared\/(?:curriculum|textbooks|vehicle-tracking|messaging)\/authorization$/ }
     ],
     requiredRepositories: ['SharedServiceAuthorizationRepository'],
-    requiredMigrations: [14],
+    requiredMigrations: [14, 40],
     authentication: 'tenant_user_session',
     authorization: {
       rule: 'database_permission_and_application_service_entitlement',
@@ -670,7 +670,10 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
         'shared.textbooks.health',
         'shared.vehicle_tracking.discover',
         'shared.vehicle_tracking.authorize',
-        'shared.vehicle_tracking.health'
+        'shared.vehicle_tracking.health',
+        'shared.messaging.discover',
+        'shared.messaging.authorize',
+        'shared.messaging.health'
       ]
     },
     tenantContext: 'transaction_local_tenant',
@@ -866,6 +869,181 @@ export const PRODUCTION_CAPABILITIES: readonly CapabilityRegistration[] = [
     tenantContext: 'transaction_local_tenant',
     acceptanceTests: ['server/teachingEvidence/teachingEvidence.test.ts'],
     readinessEvidence: ['postgresql_teaching_evidence_ledger', 'teacher_only_scope_authorization_enforcement'],
+    state: 'ready'
+  },
+  {
+    id: 'cmag_auth_otp',
+    description: 'CMAG authentication OTP request and verification endpoints across Curriculum Server platform, school-instance, and Curriculum Flow scopes.',
+    routes: [
+      {
+        method: 'POST',
+        path: exact(
+          '/server/auth/otp/request',
+          '/server/auth/otp/verify',
+          '/schools/auth/otp/request',
+          '/schools/auth/otp/verify',
+          '/flow/auth/otp/request',
+          '/flow/auth/otp/verify'
+        )
+      }
+    ],
+    requiredRepositories: ['CmagOtpService', 'CmagDeliveryEngine', 'AuthorizationRepository'],
+    requiredMigrations: [8, 10, 27, 34, 40],
+    authentication: 'none',
+    authorization: { rule: 'public', permissions: [] },
+    tenantContext: 'none',
+    acceptanceTests: [
+      'server/messaging/otpService.test.ts',
+      'server/messaging/cmagRoutesAndSecurity.test.ts'
+    ],
+    readinessEvidence: [
+      'hmac_sha256_otp_challenges_and_bruteforce_lockouts',
+      'cross_scope_tenant_application_otp_isolation',
+      'sliding_window_rate_limits_and_session_issuance'
+    ],
+    state: 'ready'
+  },
+  {
+    id: 'cmag_webhooks',
+    description: 'Signed provider delivery-receipt webhook ingestion with HMAC-SHA256, timestamp skew verification, replay rejection, and monotonic lifecycle transitions.',
+    routes: [
+      { method: 'POST', path: /^\/messaging\/webhooks\/[a-z0-9_:-]+$/ }
+    ],
+    requiredRepositories: ['CmagDeliveryEngine', 'MessagingProviderRegistry'],
+    requiredMigrations: [27, 40],
+    authentication: 'none',
+    authorization: { rule: 'public', permissions: [] },
+    tenantContext: 'none',
+    acceptanceTests: [
+      'server/messaging/providers.test.ts',
+      'server/messaging/deliveryEngine.test.ts',
+      'server/messaging/cmagRoutesAndSecurity.test.ts'
+    ],
+    readinessEvidence: [
+      'hmac_sha256_signature_and_timestamp_verification',
+      'replay_protection_and_monotonic_receipt_transitions'
+    ],
+    state: 'ready'
+  },
+  {
+    id: 'cmag_platform_administration',
+    description: 'Curriculum Server platform-administrator CMAG control plane for SMS/WhatsApp provider configs, sender identities, WhatsApp template governance, tenant suspensions, queue diagnostics, and platform alerts.',
+    routes: [
+      { method: 'GET', path: exact('/platform/messaging/overview', '/platform/messaging/providers', '/platform/messaging/queue') },
+      { method: 'PATCH', path: exact('/platform/messaging/config') },
+      { method: 'PUT', path: /^\/platform\/messaging\/providers\/[a-z0-9_:-]+$/ },
+      { method: 'POST', path: exact(
+        '/platform/messaging/senders',
+        '/platform/messaging/whatsapp-templates',
+        '/platform/messaging/dispatch-now',
+        '/platform/messaging/send'
+      ) },
+      { method: 'POST', path: /^\/platform\/messaging\/providers\/[a-z0-9_:-]+\/(?:suspend|resume)$/ },
+      { method: 'POST', path: new RegExp(`^/platform/messaging/tenants/${uuid}/(?:suspend|resume)$`, 'i') },
+      { method: 'POST', path: new RegExp(`^/platform/messaging/messages/${uuid}/retry$`, 'i') }
+    ],
+    requiredRepositories: ['CmagDeliveryEngine', 'CmagCommunicationEngine'],
+    requiredMigrations: [27, 40],
+    authentication: 'platform_administrator',
+    authorization: { rule: 'platform_administrator_cmag_control_plane', permissions: [] },
+    tenantContext: 'control_plane_transaction',
+    acceptanceTests: [
+      'server/messaging/deliveryEngine.test.ts',
+      'server/messaging/communicationEngine.test.ts',
+      'server/messaging/cmagRoutesAndSecurity.test.ts'
+    ],
+    readinessEvidence: [
+      'encrypted_vault_provider_secrets_never_exposed',
+      'control_plane_provider_circuit_breaker_and_failover',
+      'platform_tenant_and_sender_governance'
+    ],
+    state: 'ready'
+  },
+  {
+    id: 'cmag_school_messaging',
+    description: 'Tenant-isolated school and Curriculum Flow messaging APIs for configuration, localized templates, guardian consent/preferences, targeted notifications, scheduled/emergency broadcasts, queue telemetry, and retries.',
+    routes: [
+      { method: 'GET', path: exact('/messaging/overview', '/messaging/queue') },
+      { method: 'PATCH', path: exact('/messaging/config') },
+      { method: 'PUT', path: exact('/messaging/templates', '/messaging/preferences') },
+      { method: 'POST', path: exact('/messaging/send', '/messaging/broadcasts') },
+      { method: 'POST', path: new RegExp(`^/messaging/messages/${uuid}/retry$`, 'i') }
+    ],
+    requiredRepositories: ['CmagCommunicationEngine', 'CmagDeliveryEngine', 'AuthorizationRepository'],
+    requiredMigrations: [8, 10, 14, 27, 40],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'database_permission',
+      permissions: [
+        'messaging.config.read',
+        'messaging.config.manage',
+        'messaging.templates.manage',
+        'messaging.preferences.manage',
+        'messaging.send',
+        'messaging.broadcast',
+        'messaging.emergency',
+        'messaging.retry',
+        'messaging.reports.read'
+      ]
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: [
+      'server/messaging/communicationEngine.test.ts',
+      'server/messaging/cmagRoutesAndSecurity.test.ts',
+      'server/messaging/cmagLifecycle.integration.test.ts'
+    ],
+    readinessEvidence: [
+      'forced_rls_tenant_and_application_isolation',
+      'verified_guardian_student_relationship_and_consent_enforcement',
+      'durable_outbox_quotas_and_audit_trail'
+    ],
+    state: 'ready'
+  },
+  {
+    id: 'landing_page_public_discovery',
+    description: 'Public discovery of landing page templates, domain resolution, provisioned instance public homepages, and Curriculum Server / Curriculum Flow footer metadata.',
+    routes: [
+      { method: 'GET', path: exact('/homepage/templates', '/homepage/resolve', '/homepage/instances') },
+      { method: 'GET', path: /^\/homepage\/instance\/[A-Za-z0-9._:-]+$/ },
+      { method: 'GET', path: /^\/landing-footer\/(?:curriculum_server|curriculum_flow)$/ }
+    ],
+    requiredRepositories: ['HomepageEngineManager'],
+    requiredMigrations: [],
+    authentication: 'none',
+    authorization: { rule: 'public', permissions: [] },
+    tenantContext: 'none',
+    acceptanceTests: ['server/capabilities/homepageEngine.test.ts'],
+    readinessEvidence: [
+      'public_published_homepage_sanitization',
+      'platform_landing_footer_read_path'
+    ],
+    state: 'ready'
+  },
+  {
+    id: 'landing_page_and_footer_administration',
+    description: 'Authorized platform and tenant administration for landing page footers (copyright, address, email, phone) and provisioned instance landing page visual editing, draft saving, publishing, and rollback.',
+    routes: [
+      { method: 'GET', path: exact('/server/homepage-instances') },
+      { method: 'GET', path: /^\/server\/homepage\/[A-Za-z0-9._:-]+$/ },
+      { method: 'PUT', path: /^\/server\/homepage\/[A-Za-z0-9._:-]+\/draft$/ },
+      { method: 'PATCH', path: /^\/server\/homepage\/[A-Za-z0-9._:-]+\/footer$/ },
+      { method: 'POST', path: /^\/server\/homepage\/[A-Za-z0-9._:-]+\/(?:publish|rollback)$/ },
+      { method: 'PUT', path: /^\/server\/landing-footer\/(?:curriculum_server|curriculum_flow)$/ }
+    ],
+    requiredRepositories: ['HomepageEngineManager', 'AuthorizationRepository'],
+    requiredMigrations: [8, 10, 34],
+    authentication: 'tenant_user_session',
+    authorization: {
+      rule: 'cryptographic_admin_or_tenant_homepage_permission',
+      permissions: ['school.configuration.manage']
+    },
+    tenantContext: 'transaction_local_tenant',
+    acceptanceTests: ['server/capabilities/homepageEngine.test.ts'],
+    readinessEvidence: [
+      'persistent_landing_footer_and_instance_homepage_store',
+      'cryptographic_bearer_and_cross_tenant_isolation',
+      'auto_bootstrapped_provisioned_instance_editor_workflow'
+    ],
     state: 'ready'
   }
 ];

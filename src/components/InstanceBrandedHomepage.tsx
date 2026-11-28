@@ -48,9 +48,12 @@ import {
   Play,
   QrCode,
   Printer,
-  Loader2
+  Loader2,
+  Pencil
 } from 'lucide-react';
 import { unifiedApiClient } from '../services/unifiedApiClient';
+import { homepageClient, formatFooterAddress } from '../services/homepageClient';
+import { EditFooterModal } from './EditFooterModal';
 import { InstallShareModal } from './InstallShareModal';
 import { instancePaymentClient } from '../services/instancePaymentClient';
 
@@ -70,6 +73,7 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
   onUpdateConfig
 }) => {
   const [mutableConfig, setMutableConfig] = useState<HomepageConfiguration>(config);
+  const [isEditFooterOpen, setIsEditFooterOpen] = useState(false);
   const [isSectionManagerOpen, setIsSectionManagerOpen] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [isAdmissionsModalOpen, setIsAdmissionsModalOpen] = useState(false);
@@ -1651,15 +1655,15 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
             <h4 className="text-white font-bold text-xs uppercase tracking-wider mb-3">Institutional Contact</h4>
             <div className="space-y-2 text-xs">
               <div className="flex items-center gap-2">
-                <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                <span>{contact.addressText}, {contact.city}, {contact.state}</span>
+                <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span>{formatFooterAddress(contact)}</span>
               </div>
               <div className="flex items-center gap-2">
-                <Mail className="w-3.5 h-3.5 text-slate-500" />
+                <Mail className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                 <span>{contact.primaryEmail}</span>
               </div>
               <div className="flex items-center gap-2">
-                <Phone className="w-3.5 h-3.5 text-slate-500" />
+                <Phone className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                 <span>{contact.primaryPhone}</span>
               </div>
             </div>
@@ -1668,7 +1672,7 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
           <div>
             <h4 className="text-white font-bold text-xs uppercase tracking-wider mb-3">Portal Services</h4>
             <ul className="space-y-2">
-              <li><button onClick={onEnterWorkspace} className="hover:text-white transition-colors">Staff & Teacher Workspace</button></li>
+              <li><button onClick={onEnterWorkspace} className="hover:text-white transition-colors">Staff &amp; Teacher Workspace</button></li>
               <li><button onClick={onEnterWorkspace} className="hover:text-white transition-colors">Student Broadsheet Terminal</button></li>
               <li><button onClick={onEnterWorkspace} className="hover:text-white transition-colors">Parent Fee Settlement</button></li>
             </ul>
@@ -1677,13 +1681,56 @@ export const InstanceBrandedHomepage: React.FC<InstanceBrandedHomepageProps> = (
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10 pt-6 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p>{contact.copyrightText || `© ${new Date().getFullYear()} ${branding.institutionName}. All rights reserved.`}</p>
-          <div className="flex items-center gap-4 text-[11px] text-slate-500">
+          <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-500">
+            {(isAdminUser || onUpdateConfig) && (
+              <button
+                type="button"
+                onClick={() => setIsEditFooterOpen(true)}
+                className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/40 font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Pencil className="w-3 h-3" />
+                <span>Edit Footer</span>
+              </button>
+            )}
             <span>Template: {config.templateId}</span>
             <span aria-hidden="true">·</span>
-            <span>Version v{config.versionNumber}</span>
+            <span>Version v{mutableConfig.versionNumber}</span>
           </div>
         </div>
       </footer>
+
+      <EditFooterModal
+        isOpen={isEditFooterOpen}
+        title={`Edit Footer — ${branding.institutionName}`}
+        accentTone="amber"
+        initialValues={{
+          copyrightText: contact.copyrightText || `© ${new Date().getFullYear()} ${branding.institutionName}. All rights reserved.`,
+          institutionalAddress: formatFooterAddress(contact),
+          email: contact.primaryEmail,
+          phoneNumber: contact.primaryPhone
+        }}
+        onLiveChange={(vals) => {
+          setMutableConfig(prev => ({
+            ...prev,
+            contact: {
+              ...prev.contact,
+              addressText: vals.institutionalAddress,
+              city: '',
+              state: '',
+              primaryEmail: vals.email,
+              primaryPhone: vals.phoneNumber,
+              copyrightText: vals.copyrightText
+            }
+          }));
+        }}
+        onSave={async (vals) => {
+          const res = await homepageClient.updateInstanceFooter(mutableConfig.instanceId, vals);
+          setMutableConfig(res.config);
+          onUpdateConfig?.(res.config);
+          setIsEditFooterOpen(false);
+        }}
+        onCancel={() => setIsEditFooterOpen(false)}
+      />
 
       {/* Admissions Application Modal */}
       {isAdmissionsModalOpen && (

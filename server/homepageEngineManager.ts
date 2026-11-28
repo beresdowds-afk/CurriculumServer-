@@ -7,9 +7,17 @@ import {
   HomepageAuditRecord, 
   HomepageTemplateDefinition,
   InstitutionPresetType,
-  HomepageTemplateId
+  HomepageTemplateId,
+  LandingFooterAppKey,
+  LandingFooterConfig,
+  FooterEditableFields,
+  ProvisionedInstanceSummary
 } from '../src/types/homepageEngine';
-import { HOMEPAGE_TEMPLATES, createDefaultPresetConfiguration } from '../src/data/homepageTemplatesData';
+import {
+  HOMEPAGE_TEMPLATES,
+  createDefaultPresetConfiguration,
+  createDefaultLandingFooter
+} from '../src/data/homepageTemplatesData';
 import { serverSchoolManager } from './serverSchoolManager';
 import { customerOnboardingManager } from './customerOnboardingManager';
 import { TamperEvidentAuditService } from '../src/services/tamperEvidentAuditService';
@@ -18,6 +26,28 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const HOMEPAGE_FILE = path.join(DATA_DIR, 'homepage_configurations.json');
 const VERSIONS_FILE = path.join(DATA_DIR, 'homepage_versions.json');
 const AUDIT_FILE = path.join(DATA_DIR, 'homepage_audit_logs.json');
+const PLATFORM_FOOTERS_FILE = path.join(DATA_DIR, 'platform_footers.json');
+
+const HOMEPAGE_ADMIN_ROLES = new Set([
+  'super_admin',
+  'tenant_admin',
+  'principal',
+  'principal_administrator',
+  'proprietor',
+  'ict_system_administrator',
+  'vice_principal_administration',
+  'admin'
+]);
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function formatContactAddress(contact?: { addressText?: string; city?: string; state?: string }): string {
+  if (!contact) return '';
+  return [contact.addressText, contact.city, contact.state]
+    .map(part => (typeof part === 'string' ? part.trim() : ''))
+    .filter(Boolean)
+    .join(', ');
+}
 
 export class HomepageEngineManager {
   private static instance: HomepageEngineManager;
@@ -25,6 +55,7 @@ export class HomepageEngineManager {
   private drafts: Map<string, HomepageConfiguration> = new Map();
   private versions: HomepageVersionRecord[] = [];
   private auditLogs: HomepageAuditRecord[] = [];
+  private platformFooters: Map<LandingFooterAppKey, LandingFooterConfig> = new Map();
 
   private constructor() {
     this.ensureDataDir();
@@ -64,9 +95,24 @@ export class HomepageEngineManager {
       if (fs.existsSync(AUDIT_FILE)) {
         this.auditLogs = JSON.parse(fs.readFileSync(AUDIT_FILE, 'utf8'));
       }
+
+      this.platformFooters.set('curriculum_server', createDefaultLandingFooter('curriculum_server'));
+      this.platformFooters.set('curriculum_flow', createDefaultLandingFooter('curriculum_flow'));
+      if (fs.existsSync(PLATFORM_FOOTERS_FILE)) {
+        const rawFooters: LandingFooterConfig[] = JSON.parse(fs.readFileSync(PLATFORM_FOOTERS_FILE, 'utf8'));
+        rawFooters.forEach(footer => {
+          if (footer && (footer.appKey === 'curriculum_server' || footer.appKey === 'curriculum_flow')) {
+            this.platformFooters.set(footer.appKey, footer);
+          }
+        });
+      } else {
+        this.savePlatformFooters();
+      }
     } catch (err) {
       console.error('Error loading homepage persistence, falling back to seed:', err);
       this.seedInitialConfigurations();
+      this.platformFooters.set('curriculum_server', createDefaultLandingFooter('curriculum_server'));
+      this.platformFooters.set('curriculum_flow', createDefaultLandingFooter('curriculum_flow'));
     }
   }
 
@@ -165,6 +211,260 @@ export class HomepageEngineManager {
     }
   }
 
+  private savePlatformFooters(): void {
+    try {
+      const arr = Array.from(this.platformFooters.values());
+      fs.writeFileSync(PLATFORM_FOOTERS_FILE, JSON.stringify(arr, null, 2), 'utf8');
+    } catch (err) {
+      console.error('Failed to save platform footers:', err);
+    }
+  }
+
+  private validateFooterFields(patch: Partial<FooterEditableFields>): FooterEditableFields {
+    const copyrightText = typeof patch.copyrightText === 'string' ? patch.copyrightText.trim() : '';
+    const institutionalAddress = typeof patch.institutionalAddress === 'string' ? patch.institutionalAddress.trim() : '';
+    const email = typeof patch.email === 'string' ? patch.email.trim() : '';
+    const phoneNumber = typeof patch.phoneNumber === 'string' ? patch.phoneNumber.trim() : '';
+
+    if (!copyrightText) {
+      throw new Error('VALIDATION_ERROR: Copyright text is required');
+    }
+    if (!institutionalAddress) {
+      throw new Error('VALIDATION_ERROR: Institutional address is required');
+    }
+    if (!email || !EMAIL_PATTERN.test(email)) {
+      throw new Error('VALIDATION_ERROR: A valid institutional email address is required');
+    }
+    if (!phoneNumber || phoneNumber.length < 5) {
+      throw new Error('VALIDATION_ERROR: A valid institutional phone number is required');
+    }
+
+    return {
+      copyrightText: copyrightText.slice(0, 320),
+      institutionalAddress: institutionalAddress.slice(0, 360),
+      email: email.slice(0, 180),
+      phoneNumber: phoneNumber.slice(0, 64)
+    };
+  }
+
+  private assertAdminAccess(
+    instanceId: string,
+    actorContext?: { role: string; tenantId: string }
+  ): void {
+    if (!actorContext) return;
+    if (!HOMEPAGE_ADMIN_ROLES.has(actorContext.role)) {
+      throw new Error(`ACCESS_DENIED: Role '${actorContext.role}' is not authorized to manage homepage configurations`);
+    }
+    if (actorContext.role !== 'super_admin' && actorContext.tenantId !== instanceId) {
+      const existing = this.configurations.get(instanceId);
+      if (!existing || existing.tenantId !== actorContext.tenantId) {
+        throw new Error(`ACCESS_DENIED: Tenant '${actorContext.tenantId}' cannot access configuration of '${instanceId}'`);
+      }
+    }
+  }
+
+  private bootstrapInstanceIfRegistered(instanceIdOrSlug: string): HomepageConfiguration | null {
+    let cfg = this.configurations.get(instanceIdOrSlug);
+    if (!cfg) {
+      for (const c of this.configurations.values()) {
+        if (c.tenantId === instanceIdOrSlug || c.schoolSlug === instanceIdOrSlug || c.domain === instanceIdOrSlug) {
+          cfg = c;
+          break;
+        }
+      }
+    }
+
+    if (!cfg) {
+      const tenant = serverSchoolManager.getTenants().find(
+        t => t.id === instanceIdOrSlug || t.schoolSlug === instanceIdOrSlug
+      );
+      if (tenant) {
+        cfg = createDefaultPresetConfiguration(
+          tenant.id,
+          tenant.id,
+          tenant.schoolSlug || tenant.id,
+          tenant.schoolName || tenant.id,
+          'secondary_school',
+          'premium_academic',
+          tenant.customDomain || tenant.subdomain
+        );
+        if (tenant.principalEmail) {
+          cfg.contact.primaryEmail = tenant.principalEmail;
+        }
+        if (tenant.principalPhone) {
+          cfg.contact.primaryPhone = tenant.principalPhone;
+        }
+        if (tenant.address) {
+          cfg.contact.addressText = tenant.address;
+          cfg.contact.city = '';
+          cfg.contact.state = tenant.locationState || '';
+        }
+        this.configurations.set(tenant.id, cfg);
+        this.drafts.set(tenant.id, JSON.parse(JSON.stringify(cfg)));
+        this.versions.push({
+          versionId: `ver_${tenant.id}_1_${Date.now()}`,
+          instanceId: tenant.id,
+          versionNumber: 1,
+          configurationSnapshot: JSON.parse(JSON.stringify(cfg)),
+          publishedBy: 'system_auto_bootstrap',
+          publishedAt: new Date().toISOString(),
+          changelog: 'Auto-bootstrapped from provisioned tenant registry'
+        });
+        this.saveConfigurations();
+        this.saveVersions();
+      } else {
+        const onboardingInstances = customerOnboardingManager.getInstances();
+        const onboarding = onboardingInstances.find(
+          inst => inst.instanceId === instanceIdOrSlug || inst.tenantId === instanceIdOrSlug || inst.subdomain === instanceIdOrSlug
+        );
+        if (onboarding) {
+          const derivedSlug = (onboarding.subdomain || onboarding.instanceId).split('.')[0] || onboarding.instanceId;
+          cfg = createDefaultPresetConfiguration(
+            onboarding.instanceId,
+            onboarding.tenantId || onboarding.instanceId,
+            derivedSlug,
+            onboarding.organization?.organizationName || derivedSlug,
+            'secondary_school',
+            'premium_academic',
+            onboarding.customDomain || onboarding.subdomain
+          );
+          if (onboarding.organization?.contactEmail) {
+            cfg.contact.primaryEmail = onboarding.organization.contactEmail;
+          }
+          if (onboarding.organization?.contactPhone) {
+            cfg.contact.primaryPhone = onboarding.organization.contactPhone;
+          }
+          if (onboarding.organization?.address) {
+            cfg.contact.addressText = onboarding.organization.address;
+            cfg.contact.city = onboarding.organization.lga || '';
+            cfg.contact.state = onboarding.organization.state || '';
+          }
+          this.configurations.set(onboarding.instanceId, cfg);
+          this.drafts.set(onboarding.instanceId, JSON.parse(JSON.stringify(cfg)));
+          this.versions.push({
+            versionId: `ver_${onboarding.instanceId}_1_${Date.now()}`,
+            instanceId: onboarding.instanceId,
+            versionNumber: 1,
+            configurationSnapshot: JSON.parse(JSON.stringify(cfg)),
+            publishedBy: 'system_auto_bootstrap',
+            publishedAt: new Date().toISOString(),
+            changelog: 'Auto-bootstrapped from universal onboarding instance'
+          });
+          this.saveConfigurations();
+          this.saveVersions();
+        }
+      }
+    }
+
+    return cfg || null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // PLATFORM LANDING FOOTER MANAGEMENT (Curriculum Server & Curriculum Flow)
+  // ---------------------------------------------------------------------------
+  public getPlatformFooter(appKey: LandingFooterAppKey): LandingFooterConfig {
+    if (appKey !== 'curriculum_server' && appKey !== 'curriculum_flow') {
+      throw new Error(`INVALID_APP_KEY: Unknown landing page key '${appKey}'`);
+    }
+    const existing = this.platformFooters.get(appKey) || createDefaultLandingFooter(appKey);
+    return { ...existing };
+  }
+
+  public updatePlatformFooter(
+    appKey: LandingFooterAppKey,
+    patch: Partial<FooterEditableFields>,
+    actorEmail: string,
+    actorContext?: { role: string; tenantId: string }
+  ): LandingFooterConfig {
+    if (appKey !== 'curriculum_server' && appKey !== 'curriculum_flow') {
+      throw new Error(`INVALID_APP_KEY: Unknown landing page key '${appKey}'`);
+    }
+
+    if (actorContext) {
+      if (appKey === 'curriculum_server' && actorContext.role !== 'super_admin') {
+        throw new Error(`ACCESS_DENIED: Role '${actorContext.role}' cannot modify the Curriculum Server platform footer`);
+      }
+      if (!HOMEPAGE_ADMIN_ROLES.has(actorContext.role)) {
+        throw new Error(`ACCESS_DENIED: Role '${actorContext.role}' cannot modify landing page footer`);
+      }
+    }
+
+    const validated = this.validateFooterFields(patch);
+    const updated: LandingFooterConfig = {
+      appKey,
+      ...validated,
+      updatedAt: new Date().toISOString(),
+      updatedBy: actorEmail
+    };
+
+    this.platformFooters.set(appKey, updated);
+    this.savePlatformFooters();
+
+    TamperEvidentAuditService.logPlatformAction({
+      actor: actorEmail,
+      actorRole: actorContext?.role || 'super_admin',
+      tenantId: actorContext?.tenantId || 'platform_control_plane',
+      action: 'landing_footer_updated',
+      target: appKey,
+      result: 'SUCCESS',
+      outcome: 'SUCCESS',
+      details: `Updated footer for ${appKey}. Email: ${updated.email}, Phone: ${updated.phoneNumber}`
+    });
+
+    this.logAudit({
+      id: `aud_ftr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      instanceId: `platform:${appKey}`,
+      action: 'published',
+      actorEmail,
+      actorRole: actorContext?.role || 'super_admin',
+      timestamp: updated.updatedAt,
+      versionNumber: 1,
+      notes: `Updated ${appKey} landing footer`
+    });
+
+    return { ...updated };
+  }
+
+  // ---------------------------------------------------------------------------
+  // PROVISIONED INSTANCE FLEET LISTING FOR LANDING PAGE GENERATOR
+  // ---------------------------------------------------------------------------
+  public listProvisionedInstances(): ProvisionedInstanceSummary[] {
+    for (const tenant of serverSchoolManager.getTenants()) {
+      this.bootstrapInstanceIfRegistered(tenant.id);
+    }
+    for (const inst of customerOnboardingManager.getInstances()) {
+      if (
+        inst.provisioningStatus === 'active' ||
+        inst.provisioningStatus === 'provisioned' ||
+        inst.provisioningStatus === 'verified' ||
+        inst.provisioningStatus === 'activation_ready'
+      ) {
+        this.bootstrapInstanceIfRegistered(inst.instanceId);
+      }
+    }
+
+    const summaries: ProvisionedInstanceSummary[] = [];
+    for (const cfg of this.configurations.values()) {
+      summaries.push({
+        instanceId: cfg.instanceId,
+        tenantId: cfg.tenantId,
+        schoolSlug: cfg.schoolSlug,
+        institutionName: cfg.branding.institutionName,
+        domain: cfg.domain,
+        templateId: cfg.templateId,
+        presetType: cfg.presetType,
+        status: cfg.status,
+        versionNumber: cfg.versionNumber,
+        updatedAt: cfg.updatedAt,
+        copyrightText: cfg.contact.copyrightText || `© ${new Date().getFullYear()} ${cfg.branding.institutionName}. All rights reserved.`,
+        institutionalAddress: formatContactAddress(cfg.contact),
+        email: cfg.contact.primaryEmail,
+        phoneNumber: cfg.contact.primaryPhone
+      });
+    }
+    return summaries;
+  }
+
   // ---------------------------------------------------------------------------
   // PUBLIC RESOLUTION (Strictly returns published, tenant-isolated configuration)
   // ---------------------------------------------------------------------------
@@ -205,36 +505,7 @@ export class HomepageEngineManager {
       if (resolved) instanceId = resolved;
     }
 
-    // Try finding by instanceId or tenantId or schoolSlug
-    let cfg = this.configurations.get(instanceId);
-    if (!cfg) {
-      for (const c of this.configurations.values()) {
-        if (c.tenantId === instanceId || c.schoolSlug === instanceId || c.domain === instanceId) {
-          cfg = c;
-          break;
-        }
-      }
-    }
-
-    // If not found, check if tenant exists in serverSchoolManager and dynamically bootstrap
-    if (!cfg) {
-      const tenant = serverSchoolManager.getTenants().find(t => t.id === instanceId || t.schoolSlug === instanceId);
-      if (tenant) {
-        cfg = createDefaultPresetConfiguration(
-          tenant.id,
-          tenant.id,
-          tenant.schoolSlug,
-          tenant.schoolName,
-          'secondary_school',
-          'premium_academic',
-          tenant.customDomain || tenant.subdomain
-        );
-        this.configurations.set(tenant.id, cfg);
-        this.drafts.set(tenant.id, JSON.parse(JSON.stringify(cfg)));
-        this.saveConfigurations();
-      }
-    }
-
+    const cfg = this.bootstrapInstanceIfRegistered(instanceId);
     if (!cfg) return null;
 
     // Filter sections based on instance's enabled features!
@@ -275,12 +546,9 @@ export class HomepageEngineManager {
     draft: HomepageConfiguration | null;
     versions: HomepageVersionRecord[];
   } {
-    // Enforce tenant isolation: actor must be super_admin or belong to instanceId
-    if (actorContext && actorContext.role !== 'super_admin' && actorContext.tenantId !== instanceId) {
-      throw new Error(`ACCESS_DENIED: Tenant '${actorContext.tenantId}' cannot access configuration of '${instanceId}'`);
-    }
+    this.assertAdminAccess(instanceId, actorContext);
 
-    const published = this.configurations.get(instanceId) || null;
+    const published = this.bootstrapInstanceIfRegistered(instanceId);
     let draft = this.drafts.get(instanceId) || null;
 
     if (!draft && published) {
@@ -303,14 +571,11 @@ export class HomepageEngineManager {
     actorEmail: string,
     actorContext?: { role: string; tenantId: string }
   ): HomepageConfiguration {
-    // Enforce tenant isolation
-    if (actorContext && actorContext.role !== 'super_admin' && actorContext.tenantId !== instanceId) {
-      throw new Error(`ACCESS_DENIED: Tenant '${actorContext.tenantId}' cannot edit configuration of '${instanceId}'`);
-    }
+    this.assertAdminAccess(instanceId, actorContext);
 
     let existingDraft = this.drafts.get(instanceId);
     if (!existingDraft) {
-      const published = this.configurations.get(instanceId);
+      const published = this.bootstrapInstanceIfRegistered(instanceId);
       if (published) {
         existingDraft = JSON.parse(JSON.stringify(published));
       } else {
@@ -321,6 +586,8 @@ export class HomepageEngineManager {
     const updatedDraft: HomepageConfiguration = {
       ...existingDraft!,
       ...draftData,
+      instanceId: existingDraft!.instanceId,
+      tenantId: existingDraft!.tenantId,
       status: 'draft',
       updatedAt: new Date().toISOString(),
       updatedBy: actorEmail
@@ -343,16 +610,104 @@ export class HomepageEngineManager {
     return updatedDraft;
   }
 
+  public updateInstanceFooter(
+    instanceId: string,
+    patch: Partial<FooterEditableFields>,
+    actorEmail: string,
+    actorContext?: { role: string; tenantId: string }
+  ): HomepageConfiguration {
+    this.assertAdminAccess(instanceId, actorContext);
+
+    const currentPublished = this.bootstrapInstanceIfRegistered(instanceId);
+    if (!currentPublished) {
+      throw new Error(`INSTANCE_NOT_FOUND: No instance with ID '${instanceId}' exists`);
+    }
+
+    const validated = this.validateFooterFields(patch);
+    const existingDraft = this.drafts.get(instanceId) || JSON.parse(JSON.stringify(currentPublished));
+
+    const updatedContact = {
+      ...currentPublished.contact,
+      addressText: validated.institutionalAddress,
+      city: '',
+      state: '',
+      primaryEmail: validated.email,
+      primaryPhone: validated.phoneNumber,
+      copyrightText: validated.copyrightText
+    };
+
+    const nextVersionNumber = (currentPublished.versionNumber || 0) + 1;
+    const now = new Date().toISOString();
+
+    const updatedPublished: HomepageConfiguration = {
+      ...currentPublished,
+      contact: updatedContact,
+      status: 'published',
+      versionNumber: nextVersionNumber,
+      publishedAt: now,
+      updatedAt: now,
+      updatedBy: actorEmail
+    };
+
+    const updatedDraft: HomepageConfiguration = {
+      ...existingDraft,
+      contact: {
+        ...existingDraft.contact,
+        ...updatedContact
+      },
+      versionNumber: nextVersionNumber,
+      updatedAt: now,
+      updatedBy: actorEmail
+    };
+
+    this.configurations.set(instanceId, updatedPublished);
+    this.drafts.set(instanceId, updatedDraft);
+
+    this.versions.push({
+      versionId: `ver_${instanceId}_${nextVersionNumber}_${Date.now()}`,
+      instanceId,
+      versionNumber: nextVersionNumber,
+      configurationSnapshot: JSON.parse(JSON.stringify(updatedPublished)),
+      publishedBy: actorEmail,
+      publishedAt: now,
+      changelog: 'Updated institutional footer copyright, address, email, and phone'
+    });
+
+    this.saveConfigurations();
+    this.saveVersions();
+
+    TamperEvidentAuditService.logPlatformAction({
+      actor: actorEmail,
+      actorRole: actorContext?.role || 'principal_admin',
+      tenantId: updatedPublished.tenantId,
+      action: 'instance_footer_updated',
+      target: instanceId,
+      result: 'SUCCESS',
+      outcome: 'SUCCESS',
+      details: `Updated footer for ${updatedPublished.branding.institutionName} (${instanceId}) v${nextVersionNumber}`
+    });
+
+    this.logAudit({
+      id: `aud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      instanceId,
+      action: 'published',
+      actorEmail,
+      actorRole: actorContext?.role || 'admin',
+      timestamp: now,
+      versionNumber: nextVersionNumber,
+      notes: 'Direct institutional footer update'
+    });
+
+    return updatedPublished;
+  }
+
   public publishHomepage(
     instanceId: string, 
     actorEmail: string, 
     changelogNote: string = 'Published changes from Visual Editor',
     actorContext?: { role: string; tenantId: string }
   ): HomepageConfiguration {
-    // Enforce tenant isolation
-    if (actorContext && actorContext.role !== 'super_admin' && actorContext.tenantId !== instanceId) {
-      throw new Error(`ACCESS_DENIED: Tenant '${actorContext.tenantId}' cannot publish configuration of '${instanceId}'`);
-    }
+    this.assertAdminAccess(instanceId, actorContext);
 
     const draft = this.drafts.get(instanceId);
     if (!draft) {
@@ -422,10 +777,7 @@ export class HomepageEngineManager {
     actorEmail: string,
     actorContext?: { role: string; tenantId: string }
   ): HomepageConfiguration {
-    // Enforce tenant isolation
-    if (actorContext && actorContext.role !== 'super_admin' && actorContext.tenantId !== instanceId) {
-      throw new Error(`ACCESS_DENIED: Tenant '${actorContext.tenantId}' cannot roll back configuration of '${instanceId}'`);
-    }
+    this.assertAdminAccess(instanceId, actorContext);
 
     const versionRecord = this.versions.find(
       v => v.instanceId === instanceId && v.versionNumber === targetVersionNumber
@@ -482,6 +834,11 @@ export class HomepageEngineManager {
     return HOMEPAGE_TEMPLATES;
   }
 
+  public getAuditLogs(instanceId?: string): HomepageAuditRecord[] {
+    if (!instanceId) return [...this.auditLogs];
+    return this.auditLogs.filter(a => a.instanceId === instanceId);
+  }
+
   private logAudit(record: HomepageAuditRecord): void {
     this.auditLogs.unshift(record);
     if (this.auditLogs.length > 500) {
@@ -492,3 +849,4 @@ export class HomepageEngineManager {
 }
 
 export const homepageEngineManager = lazySingleton(() => HomepageEngineManager.getInstance());
+

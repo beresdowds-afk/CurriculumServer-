@@ -49,6 +49,18 @@ export interface SchoolFinanceRouterDependencies {
   authorizationMiddleware: Pick<AuthorizationMiddleware, 'requirePermission'>;
   createFeePoliciesService?: (pool: DatabasePool) => SchoolFinancePolicies;
   createSettlementService?: (pool: DatabasePool) => SchoolSettlementAccounts;
+  cmagHooks?: {
+    emitTenantWorkflowNotification: (event: {
+      tenantId: string;
+      category: 'fees';
+      purpose: string;
+      guardianId?: string;
+      toPhone?: string;
+      message: string;
+      idempotencyKey?: string;
+      actorSubject: string;
+    }) => Promise<unknown>;
+  };
 }
 
 export function createSchoolFinanceRouter(deps: SchoolFinanceRouterDependencies): Router {
@@ -125,6 +137,17 @@ export function createSchoolFinanceRouter(deps: SchoolFinanceRouterDependencies)
     async (req: Request, res: Response) => {
       try {
         await policiesFor().approve(actorFrom(req), req.params.schoolId, req.params.policyId);
+        if (deps.cmagHooks && typeof req.body?.notifyPhone === 'string' && req.body.notifyPhone.trim()) {
+          void deps.cmagHooks.emitTenantWorkflowNotification({
+            tenantId: actorFrom(req).tenantId,
+            category: 'fees',
+            purpose: 'fee_policy_approved',
+            toPhone: req.body.notifyPhone.trim(),
+            message: `Fee policy ${req.params.policyId} has been approved for school ${req.params.schoolId}.`,
+            idempotencyKey: `fee-policy-approve:${req.params.policyId}`,
+            actorSubject: actorFrom(req).userId
+          }).catch(() => {});
+        }
         res.json({ success: true });
       } catch (error) {
         sendFinanceError(res, error);

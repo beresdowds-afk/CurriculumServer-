@@ -128,6 +128,12 @@ export const ProvisionSchoolModal: React.FC<ProvisionSchoolModalProps> = ({
     spanner_audit_trail: true
   });
 
+  // Messaging Gateway settings for whatsapp_sms_broadcast
+  const [smsSenderId, setSmsSenderId] = useState('CurricFlow');
+  const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [messagingAuthPolicy, setMessagingAuthPolicy] = useState<'sms_only' | 'whatsapp_only' | 'sms_then_whatsapp' | 'whatsapp_then_sms'>('sms_then_whatsapp');
+  const [stepError, setStepError] = useState('');
+
   // Step 4: Provisioning Animation & Result State
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [provisioningLogs, setProvisioningLogs] = useState<string[]>([]);
@@ -883,6 +889,66 @@ export const ProvisionSchoolModal: React.FC<ProvisionSchoolModalProps> = ({
                   </p>
                 </div>
               </div>
+
+              {/* Central SMS & WhatsApp Communication Gateway Toggle & Policy */}
+              <div className="p-4 rounded-2xl border border-slate-800 bg-slate-950/70 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h5 className="text-xs font-bold text-white">SMS & WhatsApp Communication Gateway (central_messaging)</h5>
+                    <p className="text-[11px] text-slate-400">
+                      Enables OTP/MFA authentication, parent/guardian alerts, and emergency broadcasts via central CMAG without exposing provider API keys.
+                    </p>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs font-semibold text-emerald-300 cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={enabledFeatures.whatsapp_sms_broadcast}
+                      onChange={e => setEnabledFeatures(prev => ({ ...prev, whatsapp_sms_broadcast: e.target.checked }))}
+                      className="rounded border-slate-700 text-emerald-600 bg-slate-950"
+                    />
+                    <span>{enabledFeatures.whatsapp_sms_broadcast ? 'Enabled' : 'Disabled'}</span>
+                  </label>
+                </div>
+
+                {enabledFeatures.whatsapp_sms_broadcast && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800 text-xs">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">OTP / MFA Channel Policy</label>
+                      <select
+                        value={messagingAuthPolicy}
+                        onChange={e => setMessagingAuthPolicy(e.target.value as typeof messagingAuthPolicy)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-2 text-white"
+                      >
+                        <option value="sms_only">SMS Only</option>
+                        <option value="whatsapp_only">WhatsApp Only</option>
+                        <option value="sms_then_whatsapp">SMS then WhatsApp</option>
+                        <option value="whatsapp_then_sms">WhatsApp then SMS</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">SMS Sender ID (3–11 chars)</label>
+                      <input
+                        type="text"
+                        maxLength={11}
+                        value={smsSenderId}
+                        onChange={e => setSmsSenderId(e.target.value)}
+                        placeholder="CurricFlow"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-2 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">WhatsApp Sender (E.164 optional)</label>
+                      <input
+                        type="text"
+                        value={whatsappNumber}
+                        onChange={e => setWhatsappNumber(e.target.value)}
+                        placeholder="+2348000000000"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-2 text-white"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -997,19 +1063,23 @@ export const ProvisionSchoolModal: React.FC<ProvisionSchoolModalProps> = ({
           )}
 
           {currentStep < 3 && (
-            <button
-              onClick={() => {
-                if (!schoolName) {
-                  alert('Please enter the school name first.');
-                  return;
-                }
-                setCurrentStep((prev) => (prev + 1) as any);
-              }}
-              className="ml-auto px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/50 flex items-center gap-2 transition-all"
-            >
-              <span>Continue</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            <div className="ml-auto flex items-center gap-3">
+              {stepError && <span role="alert" className="text-xs text-rose-400">{stepError}</span>}
+              <button
+                onClick={() => {
+                  if (!schoolName.trim()) {
+                    setStepError('Please enter the school name first.');
+                    return;
+                  }
+                  setStepError('');
+                  setCurrentStep((prev) => (prev + 1) as any);
+                }}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/50 flex items-center gap-2 transition-all"
+              >
+                <span>Continue</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           )}
 
           {currentStep === 3 && (

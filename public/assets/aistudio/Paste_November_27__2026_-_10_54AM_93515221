@@ -1,0 +1,1158 @@
+MASTER IMPLEMENTATION PROMPT
+
+Curriculum Server Central SMS & WhatsApp Infrastructure, Authentication Integration and Reusable School-Instance Communication Feature
+
+1. MISSION AND IMPLEMENTATION OBJECTIVE
+
+Undertake a comprehensive repository investigation, architecture review, feature development, implementation, integration, testing, and production-readiness exercise to deliver a fully operational, centrally managed SMS and WhatsApp infrastructure for the Curriculum Server ecosystem.
+
+This infrastructure must serve three distinct but interconnected purposes:
+
+1. Curriculum Server platform communications and authentication: SMS and WhatsApp must be available to Curriculum Server itself for platform administration, user authentication, security verification, alerts, notifications, and operational communications.
+2. Provisioned school-instance communications and authentication: Every provisioned school instance must be able to use SMS and WhatsApp for its own users, authentication workflows, and school communications.
+3. Provisioned Curriculum Flow communications and authentication: Every provisioned Curriculum Flow application must be able to use SMS and WhatsApp for application-level authentication and communications, independently configurable for the institution or tenant it serves.
+
+Do not implement these as disconnected messaging integrations inside individual applications.
+
+Build a centrally governed, reusable, multi-tenant Communication and Messaging Service that can be consumed by Curriculum Server, Curriculum Flow, and all present and future applications provisioned through Curriculum Server.
+
+The implementation must deliver complete feature development, feature registration, application integration, tenant-aware provisioning, operational administration, security, testing, production readiness, and availability through the provisioning system.
+
+This is an implementation assignment, not a proposal or architecture-document-only exercise.
+
+---
+
+2. FIRST: INSPECT THE EXISTING REPOSITORY
+
+Before changing code, inspect the actual GitHub repository and establish the current implementation state.
+
+Investigate, at minimum:
+
+- Central Curriculum Server architecture and service orchestration.
+- School provisioning workflows and provisioning manifests.
+- Curriculum Flow application architecture and authentication.
+- Existing "whatsapp_sms_broadcast" feature registration.
+- Existing notification provider abstraction.
+- Existing Sendchamp integration.
+- Existing notification subscriptions, outbox, and attempts tables.
+- Existing ServerSecretVault or equivalent secret-management implementation.
+- Existing tenant identification, isolation, and RLS.
+- Existing authentication, OTP, password recovery, MFA, and account verification workflows.
+- Existing user, student, parent, guardian, teacher, administrator, and staff identity models.
+- Existing feature catalogue, feature registry, feature dependencies, pricing, and provisioning configuration.
+- Existing admin dashboards and tenant configuration interfaces.
+- Existing environment-variable and deployment configuration.
+- Existing tests, migrations, deployment workflows, and operational monitoring.
+
+Inspect these known areas and follow their actual dependencies:
+
+- "server/notifications/"
+- "server/notifications/providers.ts"
+- "server/notifications/README.md"
+- "src/db/migrations/027_notification_delivery.sql"
+- "src/mockCurriculumServerData.ts"
+- "src/types.ts"
+- "src/components/ProvisionSchoolModal.tsx"
+- "server/serverSchoolManager.ts"
+- "src/data/logisticsFeatureTemplate.ts"
+- "CURRICULUM_SERVER_SPECIFICATION.md"
+- "docs/infrastructure/CREDENTIALS_AND_CONFIG_REGISTER.md"
+
+These are investigation starting points, not an exhaustive list.
+
+Mandatory inspection rules
+
+1. Do not assume existing functionality is operational merely because a type, interface, feature flag, mock record, migration, or README mentions it.
+2. Trace actual execution from the user interface or application workflow to the backend, provider, and resulting database records.
+3. Identify which functionality is implemented, partially implemented, simulated, mocked, or absent.
+4. Identify existing integrations that should be extended rather than duplicated.
+5. Preserve existing working features and architectural decisions.
+6. Do not delete existing notification functionality simply to replace it with a new implementation.
+7. Do not introduce another provider integration that duplicates an existing abstraction unnecessarily.
+8. Do not mark a feature production-ready until its complete execution path has been verified.
+
+Produce an initial implementation-gap report, then proceed with the remediation and implementation.
+
+Do not stop after producing the report.
+
+---
+
+3. TARGET ARCHITECTURE: ONE CENTRAL MESSAGING SERVICE
+
+Build a central service within Curriculum Server called:
+
+Curriculum Messaging & Authentication Gateway (CMAG)
+
+The name may be adapted to existing repository naming conventions, but the architectural responsibilities must remain.
+
+CMAG must provide a common service interface for:
+
+- SMS delivery.
+- WhatsApp delivery.
+- Authentication OTP delivery.
+- Account verification.
+- Password recovery.
+- MFA and security verification.
+- Transactional notifications.
+- School announcements.
+- Parent and guardian communications.
+- Academic notifications.
+- Attendance notifications.
+- Financial notifications.
+- Emergency alerts.
+- Administrative notifications.
+- Delivery tracking and reporting.
+
+The service must be centrally developed and operated while supporting tenant-specific configurations.
+
+Architectural separation
+
+Implement the following layers:
+
+Layer A — Central Messaging Infrastructure
+
+Responsible for:
+
+- Provider integrations.
+- Message dispatch.
+- Authentication message dispatch.
+- Message templates.
+- Queue management.
+- Retries and failure handling.
+- Delivery receipts.
+- Provider health checks.
+- Usage accounting.
+- Audit logging.
+- Rate limiting.
+- Security enforcement.
+- Operational monitoring.
+
+Layer B — Application Integration Layer
+
+Provide authenticated interfaces and SDK/service adapters that allow:
+
+- Curriculum Server to send its own messages.
+- Curriculum Flow to send application messages.
+- Other provisioned applications to consume messaging services.
+- Authentication services to request OTP delivery without implementing provider-specific logic.
+
+Layer C — Tenant Messaging Configuration
+
+Each provisioned school must have its own independently configurable messaging settings, including:
+
+- SMS enabled/disabled.
+- WhatsApp enabled/disabled.
+- Preferred communication channel.
+- Sender identity.
+- Approved WhatsApp sender configuration.
+- Message templates and branding.
+- Language and locale.
+- Consent and opt-out policies.
+- Message quotas and budgets.
+- Usage reports.
+- Notification categories.
+- Authentication-channel policies.
+- Delivery and escalation preferences.
+
+Layer D — Application and User Experience
+
+Provide suitable interfaces for:
+
+- Central platform administrators.
+- School administrators.
+- Authorized Curriculum Flow administrators.
+- Relevant staff and operational users.
+- End users receiving notifications.
+
+A tenant must never be able to access or modify another tenant's messaging configuration, messages, credentials, templates, or usage records.
+
+---
+
+4. THREE REQUIRED DEPLOYMENT SCOPES
+
+The implementation must explicitly support all three deployment scopes.
+
+4.1 Curriculum Server platform scope
+
+Curriculum Server must have its own messaging configuration and use the central gateway for:
+
+- Platform administrator OTP.
+- Administrator MFA and security verification.
+- Account registration and verification.
+- Password recovery.
+- Security alerts.
+- Provisioning notifications.
+- Provisioning failure alerts.
+- Infrastructure and operational alerts.
+- Billing and subscription notifications.
+- Platform announcements.
+- Support and administrative communications.
+
+Curriculum Server platform messages must be distinguishable from school-instance messages.
+
+The platform must have its own sender identity, templates, quotas, credentials or provider-account allocation, and audit trail.
+
+Platform authentication must not depend on a school tenant being provisioned.
+
+4.2 Provisioned school-instance scope
+
+Every school instance provisioned through Curriculum Server must be able to consume the central messaging service.
+
+School-level authentication use cases include:
+
+- Administrator OTP.
+- Teacher and staff account verification.
+- Parent and guardian account verification.
+- Student authentication where the school's configured authentication policy permits it.
+- Password recovery.
+- MFA and sensitive-operation verification.
+- Account-security notifications.
+
+School communication use cases include:
+
+- Admission notifications.
+- Student registration updates.
+- Attendance alerts.
+- Late arrival and absence alerts.
+- Academic results and grade notifications.
+- Examination and assessment announcements.
+- Fee invoices and payment reminders.
+- Payment confirmations and receipts.
+- Bursary and scholarship notifications.
+- Parent-teacher communications.
+- School announcements.
+- Timetable and calendar changes.
+- Emergency broadcasts.
+- Discipline and safeguarding notifications, subject to appropriate access controls.
+- Transport and logistics alerts.
+- School closure and resumption announcements.
+
+All messages must be associated with the correct school tenant and, where applicable, the relevant student, parent, guardian, staff member, or transaction.
+
+4.3 Provisioned Curriculum Flow instance scope
+
+Every provisioned Curriculum Flow instance must independently integrate with the central gateway.
+
+It must support:
+
+Authentication
+
+- Registration verification.
+- Login OTP where enabled.
+- MFA.
+- Password reset.
+- Account recovery.
+- Security alerts.
+- Device or session verification where supported.
+
+Communication
+
+- Application notifications.
+- Workflow notifications.
+- User and administrator alerts.
+- Academic and operational communications.
+- Announcements.
+- Transactional notifications.
+- Other notifications required by the particular provisioned application.
+
+Curriculum Flow must not require a separate, duplicated SMS/WhatsApp provider implementation.
+
+It must consume the central gateway through a secure, tenant-aware application integration.
+
+Important distinction
+
+Curriculum Flow and the school-management instance may share the same institutional identity, but they must retain separate application identities and authorization boundaries.
+
+Where both applications belong to the same school, allow authorized sharing of approved tenant-level messaging configuration without allowing one application to impersonate another.
+
+Each message must carry:
+
+- Tenant ID.
+- Application ID.
+- Environment.
+- Message category.
+- Message purpose.
+- Recipient.
+- Correlation/reference ID.
+- Authentication or communication classification.
+
+---
+
+5. SMS AND WHATSAPP PROVIDER INFRASTRUCTURE
+
+Complete and productionize the existing provider abstraction.
+
+The existing Sendchamp integration should be inspected and reused where appropriate.
+
+Do not hard-code Sendchamp as the only possible provider.
+
+Implement a provider-adapter architecture that can support:
+
+- Sendchamp.
+- Other approved SMS providers.
+- Other approved WhatsApp Business API providers.
+- Future regional or international providers.
+
+Provider selection must be configurable at platform and tenant level according to the capabilities and commercial arrangements supported.
+
+Required provider capabilities
+
+Each provider adapter must expose, as applicable:
+
+1. Configuration validation.
+2. Credential verification.
+3. Sender identity validation.
+4. SMS dispatch.
+5. WhatsApp dispatch.
+6. Template validation and submission status.
+7. Provider message/reference ID.
+8. Delivery status retrieval.
+9. Delivery webhook processing.
+10. Failure classification.
+11. Retry eligibility.
+12. Provider health status.
+13. Usage and cost information.
+14. Rate-limit information.
+
+Provider configuration
+
+Implement secure configuration for:
+
+- API credentials.
+- API endpoints.
+- SMS sender names.
+- SMS routes.
+- WhatsApp sender identities.
+- WhatsApp Business account identifiers where required.
+- Approved WhatsApp templates.
+- Webhook signing secrets.
+- Provider-specific options.
+
+Never expose provider credentials to the browser or provisioned frontend applications.
+
+Use the existing server-side secret-management infrastructure or extend it appropriately.
+
+Never store live provider secrets in source code, frontend environment variables, public configuration files, or tenant-readable database records.
+
+Provider readiness
+
+The gateway must distinguish:
+
+- Provider not configured.
+- Credentials missing.
+- Credentials invalid.
+- Sender identity not approved.
+- WhatsApp template not approved.
+- Provider unavailable.
+- Provider operational.
+- Provider degraded.
+- Channel disabled.
+- Tenant not authorized to use channel.
+
+A successful configuration check must not be confused with successful message delivery.
+
+---
+
+6. AUTHENTICATION DELIVERY ENGINE
+
+Build a dedicated authentication-message capability within CMAG.
+
+Authentication messages must be treated differently from ordinary communications.
+
+Required capabilities
+
+- Generate secure OTPs or integrate with the existing secure authentication-token mechanism.
+- Deliver OTPs through SMS and, where supported and permitted, WhatsApp.
+- Verify OTPs securely.
+- Enforce expiration.
+- Enforce attempt limits.
+- Enforce resend cooldowns.
+- Prevent brute-force attacks.
+- Prevent OTP reuse.
+- Bind challenges to the correct user, tenant, application, and authentication purpose.
+- Invalidate superseded challenges.
+- Record delivery and verification outcomes.
+- Apply rate limits by user, phone number, IP, tenant, and application as appropriate.
+- Support abuse detection and suspicious activity alerts.
+
+Authentication security requirements
+
+1. Never store OTPs in plaintext.
+2. Never log OTP values.
+3. Never expose OTPs through frontend responses, analytics, error messages, or ordinary application logs.
+4. Never treat provider acceptance as successful OTP verification.
+5. Never allow one tenant's OTP to authenticate a user in another tenant.
+6. Never allow a Curriculum Flow OTP to authenticate a Curriculum Server account unless an explicitly designed and verified shared identity flow authorizes it.
+7. Never allow communication preferences or ordinary marketing opt-outs to silently disable mandatory security messages where a lawful and appropriate authentication basis exists.
+8. Do not silently downgrade authentication security when a provider is unavailable.
+
+Authentication channel policy
+
+Support configurable policies such as:
+
+- SMS only.
+- WhatsApp only, where supported and approved for authentication.
+- SMS primary with WhatsApp fallback.
+- WhatsApp primary with SMS fallback.
+- User-selected permitted channel.
+- Existing email-based authentication where supported.
+
+Fallback must be explicitly configured and audited.
+
+Do not send authentication OTPs to both channels indiscriminately.
+
+Do not automatically use WhatsApp for authentication simply because the user has a WhatsApp-capable number. Validate channel availability, user eligibility, applicable provider rules, and the configured security policy.
+
+---
+
+7. SCHOOL COMMUNICATION ENGINE
+
+Build a reusable communication engine for each provisioned school.
+
+Functional requirements
+
+Provide:
+
+1. One-to-one messages.
+2. Group messages.
+3. Role-based broadcasts.
+4. Class-based broadcasts.
+5. Student-specific notifications.
+6. Parent/guardian notifications.
+7. Staff notifications.
+8. Scheduled messages.
+9. Event-triggered messages.
+10. Emergency broadcasts.
+11. Multilingual message templates.
+12. Message personalization.
+13. Attachment/link support where provider capabilities permit.
+14. Delivery status tracking.
+15. Failure and retry management.
+16. Message history.
+17. Usage reporting.
+18. Administrative audit trails.
+
+Event-driven integration
+
+Build reusable event interfaces and integrate them with actual application workflows.
+
+At minimum, support events for:
+
+- Admission and enrollment.
+- Attendance.
+- Academic results.
+- Examination and assessment.
+- Fee invoices.
+- Payment events.
+- Bursary and scholarship events.
+- Timetable changes.
+- School announcements.
+- Emergency alerts.
+- Transport and logistics.
+- User registration and account changes.
+
+Do not implement these as hard-coded demo notifications.
+
+Messages must be triggered by actual authorized application events.
+
+Use an event-driven architecture with durable dispatch and appropriate idempotency controls.
+
+Parent and guardian communication
+
+Implement:
+
+- Verified parent/guardian contact records.
+- Student-to-parent/guardian relationship checks.
+- Recipient eligibility validation.
+- Communication preferences.
+- Consent and opt-out management where applicable.
+- Multiple guardian handling.
+- Approved notification categories.
+- Delivery history.
+
+Prevent a parent or guardian from receiving another student's private information unless an authorized relationship and applicable policy permit it.
+
+Do not send sensitive academic, financial, disciplinary, or safeguarding information through an unapproved channel or an unapproved template.
+
+---
+
+8. FEATURE REGISTRATION AND PROVISIONING
+
+This is a critical deliverable.
+
+The messaging gateway must become a first-class capability in the Curriculum Server feature catalogue and provisioning architecture.
+
+8.1 Central platform registration
+
+Register the central Messaging & Authentication Gateway as a platform-level service.
+
+It must be:
+
+- Recognized by the central orchestrator.
+- Registered in the service catalogue.
+- Available to authorized platform applications.
+- Configurable by platform administrators.
+- Observable through platform health monitoring.
+- Deployable independently of individual school instances.
+
+8.2 Reusable school feature registration
+
+Register a reusable school feature, retaining or evolving the existing feature identifier:
+
+"whatsapp_sms_broadcast"
+
+Its display name should clearly communicate that it provides:
+
+SMS & WhatsApp Communication Gateway
+
+The feature must have:
+
+- Stable feature ID.
+- Feature version.
+- Description.
+- Supported channels.
+- Dependencies.
+- Configuration schema.
+- Provisioning hooks.
+- Database requirements.
+- Required permissions.
+- Feature health checks.
+- Feature readiness status.
+- Billing/entitlement metadata where applicable.
+- Upgrade and migration handling.
+
+Do not register the same feature multiple times under different identifiers merely because it serves multiple applications.
+
+8.3 Curriculum Flow feature registration
+
+Ensure the provisioned Curriculum Flow application can declare its dependency on the central messaging capability.
+
+A provisioned Curriculum Flow instance must receive:
+
+- Its application-level messaging entitlement.
+- Tenant and application identifiers.
+- Secure gateway connection configuration.
+- Permitted channels.
+- Authentication delivery configuration.
+- Communication configuration.
+- Feature health/readiness information.
+
+8.4 Provisioning wizard
+
+Extend the school provisioning wizard to include messaging configuration.
+
+Allow the provisioning administrator to:
+
+- Enable or disable SMS.
+- Enable or disable WhatsApp.
+- Enable authentication delivery.
+- Enable school communications.
+- Select permitted channels.
+- Select provider allocation where authorized.
+- Configure sender identities where supported.
+- Apply initial templates.
+- Set quotas and usage limits.
+- Select default notification preferences.
+- Enable or disable individual communication categories.
+
+Where the central platform provider account is shared, provision tenant-specific logical allocations and controls without exposing shared credentials.
+
+8.5 Provisioning automation
+
+The provisioning process must automatically:
+
+1. Register the tenant.
+2. Register the application.
+3. Register the messaging entitlement.
+4. Create tenant-scoped configuration.
+5. Apply required database migrations.
+6. Establish authorization policies.
+7. Create default templates.
+8. Initialize notification preferences.
+9. Establish provider allocation.
+10. Initialize usage accounting.
+11. Run provider/configuration readiness checks.
+12. Run tenant-isolation checks.
+13. Record provisioning status.
+14. Expose the feature to the provisioned application only when its required dependencies are ready.
+
+Provisioning must be idempotent.
+
+A retry must not create duplicate subscriptions, duplicate configuration records, duplicate event handlers, or duplicate feature registrations.
+
+A failed messaging setup must not silently report the feature as operational.
+
+---
+
+9. CENTRAL AND TENANT ADMINISTRATION INTERFACES
+
+Develop the necessary administrative interfaces.
+
+9.1 Curriculum Server platform administrator
+
+Provide a central dashboard to manage:
+
+- SMS provider connections.
+- WhatsApp provider connections.
+- Provider health.
+- Sender identities.
+- WhatsApp template approvals.
+- Authentication message policies.
+- Tenant messaging entitlements.
+- Provider allocation.
+- Platform-wide limits.
+- Tenant usage.
+- Delivery success and failure.
+- Queue health.
+- Failed messages.
+- Retries.
+- Provider costs where available.
+- Security events.
+- Audit records.
+
+Platform administrators must be able to suspend a provider, channel, tenant entitlement, or compromised sender configuration without disabling unrelated platform services.
+
+9.2 School administrator
+
+Each school must have a tenant-isolated messaging administration interface.
+
+Provide:
+
+- SMS and WhatsApp configuration status.
+- Enabled channels.
+- Approved sender identities.
+- Message templates.
+- Communication categories.
+- Parent/guardian preferences.
+- Staff communication settings.
+- Usage and quotas.
+- Message history.
+- Delivery status.
+- Failed messages.
+- Retry controls for authorized users.
+- Scheduled messages.
+- Broadcast management.
+- Communication reports.
+
+A school administrator must not be able to view other schools' messages, credentials, usage, or configuration.
+
+9.3 Curriculum Flow administration
+
+Provide the appropriate application-level settings and status information for each provisioned Curriculum Flow instance.
+
+Avoid creating a second independent messaging administration system.
+
+Where the same school administrator controls both applications, allow appropriate authorized access to shared tenant-level messaging settings while retaining application-specific permissions and audit records.
+
+---
+
+10. DATABASE, TENANCY AND DATA SECURITY
+
+Review and extend the existing notification schema rather than creating duplicate infrastructure.
+
+The existing notification subscriptions, outbox, and attempts foundation should be reused where appropriate.
+
+Implement the necessary records for:
+
+- Tenant messaging configuration.
+- Application messaging configuration.
+- Provider allocation.
+- Channel configuration.
+- Sender identities.
+- Authentication challenges.
+- Message templates.
+- Message preferences.
+- Consent and opt-out.
+- Notification subscriptions.
+- Notification outbox.
+- Notification attempts.
+- Provider delivery receipts.
+- Usage and billing records.
+- Message audit events.
+- Provider health and configuration status.
+
+Security requirements
+
+- Enforce tenant isolation.
+- Enforce application-level authorization.
+- Use forced RLS where appropriate.
+- Ensure service-side authorization is not dependent on frontend controls.
+- Protect secrets using the established vault.
+- Encrypt sensitive data at rest where appropriate.
+- Use secure transport.
+- Validate webhook signatures.
+- Reject forged provider callbacks.
+- Prevent replay attacks.
+- Apply idempotency keys.
+- Sanitize message content and metadata.
+- Avoid retaining unnecessary sensitive message content.
+- Apply configurable retention policies.
+- Ensure audit logs are tamper-resistant to the extent supported by the platform.
+
+Do not trust a tenant ID supplied by a browser request without validating it against the authenticated principal and authorized application context.
+
+---
+
+11. DELIVERY ENGINE, QUEUES AND RELIABILITY
+
+Implement a durable production dispatch system.
+
+The system must support:
+
+- Durable message queues.
+- Asynchronous dispatch.
+- Worker execution.
+- Retry scheduling.
+- Exponential backoff with jitter.
+- Dead-letter queues.
+- Idempotent dispatch.
+- Duplicate prevention.
+- Provider timeouts.
+- Circuit breakers.
+- Provider failover where explicitly configured.
+- Delivery receipt processing.
+- Queue monitoring.
+- Failure recovery.
+- Operational alerting.
+
+Distinguish these message states:
+
+- Created.
+- Queued.
+- Processing.
+- Submitted to provider.
+- Provider accepted.
+- Sent.
+- Delivered.
+- Read, if supported.
+- Failed.
+- Expired.
+- Cancelled.
+- Retry scheduled.
+
+Do not represent provider acceptance as delivery.
+
+Do not represent a simulated delivery status as a real provider delivery receipt.
+
+The existing README limitations concerning missing routes, workflow integrations, worker scheduling, production enablement, credentials, and live-provider verification must be explicitly addressed.
+
+---
+
+12. CONSENT, COMPLIANCE AND MESSAGE GOVERNANCE
+
+Implement communication governance appropriate to the deployment jurisdiction and provider rules.
+
+Include:
+
+- Recipient consent records where required.
+- Communication preferences.
+- Marketing versus transactional message classification.
+- Authentication versus ordinary communication classification.
+- Opt-out processing.
+- Opt-out enforcement.
+- Emergency communication policy.
+- Message-frequency limits.
+- Approved WhatsApp templates.
+- Sender identity validation.
+- Sensitive-information restrictions.
+- Contact verification.
+- Communication audit history.
+
+Support jurisdiction-aware configuration for Nigeria and other deployment markets.
+
+Do not assume a provider's compliance or regulatory approval applies automatically to every school or tenant.
+
+Provide appropriate safeguards for communications involving minors and student records.
+
+---
+
+13. TESTING AND ACCEPTANCE REQUIREMENTS
+
+Create a comprehensive automated test suite.
+
+Testing must cover the central service, application adapters, provisioning, authentication, school communication, and provider integrations.
+
+13.1 Unit tests
+
+Test:
+
+- Provider adapter behavior.
+- SMS payload generation.
+- WhatsApp payload generation.
+- Template rendering.
+- Authentication challenge generation.
+- OTP expiration.
+- OTP verification.
+- Retry classification.
+- Idempotency.
+- Rate limiting.
+- Tenant and application context validation.
+- Consent enforcement.
+- Delivery status transitions.
+
+13.2 Integration tests
+
+Test:
+
+- Curriculum Server to CMAG.
+- Curriculum Flow to CMAG.
+- Provisioned school application to CMAG.
+- SMS provider integration.
+- WhatsApp provider integration.
+- Authentication workflow to actual provider adapter.
+- Notification event to queue to worker to provider.
+- Provider webhook to delivery-status update.
+- Tenant configuration to message dispatch.
+- Provisioning wizard to feature activation.
+
+13.3 Security tests
+
+Test:
+
+- Cross-tenant access denial.
+- Cross-application access denial.
+- Unauthorized provider configuration.
+- Secret exposure prevention.
+- OTP brute-force protection.
+- OTP replay prevention.
+- Forged webhook rejection.
+- Webhook replay rejection.
+- Unauthorized message dispatch.
+- Unauthorized broadcasts.
+- Parent/guardian relationship enforcement.
+- RLS enforcement.
+- Rate-limit enforcement.
+- Abuse and spam controls.
+
+13.4 End-to-end acceptance tests
+
+Demonstrate the following scenarios:
+
+Scenario A — Curriculum Server authentication
+
+A platform administrator requests an OTP, receives it through the configured channel, verifies it, and completes the authentication workflow.
+
+Scenario B — School administrator authentication
+
+A school administrator requests an OTP. The system resolves the correct school tenant and delivers the OTP through the school's configured authentication policy.
+
+Scenario C — Curriculum Flow authentication
+
+A user authenticates through a provisioned Curriculum Flow instance. The correct tenant and application context are enforced, and the OTP is delivered through the central gateway.
+
+Scenario D — Parent attendance notification
+
+A real attendance event triggers a notification to the verified and authorized parent/guardian through the configured SMS or WhatsApp channel.
+
+Scenario E — Fee notification
+
+A real fee invoice or payment event triggers the correct school notification without exposing another student's or tenant's information.
+
+Scenario F — Emergency broadcast
+
+An authorized school administrator sends an emergency broadcast to the permitted recipient group, with delivery tracking and a complete audit trail.
+
+Scenario G — Provider failure
+
+The primary provider becomes unavailable. The system records the failure, applies the configured fallback policy, and reports the final result accurately.
+
+Scenario H — Tenant isolation
+
+School A attempts to access School B's configuration, messages, delivery history, and usage data. All unauthorized access is denied.
+
+Scenario I — Provisioning
+
+A new school is provisioned with SMS and WhatsApp enabled. The service registers the required entitlements, configuration, templates, policies, and application connections.
+
+Scenario J — Curriculum Flow provisioning
+
+A new Curriculum Flow instance is provisioned and automatically receives its authorized connection to the central messaging service.
+
+Do not pass acceptance tests using mocked provider responses alone.
+
+Use mocked tests for routine CI, but provide separately documented live-provider verification using approved test credentials and recipients.
+
+---
+
+14. PRODUCTION READINESS AND DEPLOYMENT
+
+Complete all required production work.
+
+This includes:
+
+- Database migrations.
+- Backend service implementation.
+- Provider adapters.
+- Authentication integration.
+- Communication event integration.
+- Queue workers.
+- Webhook endpoints.
+- Administrative interfaces.
+- Provisioning integration.
+- Environment configuration.
+- Secret-management configuration.
+- Logging and monitoring.
+- Health checks.
+- CI/CD integration.
+- Deployment documentation.
+- Operational runbooks.
+- Recovery procedures.
+- Provider onboarding instructions.
+
+Environment separation
+
+Support separate development, staging, and production configurations.
+
+Never allow staging credentials, sender identities, or test recipients to be used accidentally in production.
+
+Do not enable live messaging by merely setting a generic feature flag.
+
+Production activation must require successful readiness checks and explicit authorized configuration.
+
+Health checks
+
+Provide separate health indicators for:
+
+- Central messaging service.
+- SMS provider.
+- WhatsApp provider.
+- Authentication delivery.
+- Communication dispatch.
+- Queue workers.
+- Webhook processing.
+- Tenant configuration.
+- Provisioned application connectivity.
+
+A provider being operational must not automatically mean every tenant is ready to send messages.
+
+CI/CD
+
+Integrate:
+
+1. Lint.
+2. Type checking.
+3. Unit tests.
+4. Integration tests.
+5. Security tests.
+6. Migration validation.
+7. Production build.
+8. Deployment.
+9. Post-deployment health checks.
+
+Ensure failures in the messaging service do not cause unrelated platform applications to become unavailable.
+
+---
+
+15. FEATURE MATURITY AND PROVISIONING AVAILABILITY
+
+The work is not complete merely because the central API exists.
+
+The following capabilities must each reach verified production readiness:
+
+Capability| Required outcome
+Central SMS service| Operational and centrally administered
+Central WhatsApp service| Operational and centrally administered
+Curriculum Server SMS authentication| Integrated and verified
+Curriculum Server WhatsApp authentication| Integrated where provider and policy permit
+School-instance SMS authentication| Available and tenant-isolated
+School-instance WhatsApp authentication| Available and tenant-isolated where supported
+Curriculum Flow SMS authentication| Integrated and verified
+Curriculum Flow WhatsApp authentication| Integrated where supported
+School SMS communication| Operational and reusable
+School WhatsApp communication| Operational and reusable
+Curriculum Flow SMS communication| Operational
+Curriculum Flow WhatsApp communication| Operational
+Feature registration| Registered in the canonical feature catalogue
+Provisioning| Automatically provisions the required configuration and entitlements
+Administration| Central and tenant-level interfaces available
+Delivery tracking| Real provider status and failure tracking
+Reliability| Durable queue, retry, and recovery
+Security| Tenant isolation, application authorization, secret protection
+Monitoring| Health checks, usage, operational alerts
+CI/CD| Automated quality and deployment gates
+
+The existing "whatsapp_sms_broadcast" feature must not be left as a decorative catalogue entry or a partially functional optional add-on.
+
+It must become a genuinely provisionable, reusable, operational feature.
+
+The central gateway must remain available to Curriculum Server independently of whether any school has purchased or enabled the school-level communication feature.
+
+Likewise, disabling school communications must not disable required central platform authentication.
+
+---
+
+16. DOCUMENTATION AND IMPLEMENTATION RECORD
+
+Update the repository documentation to reflect the actual implemented state.
+
+At minimum, provide:
+
+1. Central messaging architecture.
+2. Provider integration documentation.
+3. Authentication integration documentation.
+4. Curriculum Server integration documentation.
+5. School-instance integration documentation.
+6. Curriculum Flow integration documentation.
+7. Feature catalogue and provisioning documentation.
+8. Environment-variable register.
+9. Secret-management requirements.
+10. Database schema and migration documentation.
+11. API/interface documentation.
+12. Webhook documentation.
+13. Administrative user guide.
+14. Tenant configuration guide.
+15. Provider onboarding guide.
+16. Testing and acceptance report.
+17. Production deployment and operations runbook.
+
+Clearly distinguish implemented functionality from provider-dependent functionality that still requires external credentials, approvals, or commercial activation.
+
+---
+
+17. EXECUTION PHASES
+
+Execute the assignment in the following order.
+
+Phase 1 — Repository audit and architecture reconciliation
+
+- Inspect existing implementation.
+- Identify gaps and dependencies.
+- Establish the canonical architecture.
+- Preserve working code.
+
+Phase 2 — Central gateway completion
+
+- Complete provider abstraction.
+- Implement central service interfaces.
+- Implement secure configuration.
+- Complete queues, workers, webhooks, and delivery tracking.
+
+Phase 3 — Authentication integration
+
+- Integrate Curriculum Server authentication.
+- Integrate school authentication.
+- Integrate Curriculum Flow authentication.
+- Implement OTP and security controls.
+
+Phase 4 — Communication integration
+
+- Complete reusable school communications.
+- Integrate actual application events.
+- Integrate Curriculum Flow communication workflows.
+- Implement parent/guardian communication controls.
+
+Phase 5 — Feature registration and provisioning
+
+- Register the central service.
+- Register the reusable school feature.
+- Integrate Curriculum Flow dependency registration.
+- Implement provisioning automation and readiness checks.
+
+Phase 6 — Administration and observability
+
+- Build platform administration.
+- Build tenant administration.
+- Build application-level controls.
+- Implement usage, delivery, health, and audit dashboards.
+
+Phase 7 — Security, testing and reliability
+
+- Complete automated tests.
+- Perform tenant-isolation testing.
+- Verify provider integrations.
+- Complete resilience and recovery tests.
+
+Phase 8 — Production readiness and release
+
+- Complete deployment configuration.
+- Validate CI/CD.
+- Deploy to the appropriate environment.
+- Verify actual end-to-end operation.
+- Make the feature available in the provisioning catalogue.
+
+Do not declare a phase complete based only on code generation. Completion requires implementation evidence and passing acceptance tests.
+
+---
+
+18. NON-NEGOTIABLE IMPLEMENTATION RULES
+
+1. Do not build separate, duplicated messaging engines for Curriculum Server, school instances, and Curriculum Flow.
+2. Do not confuse central platform capabilities with school-level entitlements.
+3. Do not allow a school tenant to access central platform authentication configuration.
+4. Do not allow one school to access another school's messages or provider configuration.
+5. Do not expose provider credentials to frontend applications.
+6. Do not implement fake delivery confirmations.
+7. Do not use mock/demo records as proof of production readiness.
+8. Do not leave the feature registered but disconnected from actual application workflows.
+9. Do not implement authentication delivery as ordinary notification dispatch without security controls.
+10. Do not allow provider failures to create false authentication success.
+11. Do not silently change existing authentication security policies.
+12. Do not remove existing email, push, or other notification capabilities.
+13. Do not make the messaging service a mandatory runtime dependency for unrelated application functionality.
+14. Do not introduce hard-coded tenant IDs, provider credentials, or sender identities.
+15. Do not mark WhatsApp production-ready without verified provider credentials, sender approval, template readiness where required, and successful live testing.
+16. Do not mark SMS production-ready without verified credentials, sender configuration, and successful live testing.
+17. Do not make the provisioning feature available as production-ready until all mandatory dependencies and readiness checks pass.
+18. Preserve existing application functionality and backward compatibility.
+19. Use migrations and safe upgrade paths for existing provisioned tenants.
+20. Keep implementation modular, documented, testable, and extensible.
+
+---
+
+19. FINAL ACCEPTANCE AND DELIVERY REPORT
+
+At completion, provide a detailed implementation report containing:
+
+1. Repository baseline and initial gaps.
+2. Final architecture implemented.
+3. Files created.
+4. Files modified.
+5. Database migrations created or amended.
+6. Provider adapters implemented.
+7. Authentication flows integrated.
+8. Communication workflows integrated.
+9. Curriculum Server integration evidence.
+10. School-instance integration evidence.
+11. Curriculum Flow integration evidence.
+12. Feature registration evidence.
+13. Provisioning automation evidence.
+14. Administrative interface evidence.
+15. Security and tenant-isolation test results.
+16. Unit, integration, E2E, and CI results.
+17. Live SMS verification results.
+18. Live WhatsApp verification results.
+19. Production deployment status.
+20. Outstanding external dependencies, if any.
+
+Provide a feature-by-feature readiness score from 0–100.
+
+For every feature below 100%, identify the exact outstanding requirement and whether it is:
+
+- A code implementation gap.
+- A configuration gap.
+- An external provider dependency.
+- A sender/template approval dependency.
+- A deployment gap.
+- A testing gap.
+- An operational readiness gap.
+
+Do not award 100% to a feature that has not been verified in its real execution environment.
+
+FINAL DEFINITION OF DONE
+
+This assignment is complete only when:
+
+- Curriculum Server has a functioning central SMS and WhatsApp gateway for its own authentication and communications.
+- Every eligible provisioned school can activate and use SMS and WhatsApp through the shared gateway for its own authentication and communications.
+- Every eligible provisioned Curriculum Flow instance can use the same central gateway for its own authentication and communications.
+- School and application configurations are independently manageable within authorized boundaries.
+- The feature is properly registered in the canonical feature catalogue.
+- New school and Curriculum Flow provisioning workflows can activate it automatically.
+- Actual application events can trigger real messages.
+- Authentication messages use secure, verified authentication workflows.
+- Delivery tracking, failure handling, retries, monitoring, and audit records are operational.
+- Tenant and application isolation have passed security tests.
+- SMS and WhatsApp have been verified with real provider integrations in the appropriate environment.
+- The feature is available for production provisioning, subject to valid provider credentials, approvals, and tenant entitlements.
+
+Proceed with implementation. Do not stop at architecture design, mockups, documentation, interface creation, or partial provider integration. Deliver the complete working capability and demonstrate its production readiness.

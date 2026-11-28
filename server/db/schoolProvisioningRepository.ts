@@ -28,6 +28,12 @@ import { advanceLifecycle } from './applicationLifecycle';
 import { assertAuthorized, type AuthorizedPrincipal } from '../authorization/authorizedPrincipal';
 import { PERMISSIONS } from '../authorization/permissions';
 import { validateAttendanceCapabilityRequest } from '../../src/data/attendanceDeviceProvisioningTemplate';
+import {
+  MESSAGING_GATEWAY_FEATURE_TEMPLATE,
+  validateMessagingGatewaySettings
+} from '../../src/data/messagingGatewayFeatureTemplate';
+import { CmagCommunicationEngine } from '../messaging/communicationEngine';
+import { CmagDeliveryEngine } from '../messaging/deliveryEngine';
 
 interface ProvisioningRow extends QueryResultRow {
   operation_id: string;
@@ -481,6 +487,62 @@ export class SchoolProvisioningRepository {
             attendanceCapability.settings.requestCapability ? initiatedBy : null
           ]
         );
+        const messagingRequested =
+          input.enabledFeatures.includes(MESSAGING_GATEWAY_FEATURE_TEMPLATE.featureId) ||
+          Boolean(applicationConfiguration.centralServiceDependencies?.includes('central_messaging'));
+        if (messagingRequested) {
+          const messagingConfigEntry =
+            applicationConfiguration.featureConfigurations?.[MESSAGING_GATEWAY_FEATURE_TEMPLATE.featureId];
+          const validatedMessaging = messagingConfigEntry
+            ? validateMessagingGatewaySettings(messagingConfigEntry.settings)
+            : { valid: true, errors: [], settings: undefined };
+          if (!validatedMessaging.valid) {
+            throw new Error('MESSAGING_GATEWAY_CONFIGURATION_INVALID');
+          }
+          const deliveryEngine = new CmagDeliveryEngine(this.pool);
+          const commsEngine = new CmagCommunicationEngine(this.pool, deliveryEngine);
+          const msgOpts = validatedMessaging.settings;
+          const provisionedMessaging = await commsEngine.provisionTenantMessagingInTransaction(client, {
+            tenantId: tenant.id,
+            applicationInstanceId: instanceId,
+            applicationId: input.applicationId,
+            updatedBy: initiatedBy,
+            options: msgOpts
+              ? {
+                  smsEnabled: msgOpts.smsEnabled,
+                  whatsappEnabled: msgOpts.whatsappEnabled,
+                  authDeliveryEnabled: msgOpts.authDeliveryEnabled,
+                  schoolCommsEnabled: msgOpts.schoolCommsEnabled,
+                  preferredChannel: msgOpts.preferredChannel,
+                  authChannelPolicy: msgOpts.authChannelPolicy,
+                  fallbackEnabled: msgOpts.fallbackEnabled,
+                  permittedChannels: msgOpts.permittedChannels,
+                  defaultLocale: msgOpts.defaultLocale,
+                  jurisdiction: msgOpts.jurisdiction,
+                  enabledCategories: msgOpts.enabledCategories,
+                  dailyQuota: msgOpts.dailyQuota,
+                  monthlyQuota: msgOpts.monthlyQuota,
+                  smsSenderName: msgOpts.smsSenderName,
+                  whatsappSenderNumber: msgOpts.whatsappSenderNumber,
+                  shareTenantConfig: msgOpts.shareTenantConfigWithFlow
+                }
+              : undefined
+          });
+          await this.recordWorkflowStep(client, {
+            operationId,
+            tenantId: tenant.id,
+            schoolId,
+            stepOrder: 6,
+            stepCode: 'provision_messaging_gateway',
+            stepName: 'Provision SMS & WhatsApp Communication Gateway',
+            status: 'completed',
+            details: {
+              serviceId: 'central_messaging',
+              featureId: MESSAGING_GATEWAY_FEATURE_TEMPLATE.featureId,
+              readinessStatus: provisionedMessaging.readinessStatus
+            }
+          });
+        }
         await client.query(
           `INSERT INTO production.school_commercial_agreements
              (tenant_id, school_id, application_instance_id, commercial_model,

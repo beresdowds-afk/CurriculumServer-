@@ -15,6 +15,18 @@ export interface AttendanceDeviceIngestionRouterDeps {
   authorizationMiddleware: Pick<AuthorizationMiddleware, 'requirePermission'> &
     Partial<Pick<AuthorizationMiddleware, 'requirePermissionWithinScopes'>>;
   createService?: (pool: DatabasePool) => AttendanceDeviceIngestionService;
+  cmagHooks?: {
+    emitTenantWorkflowNotification: (event: {
+      tenantId: string;
+      category: 'attendance';
+      purpose: string;
+      guardianId?: string;
+      toPhone?: string;
+      message: string;
+      idempotencyKey?: string;
+      actorSubject: string;
+    }) => Promise<unknown>;
+  };
 }
 
 function actorFrom(req: Request): AuthorizedPrincipal {
@@ -216,6 +228,18 @@ export function createAttendanceDeviceIngestionRouter(
           reason: req.body?.reason,
           schoolId
         });
+        if (deps.cmagHooks && (typeof req.body?.guardianId === 'string' || typeof req.body?.guardianPhone === 'string')) {
+          void deps.cmagHooks.emitTenantWorkflowNotification({
+            tenantId: actorFrom(req).tenantId,
+            category: 'attendance',
+            purpose: 'attendance_record_adjusted',
+            guardianId: typeof req.body?.guardianId === 'string' ? req.body.guardianId : undefined,
+            toPhone: typeof req.body?.guardianPhone === 'string' ? req.body.guardianPhone : undefined,
+            message: `Attendance record ${req.params.recordId} updated to ${String(req.body?.status || 'updated')}.`,
+            idempotencyKey: `attendance-adj:${req.params.recordId}:${String(req.body?.status || '')}`,
+            actorSubject: actorFrom(req).userId
+          }).catch(() => {});
+        }
         res.status(200).json({ success: true, data });
       } catch (error) {
         handleError(req, res, error);

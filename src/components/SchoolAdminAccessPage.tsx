@@ -29,9 +29,22 @@ export const SchoolAdminAccessPage: React.FC<SchoolAdminAccessPageProps> = ({
   const [invitationLoading, setInvitationLoading] = useState(Boolean(invitationToken));
   const [mfaChallenge, setMfaChallenge] = useState<SchoolMfaChallengeResponse | null>(null);
   const [mfaCode, setMfaCode] = useState('');
+  const [signInMethod, setSignInMethod] = useState<'password' | 'otp'>('password');
+  const [otpChannel, setOtpChannel] = useState<'sms' | 'whatsapp'>('sms');
+  const [otpPhone, setOtpPhone] = useState('');
+  const [otpChallengeId, setOtpChallengeId] = useState<string | null>(null);
+  const [otpDestination, setOtpDestination] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpCooldown, setOtpCooldown] = useState(0);
   const [school, setSchool] = useState<SchoolInstitutionalIdentity | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (otpCooldown <= 0) return;
+    const timer = setInterval(() => setOtpCooldown(prev => Math.max(0, prev - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [otpCooldown]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -215,6 +228,67 @@ export const SchoolAdminAccessPage: React.FC<SchoolAdminAccessPageProps> = ({
     }
   };
 
+  const requestOtpSignIn = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError('');
+    if (!tenantId.trim()) {
+      setError('Enter your Tenant ID to request a login OTP.');
+      return;
+    }
+    if (!email.trim() && !otpPhone.trim()) {
+      setError('Provide your institutional email or E.164 phone number.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const receipt = await unifiedApiClient.requestSchoolOtp({
+        tenantId: tenantId.trim(),
+        applicationId: 'app_curriculum_flow',
+        email: email.trim() || undefined,
+        phone: otpPhone.trim() || undefined,
+        preferredChannel: otpChannel,
+        purpose: 'login_otp'
+      });
+      setOtpChallengeId(receipt.challengeId);
+      setOtpDestination(receipt.maskedDestination || receipt.maskedRecipient || otpChannel.toUpperCase());
+      const waitSeconds = receipt.resendAvailableAt
+        ? Math.max(0, Math.ceil((new Date(receipt.resendAvailableAt).getTime() - Date.now()) / 1000))
+        : 45;
+      setOtpCooldown(waitSeconds);
+    } catch (requestError) {
+      setError((requestError as { error?: string })?.error || 'Failed to dispatch SMS/WhatsApp OTP.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOtpSignIn = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!otpChallengeId) return;
+    setError('');
+    setLoading(true);
+    try {
+      await unifiedApiClient.verifySchoolOtp({
+        tenantId: tenantId.trim(),
+        applicationId: 'app_curriculum_flow',
+        challengeId: otpChallengeId,
+        email: email.trim() || undefined,
+        phone: otpPhone.trim() || undefined,
+        purpose: 'login_otp',
+        code: otpCode.trim(),
+        issueSession: true
+      });
+      const currentSchool = await unifiedApiClient.getMySchool();
+      setSchool(currentSchool);
+      setOtpChallengeId(null);
+      setOtpCode('');
+    } catch (requestError) {
+      setError((requestError as { error?: string })?.error || 'OTP code is invalid or expired.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const signOut = async () => {
     setLoading(true);
     try {
@@ -352,19 +426,98 @@ export const SchoolAdminAccessPage: React.FC<SchoolAdminAccessPageProps> = ({
           <>
             <h1 className="mt-2 text-2xl font-bold">{activationComplete ? 'Account activated' : 'School member & administrator sign in'}</h1>
             <p className="mt-2 text-sm text-slate-400">{activationComplete ? 'Your account is activated. Sign in to open your school environment.' : 'Use the tenant ID supplied by your registration administrator or invitation confirmation.'}</p>
-            <form onSubmit={signIn} className="mt-6 space-y-4">
-              <label className="block text-sm text-slate-300">Tenant ID
-                <input className={fieldClass + ' mt-1.5'} autoComplete="off" required value={tenantId} onChange={event => setTenantId(event.target.value)} />
-              </label>
-              <label className="block text-sm text-slate-300">Email
-                <input className={fieldClass + ' mt-1.5'} type="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)} />
-              </label>
-              <label className="block text-sm text-slate-300">Password
-                <input className={fieldClass + ' mt-1.5'} type="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} />
-              </label>
-              {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}
-              <button disabled={loading} className="w-full rounded-lg bg-purple-600 px-4 py-3 font-semibold disabled:opacity-60">{loading ? 'Signing in…' : 'Sign in securely'}</button>
-            </form>
+
+            <div className="mt-5 grid grid-cols-2 gap-2 rounded-lg border border-slate-800 bg-slate-950 p-1 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => { setSignInMethod('password'); setError(''); }}
+                className={`rounded-md py-2 transition-colors ${signInMethod === 'password' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                Password Sign-In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSignInMethod('otp'); setError(''); }}
+                className={`rounded-md py-2 transition-colors ${signInMethod === 'otp' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                SMS / WhatsApp OTP
+              </button>
+            </div>
+
+            {signInMethod === 'password' ? (
+              <form onSubmit={signIn} className="mt-5 space-y-4">
+                <label className="block text-sm text-slate-300">Tenant ID
+                  <input className={fieldClass + ' mt-1.5'} autoComplete="off" required value={tenantId} onChange={event => setTenantId(event.target.value)} />
+                </label>
+                <label className="block text-sm text-slate-300">Email
+                  <input className={fieldClass + ' mt-1.5'} type="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)} />
+                </label>
+                <label className="block text-sm text-slate-300">Password
+                  <input className={fieldClass + ' mt-1.5'} type="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} />
+                </label>
+                {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}
+                <button disabled={loading} className="w-full rounded-lg bg-purple-600 px-4 py-3 font-semibold disabled:opacity-60">{loading ? 'Signing in…' : 'Sign in securely'}</button>
+              </form>
+            ) : !otpChallengeId ? (
+              <form onSubmit={requestOtpSignIn} className="mt-5 space-y-4">
+                <label className="block text-sm text-slate-300">Tenant ID
+                  <input className={fieldClass + ' mt-1.5'} autoComplete="off" required value={tenantId} onChange={event => setTenantId(event.target.value)} />
+                </label>
+                <label className="block text-sm text-slate-300">Account Email
+                  <input className={fieldClass + ' mt-1.5'} type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} />
+                </label>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="block text-sm text-slate-300">Mobile Phone (E.164 optional)
+                    <input className={fieldClass + ' mt-1.5'} type="tel" placeholder="+2348031112233" value={otpPhone} onChange={event => setOtpPhone(event.target.value)} />
+                  </label>
+                  <label className="block text-sm text-slate-300">OTP Channel
+                    <select className={fieldClass + ' mt-1.5'} value={otpChannel} onChange={event => setOtpChannel(event.target.value as 'sms' | 'whatsapp')}>
+                      <option value="sms">SMS</option>
+                      <option value="whatsapp">WhatsApp</option>
+                    </select>
+                  </label>
+                </div>
+                {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}
+                <button disabled={loading} className="w-full rounded-lg bg-purple-600 px-4 py-3 font-semibold disabled:opacity-60">
+                  {loading ? 'Sending OTP…' : `Send ${otpChannel.toUpperCase()} Login Code`}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={verifyOtpSignIn} className="mt-5 space-y-4">
+                <p className="text-xs text-slate-300">
+                  Enter the 6-digit code dispatched to <span className="font-mono text-white">{otpDestination}</span>.
+                </p>
+                <label className="block text-sm text-slate-300">6-Digit OTP Code
+                  <input
+                    className={fieldClass + ' mt-1.5 font-mono tracking-widest'}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    minLength={6}
+                    maxLength={6}
+                    required
+                    value={otpCode}
+                    onChange={event => setOtpCode(event.target.value.replace(/\D/g, ''))}
+                  />
+                </label>
+                {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}
+                <div className="flex items-center justify-between text-xs text-slate-400">
+                  <button type="button" onClick={() => { setOtpChallengeId(null); setOtpCode(''); setError(''); }} className="hover:text-white">
+                    Change number / channel
+                  </button>
+                  {otpCooldown > 0 ? (
+                    <span className="tabular-nums">Resend in {otpCooldown}s</span>
+                  ) : (
+                    <button type="button" onClick={requestOtpSignIn} className="text-purple-300 hover:text-purple-200 font-semibold">
+                      Resend OTP
+                    </button>
+                  )}
+                </div>
+                <button disabled={loading} className="w-full rounded-lg bg-purple-600 px-4 py-3 font-semibold disabled:opacity-60">
+                  {loading ? 'Verifying OTP…' : 'Verify OTP & Sign In'}
+                </button>
+              </form>
+            )}
+
             <div className="mt-4 pt-4 border-t border-slate-800">
               <button
                 type="button"

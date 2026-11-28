@@ -189,3 +189,40 @@ export interface HomepageAuditRecord {
   notes: string;
   correlationId?: string;
 }
+
+export type LandingFooterAppKey = 'curriculum_server' | 'curriculum_flow';
+
+export interface LandingFooterConfig {
+  appKey: LandingFooterAppKey;
+  copyrightText: string;
+  institutionalAddress: string;
+  email: string;
+  phoneNumber: string;
+  updatedAt: string;
+  updatedBy?: string;
+}
+
+export interface FooterEditableFields {
+  copyrightText: string;
+  institutionalAddress: string;
+  email: string;
+  phoneNumber: string;
+}
+
+export interface ProvisionedInstanceSummary {
+  instanceId: string;
+  tenantId: string;
+  schoolSlug: string;
+  institutionName: string;
+  domain?: string;
+  templateId: HomepageTemplateId;
+  presetType: InstitutionPresetType;
+  status: 'draft' | 'published';
+  versionNumber: number;
+  updatedAt: string;
+  copyrightText: string;
+  institutionalAddress: string;
+  email: string;
+  phoneNumber: string;
+}
+

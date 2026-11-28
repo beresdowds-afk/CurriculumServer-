@@ -30,6 +30,7 @@ export interface CentralSharedServiceRegistration {
 const curriculumPermission = (operation: SharedServiceOperation) => `shared.curriculum.${operation}`;
 const textbookPermission = (operation: SharedServiceOperation) => `shared.textbooks.${operation}`;
 const vehiclePermission = (operation: SharedServiceOperation) => `shared.vehicle_tracking.${operation}`;
+const messagingPermission = (operation: SharedServiceOperation) => `shared.messaging.${operation}`;
 
 export const CENTRAL_SHARED_SERVICE_REGISTRY: readonly CentralSharedServiceRegistration[] = [
   {
@@ -124,6 +125,39 @@ export const CENTRAL_SHARED_SERVICE_REGISTRY: readonly CentralSharedServiceRegis
       path: '/api/v1/shared/vehicle-tracking/health',
       check: 'service_provisioning'
     }
+  },
+  {
+    id: 'central_messaging',
+    name: 'Central Messaging & Authentication Gateway (CMAG)',
+    version: '1.0.0',
+    description: 'Centrally owned multi-tenant SMS, WhatsApp, Email, and OTP/MFA authentication delivery gateway with pluggable provider adapters, outbox durability, and webhook receipt tracking.',
+    owner: 'Curriculum Server Platform',
+    boundary: 'central_shared',
+    availability: 'available',
+    provisioningStatus: 'provisioned',
+    requiredPermissions: {
+      discover: messagingPermission('discover'),
+      authorize: messagingPermission('authorize'),
+      health: messagingPermission('health'),
+      consume: messagingPermission('consume')
+    },
+    supportedApplicationTypes: ['app_curriculum_flow', 'app_cbt_sovereign'],
+    requiredDatabaseDependencies: ['central_messaging_gateway'],
+    requiredConfiguration: ['centralServiceDependencies'],
+    entitlementRequired: true,
+    operations: [
+      'messaging.auth.otp',
+      'messaging.transactional.send',
+      'messaging.broadcast.send',
+      'messaging.emergency.send',
+      'messaging.templates.manage',
+      'messaging.reports.read'
+    ],
+    healthCheck: {
+      method: 'GET',
+      path: '/api/v1/shared/messaging/health',
+      check: 'service_provisioning'
+    }
   }
 ];
 
@@ -131,7 +165,8 @@ export const ARCHITECTURE_BOUNDARIES = {
   central_shared_services: [
     'central_curriculum',
     'central_textbooks',
-    'central_vehicle_tracking'
+    'central_vehicle_tracking',
+    'central_messaging'
   ],
   school_instance_services: [
     'question_bank',

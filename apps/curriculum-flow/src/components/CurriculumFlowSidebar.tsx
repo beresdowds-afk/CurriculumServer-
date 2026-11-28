@@ -22,7 +22,8 @@ import {
   ChevronRight,
   UserCheck,
   CheckCircle2,
-  KeyRound
+  KeyRound,
+  MessageSquare
 } from 'lucide-react';
 import { UserRole } from '@/src/types';
 
@@ -49,6 +50,7 @@ export type FlowNavTab =
   | 'parent_dashboard'
   | 'admin_assistant_dashboard'
   | 'logistics_suite'
+  | 'messaging_gateway'
   | 'quality_assurance'
   | 'user_profiles';
 
@@ -358,18 +360,32 @@ export const CurriculumFlowSidebar: React.FC<CurriculumFlowSidebarProps> = ({
               </button>
             )}
             {(isAdminAssistant || isLeadership) && (
-              <button
-                onClick={() => onSelectTab('logistics_suite')}
-                title={isCollapsed ? "Transport & Library" : undefined}
-                className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl text-xs font-semibold transition-all ${
-                  activeTab === 'logistics_suite'
-                    ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <Truck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                {!isCollapsed && <span>Transport & Library</span>}
-              </button>
+              <>
+                <button
+                  onClick={() => onSelectTab('logistics_suite')}
+                  title={isCollapsed ? "Transport & Library" : undefined}
+                  className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl text-xs font-semibold transition-all ${
+                    activeTab === 'logistics_suite'
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Truck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  {!isCollapsed && <span>Transport & Library</span>}
+                </button>
+                <button
+                  onClick={() => onSelectTab('messaging_gateway')}
+                  title={isCollapsed ? "SMS & WhatsApp Comms" : undefined}
+                  className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl text-xs font-semibold transition-all ${
+                    activeTab === 'messaging_gateway'
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  {!isCollapsed && <span>SMS & WhatsApp Comms</span>}
+                </button>
+              </>
             )}
           </div>
         )}

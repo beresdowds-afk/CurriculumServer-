@@ -427,3 +427,53 @@ test('the capability gate is mounted before API route registrations', () => {
     /app\.(?:get|post|put|patch|delete|all|use)\(\s*['"]\/api(?:\/|['"])/i
   );
 });
+
+test('CMAG central messaging, OTP, webhook, platform, and school messaging routes pass without overlap', () => {
+  const sampleId = '9f41d0eb-4bc4-4f82-a72f-951b8a8bbfb8';
+  const expected: Array<[string, string, string]> = [
+    ['POST', '/server/auth/otp/request', 'cmag_auth_otp'],
+    ['POST', '/server/auth/otp/verify', 'cmag_auth_otp'],
+    ['POST', '/schools/auth/otp/request', 'cmag_auth_otp'],
+    ['POST', '/schools/auth/otp/verify', 'cmag_auth_otp'],
+    ['POST', '/flow/auth/otp/request', 'cmag_auth_otp'],
+    ['POST', '/flow/auth/otp/verify', 'cmag_auth_otp'],
+    ['POST', '/messaging/webhooks/sendchamp_sms', 'cmag_webhooks'],
+    ['POST', '/messaging/webhooks/meta_whatsapp', 'cmag_webhooks'],
+    ['GET', '/platform/messaging/overview', 'cmag_platform_administration'],
+    ['PATCH', '/platform/messaging/config', 'cmag_platform_administration'],
+    ['GET', '/platform/messaging/providers', 'cmag_platform_administration'],
+    ['PUT', '/platform/messaging/providers/sendchamp_sms', 'cmag_platform_administration'],
+    ['POST', '/platform/messaging/providers/sendchamp_sms/suspend', 'cmag_platform_administration'],
+    ['POST', '/platform/messaging/providers/sendchamp_sms/resume', 'cmag_platform_administration'],
+    ['POST', '/platform/messaging/senders', 'cmag_platform_administration'],
+    ['POST', '/platform/messaging/whatsapp-templates', 'cmag_platform_administration'],
+    ['POST', `/platform/messaging/tenants/${sampleId}/suspend`, 'cmag_platform_administration'],
+    ['POST', `/platform/messaging/tenants/${sampleId}/resume`, 'cmag_platform_administration'],
+    ['GET', '/platform/messaging/queue', 'cmag_platform_administration'],
+    ['POST', '/platform/messaging/dispatch-now', 'cmag_platform_administration'],
+    ['POST', `/platform/messaging/messages/${sampleId}/retry`, 'cmag_platform_administration'],
+    ['POST', '/platform/messaging/send', 'cmag_platform_administration'],
+    ['GET', '/messaging/overview', 'cmag_school_messaging'],
+    ['PATCH', '/messaging/config', 'cmag_school_messaging'],
+    ['PUT', '/messaging/templates', 'cmag_school_messaging'],
+    ['PUT', '/messaging/preferences', 'cmag_school_messaging'],
+    ['POST', '/messaging/send', 'cmag_school_messaging'],
+    ['POST', '/messaging/broadcasts', 'cmag_school_messaging'],
+    ['POST', `/messaging/messages/${sampleId}/retry`, 'cmag_school_messaging'],
+    ['GET', '/messaging/queue', 'cmag_school_messaging'],
+    ['GET', '/shared/messaging/discovery', 'central_shared_service_foundation'],
+    ['POST', '/shared/messaging/authorization', 'central_shared_service_foundation'],
+    ['GET', '/shared/messaging/health', 'central_shared_service_foundation']
+  ];
+
+  for (const [method, path, capabilityId] of expected) {
+    const matches = PRODUCTION_CAPABILITIES.filter(cap =>
+      cap.routes.some(route => route.method === method && route.path.test(path))
+    );
+    assert.equal(matches.length, 1, `Expected single capability match for ${method} ${path}`);
+    assert.deepEqual(evaluateProductionCapabilityGate(method, path), {
+      allowed: true,
+      capabilityId
+    }, `${method} ${path}`);
+  }
+});

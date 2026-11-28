@@ -106,7 +106,21 @@ export const PERMISSIONS = {
   attendanceDevicesSuspend: 'attendance.devices.suspend',
   attendanceDevicesRevoke: 'attendance.devices.revoke',
   attendanceCredentialsManage: 'attendance.credentials.manage',
-  attendanceDevicesProvision: 'attendance.devices.provision'
+  attendanceDevicesProvision: 'attendance.devices.provision',
+  sharedMessagingDiscover: 'shared.messaging.discover',
+  sharedMessagingAuthorize: 'shared.messaging.authorize',
+  sharedMessagingHealth: 'shared.messaging.health',
+  sharedMessagingConsume: 'shared.messaging.consume',
+  messagingConfigRead: 'messaging.config.read',
+  messagingConfigManage: 'messaging.config.manage',
+  messagingSend: 'messaging.send',
+  messagingBroadcast: 'messaging.broadcast',
+  messagingEmergency: 'messaging.emergency',
+  messagingTemplatesManage: 'messaging.templates.manage',
+  messagingPreferencesManage: 'messaging.preferences.manage',
+  messagingReportsRead: 'messaging.reports.read',
+  messagingRetry: 'messaging.retry',
+  messagingAuditRead: 'messaging.audit.read'
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

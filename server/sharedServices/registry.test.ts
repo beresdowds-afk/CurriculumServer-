@@ -9,7 +9,7 @@ import {
 } from './registry';
 import { evaluateSharedServiceAccess } from './authorization';
 
-test('central registry contains exactly the stable curriculum, textbook and deferred vehicle services', () => {
+test('central registry contains stable curriculum, textbook, messaging, and deferred vehicle services', () => {
   assert.deepEqual(CENTRAL_SHARED_SERVICE_REGISTRY.map(service => service.id), CENTRAL_SHARED_SERVICE_IDS);
   assert.equal(getCentralSharedService('central_curriculum')?.availability, 'available');
   assert.equal(getCentralSharedService('central_curriculum')?.provisioningStatus, 'provisioned');
@@ -17,6 +17,8 @@ test('central registry contains exactly the stable curriculum, textbook and defe
   assert.equal(getCentralSharedService('central_textbooks')?.provisioningStatus, 'provisioned');
   assert.equal(getCentralSharedService('central_vehicle_tracking')?.availability, 'planned');
   assert.equal(getCentralSharedService('central_vehicle_tracking')?.provisioningStatus, 'deferred');
+  assert.equal(getCentralSharedService('central_messaging')?.availability, 'available');
+  assert.equal(getCentralSharedService('central_messaging')?.provisioningStatus, 'provisioned');
   assert.deepEqual(getCentralSharedService('central_vehicle_tracking')?.operations, []);
   for (const service of CENTRAL_SHARED_SERVICE_REGISTRY) {
     assert.equal(service.boundary, 'central_shared');
@@ -30,7 +32,7 @@ test('Question Bank and examination services remain school-instance owned', () =
   assert.ok(ARCHITECTURE_BOUNDARIES.school_instance_services.includes('question_bank'));
   assert.ok(ARCHITECTURE_BOUNDARIES.school_instance_services.includes('examinations'));
   assert.deepEqual(ARCHITECTURE_BOUNDARIES.central_shared_services, [
-    'central_curriculum', 'central_textbooks', 'central_vehicle_tracking'
+    'central_curriculum', 'central_textbooks', 'central_vehicle_tracking', 'central_messaging'
   ]);
 });
 

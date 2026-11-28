@@ -126,7 +126,27 @@ const REQUIRED_TABLES = [
   'production.mfa_challenges',
   'production.oidc_auth_states',
   'production.school_provisioning_workflow_steps',
-  'production.application_templates'
+  'production.application_templates',
+  'control_plane.cmag_platform_config',
+  'control_plane.cmag_provider_configs',
+  'control_plane.cmag_sender_identities',
+  'control_plane.cmag_whatsapp_templates',
+  'control_plane.cmag_platform_auth_challenges',
+  'control_plane.cmag_platform_outbox',
+  'control_plane.cmag_platform_attempts',
+  'control_plane.cmag_webhook_events',
+  'control_plane.cmag_usage_daily',
+  'control_plane.cmag_audit_events',
+  'production.cmag_tenant_configs',
+  'production.cmag_application_configs',
+  'production.cmag_sender_identities',
+  'production.cmag_message_templates',
+  'production.cmag_recipient_preferences',
+  'production.cmag_auth_challenges',
+  'production.cmag_broadcasts',
+  'production.cmag_usage_daily',
+  'production.cmag_delivery_receipts',
+  'production.cmag_audit_events'
 ];
 
 export interface CapabilityReadiness {

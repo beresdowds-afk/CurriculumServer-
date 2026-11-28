@@ -1193,3 +1193,194 @@ export interface AcceptMemberInvitationResponse {
   roleCode: string;
   status: 'active';
 }
+
+// -------------------------------------------------------------
+// CURRICULUM MESSAGING & AUTHENTICATION GATEWAY (CMAG) CONTRACTS
+// -------------------------------------------------------------
+
+export type CmagChannel = 'sms' | 'whatsapp' | 'email' | 'web_push';
+export type CmagAuthChannelPolicy =
+  | 'sms_only'
+  | 'whatsapp_only'
+  | 'sms_then_whatsapp'
+  | 'whatsapp_then_sms'
+  | 'user_selected'
+  | 'email';
+
+export type CmagAuthPurpose =
+  | 'platform_login'
+  | 'platform_mfa'
+  | 'platform_recovery'
+  | 'security_verify'
+  | 'login_otp'
+  | 'mfa_verify'
+  | 'account_verify'
+  | 'password_recovery'
+  | 'sensitive_action'
+  | 'device_verify'
+  | 'registration_verify';
+
+export interface CmagOtpRequestPayload {
+  tenantId?: string;
+  applicationId?: string;
+  applicationInstanceId?: string;
+  recipientType?: 'admin' | 'staff' | 'guardian' | 'student' | 'user';
+  email?: string;
+  phone?: string;
+  userId?: string;
+  preferredChannel?: 'sms' | 'whatsapp' | 'email';
+  purpose?: CmagAuthPurpose;
+  locale?: string;
+}
+
+export interface CmagOtpRequestResponse {
+  challengeId: string;
+  channel: 'sms' | 'whatsapp' | 'email';
+  maskedDestination: string;
+  maskedRecipient?: string;
+  purpose: CmagAuthPurpose;
+  expiresAt: string;
+  resendAvailableAt: string;
+  outboxId: string;
+  correlationId?: string;
+  lifecycleState?: string;
+  fallbackUsed?: boolean;
+}
+
+export interface CmagOtpVerifyPayload {
+  tenantId?: string;
+  applicationId?: string;
+  applicationInstanceId?: string;
+  challengeId: string;
+  email?: string;
+  phone?: string;
+  purpose?: CmagAuthPurpose;
+  code: string;
+  issueSession?: boolean;
+}
+
+export interface CmagOtpVerifyResponse {
+  verified: true;
+  channel: 'sms' | 'whatsapp' | 'email';
+  purpose: CmagAuthPurpose;
+  tenantId?: string;
+  email?: string;
+  token?: string;
+  expiresIn?: number;
+  schoolName?: string;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+  };
+}
+
+export interface CmagProviderSummary {
+  providerId: string;
+  displayName?: string;
+  channel: 'sms' | 'whatsapp' | 'email';
+  enabled: boolean;
+  isPrimary: boolean;
+  priority: number;
+  readinessStatus: string;
+  environment: 'development' | 'staging' | 'production';
+  suspended: boolean;
+  suspensionReason?: string | null;
+  hasCredentials: boolean;
+  hasWebhookSecret: boolean;
+  senderName?: string | null;
+  whatsappSenderNumber?: string | null;
+  circuitState?: 'closed' | 'open' | 'half_open';
+  consecutiveFailures?: number;
+  updatedAt?: string;
+}
+
+export interface CmagQueueMetrics {
+  queued: number;
+  processing: number;
+  submitted: number;
+  accepted: number;
+  sent: number;
+  delivered: number;
+  read: number;
+  retryScheduled: number;
+  failed: number;
+  deadLetter: number;
+  expired: number;
+  cancelled: number;
+}
+
+export interface CmagPlatformOverviewResponse {
+  config: Record<string, unknown> | null;
+  senders: Array<Record<string, unknown>>;
+  whatsappTemplates: Array<Record<string, unknown>>;
+  tenantAllocations: Array<Record<string, unknown>>;
+  usageSummary: Array<Record<string, unknown>>;
+  recentAudit: Array<Record<string, unknown>>;
+  providers: CmagProviderSummary[];
+  queue: CmagQueueMetrics;
+  workerHealth: {
+    running: boolean;
+    lastTickAt: string | null;
+    lastError: string | null;
+  };
+}
+
+export interface CmagTenantOverviewResponse {
+  config: Record<string, unknown> | null;
+  applicationConfigs: Array<Record<string, unknown>>;
+  senders: Array<Record<string, unknown>>;
+  templates: Array<Record<string, unknown>>;
+  recentMessages: Array<Record<string, unknown>>;
+  broadcasts: Array<Record<string, unknown>>;
+  usageDaily: Array<Record<string, unknown>>;
+  preferences: Array<Record<string, unknown>>;
+  auditEvents: Array<Record<string, unknown>>;
+  queue: CmagQueueMetrics;
+}
+
+export interface CmagTargetedSendRequest {
+  applicationId?: string;
+  applicationInstanceId?: string;
+  recipientType: 'admin' | 'staff' | 'guardian' | 'student' | 'user';
+  recipientId?: string;
+  toPhone?: string;
+  toEmail?: string;
+  studentId?: string;
+  guardianId?: string;
+  channel?: 'sms' | 'whatsapp' | 'email';
+  classification: 'transactional' | 'broadcast' | 'emergency' | 'marketing';
+  category: string;
+  purpose: string;
+  templateKey?: string;
+  locale?: string;
+  variables?: Record<string, string>;
+  subject?: string;
+  message?: string;
+  scheduledFor?: string;
+  idempotencyKey?: string;
+}
+
+export interface CmagBroadcastRequest {
+  applicationId?: string;
+  applicationInstanceId?: string;
+  title: string;
+  classification: 'broadcast' | 'emergency' | 'transactional' | 'marketing';
+  category: string;
+  targetMode: 'one_to_one' | 'group' | 'role' | 'class' | 'guardians' | 'staff' | 'students' | 'school_wide';
+  targetFilter?: {
+    roleCodes?: string[];
+    classId?: string;
+    recipientIds?: string[];
+    phones?: string[];
+    verifiedOnly?: boolean;
+  };
+  channel: 'sms' | 'whatsapp' | 'auto';
+  templateKey?: string;
+  locale?: string;
+  variables?: Record<string, string>;
+  messageBody?: string;
+  scheduledFor?: string;
+}
+

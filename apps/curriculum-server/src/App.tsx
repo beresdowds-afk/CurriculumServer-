@@ -19,6 +19,7 @@ import { ApplicationRegistryPortal } from '../../../src/components/ApplicationRe
 import { IIAPEControlPortal } from '../../../src/components/IIAPEControlPortal';
 import { GCPProvisioningOrchestrationConsole } from '../../../src/components/GCPProvisioningOrchestrationConsole';
 import { StorageAndDatabasePortal } from '../../../src/components/StorageAndDatabasePortal';
+import { PlatformMessagingGatewayPortal } from '../../../src/components/PlatformMessagingGatewayPortal';
 
 // Modals
 import { ProvisionSchoolModal } from '../../../src/components/ProvisionSchoolModal';
@@ -32,6 +33,8 @@ import { VersionRolloutModal } from '../../../src/components/VersionRolloutModal
 import { SchoolRegistrationWizard } from '../../../src/components/SchoolRegistrationWizard';
 import { CurriculumServerPublicHome } from '../../../src/components/CurriculumServerPublicHome';
 import { SchoolGovernanceModal } from '../../../src/components/SchoolGovernanceModal';
+import { LandingPageGeneratorPanel } from '../../../src/components/LandingPageGeneratorPanel';
+import { HomepageVisualEditor } from '../../../src/components/HomepageVisualEditor';
 
 // Mock Data
 import { 
@@ -75,6 +78,7 @@ export const CurriculumServerApp: React.FC = () => {
   const [selectedTenantForLease, setSelectedTenantForLease] = useState<TenantSchoolApp | null>(null);
   const [selectedTenantForConnect, setSelectedTenantForConnect] = useState<TenantSchoolApp | null>(null);
   const [selectedTenantForGovernance, setSelectedTenantForGovernance] = useState<TenantSchoolApp | null>(null);
+  const [selectedTenantForLandingEditor, setSelectedTenantForLandingEditor] = useState<TenantSchoolApp | null>(null);
 
   // Synchronize state with authoritative unified backend
   useEffect(() => {
@@ -149,6 +153,11 @@ export const CurriculumServerApp: React.FC = () => {
       hash === 'tenant_control_center') {
     setActiveTab('tenant_control_center');
   } else if (
+    hash === 'landing-page-generator' ||
+    hash === 'landing_page_generator'
+  ) {
+    setActiveTab('landing_page_generator');
+  } else if (
     hash === 'universal-onboarding' ||
     hash === 'universal_onboarding' ||
     hash === 'onboarding'
@@ -178,6 +187,12 @@ export const CurriculumServerApp: React.FC = () => {
     hash === 'webhooks'
   ) {
     setActiveTab('api_webhooks');
+  } else if (
+    hash === 'messaging-gateway' ||
+    hash === 'messaging_gateway' ||
+    hash === 'cmag'
+  ) {
+    setActiveTab('messaging_gateway');
   } else if (
     hash === 'customer-portal' ||
     hash === 'customer_portal'
@@ -326,6 +341,8 @@ export const CurriculumServerApp: React.FC = () => {
                 onOpenFeaturesModal={(t) => setSelectedTenantForFeatures(t)}
                 onOpenLeaseTrackerModal={(t) => setSelectedTenantForLease(t)}
                 onToggleTenantStatus={handleToggleTenantStatus}
+                onOpenGovernanceModal={(t) => setSelectedTenantForGovernance(t)}
+                onOpenLandingPageEditor={(t) => setSelectedTenantForLandingEditor(t)}
               />
             )}
 
@@ -371,8 +388,17 @@ export const CurriculumServerApp: React.FC = () => {
                   onOpenLeaseTrackerModal={(t) => setSelectedTenantForLease(t)}
                   onToggleTenantStatus={handleToggleTenantStatus}
                   onOpenGovernanceModal={(t) => setSelectedTenantForGovernance(t)}
+                  onOpenLandingPageEditor={(t) => setSelectedTenantForLandingEditor(t)}
                 />
               </div>
+            )}
+
+            {activeTab === 'landing_page_generator' && (
+              <LandingPageGeneratorPanel
+                tenants={[...tenants, ...clonedTenants].filter((item, idx, arr) => arr.findIndex(x => x.id === item.id) === idx)}
+                onEnterWorkspace={handleSwitchToFlow}
+                onPreviewInstance={(instanceId) => setActiveApplication('instance_homepage', instanceId)}
+              />
             )}
 
             {activeTab === 'tenant_control_center' && (
@@ -439,6 +465,10 @@ export const CurriculumServerApp: React.FC = () => {
 
             {activeTab === 'api_webhooks' && (
               <ApiWebhooksPortal tenants={tenants} />
+            )}
+
+            {activeTab === 'messaging_gateway' && (
+              <PlatformMessagingGatewayPortal />
             )}
 
             {activeTab === 'pricing_management' && (
@@ -656,6 +686,21 @@ export const CurriculumServerApp: React.FC = () => {
           onClose={() => setSelectedTenantForGovernance(null)}
           instanceId={selectedTenantForGovernance.id}
           schoolName={selectedTenantForGovernance.schoolName}
+        />
+      )}
+
+      {selectedTenantForLandingEditor && (
+        <HomepageVisualEditor
+          instanceId={selectedTenantForLandingEditor.id}
+          tenantMeta={{
+            schoolName: selectedTenantForLandingEditor.schoolName,
+            schoolSlug: selectedTenantForLandingEditor.schoolSlug,
+            domain: selectedTenantForLandingEditor.customDomain || selectedTenantForLandingEditor.subdomain,
+            email: selectedTenantForLandingEditor.principalEmail,
+            phoneNumber: selectedTenantForLandingEditor.principalPhone
+          }}
+          onClose={() => setSelectedTenantForLandingEditor(null)}
+          onEnterWorkspace={handleSwitchToFlow}
         />
       )}
     </div>

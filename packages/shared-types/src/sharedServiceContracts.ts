@@ -1,7 +1,8 @@
 export const CENTRAL_SHARED_SERVICE_IDS = [
   'central_curriculum',
   'central_textbooks',
-  'central_vehicle_tracking'
+  'central_vehicle_tracking',
+  'central_messaging'
 ] as const;
 
 export type CentralSharedServiceId = typeof CENTRAL_SHARED_SERVICE_IDS[number];

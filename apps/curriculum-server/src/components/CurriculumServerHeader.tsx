@@ -44,6 +44,7 @@ export const CurriculumServerHeader: React.FC<CurriculumServerHeaderProps> = ({
       case 'provision_school': return 'Provisioning Engine / Automated Tenant Bootstrap';
       case 'domain_management': return 'Networking / Domains, DNS & NiRA .sch.ng';
       case 'api_webhooks': return 'Integration / Enterprise REST APIs & Webhook Dispatcher';
+      case 'messaging_gateway': return 'Messaging Infrastructure / Central SMS & WhatsApp Gateway (CMAG)';
       case 'pricing_management': return 'Financial / Subscription Plans & Product Offers';
       case 'customer_portal': return 'Support / Customer Self-Service & Billing';
       case 'curriculum_changes_audit': return 'Curriculum Governance / NERDC Gazette Ingestion';

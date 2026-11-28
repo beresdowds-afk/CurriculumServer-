@@ -8,6 +8,15 @@ import type {
 } from '../../packages/shared-types/src/apiContracts';
 import { unifiedApiClient } from '../services/unifiedApiClient';
 import { INITIAL_REGISTERED_APPLICATIONS, INITIAL_REGISTERED_FEATURES } from '../data/applicationRegistryData';
+import { buildApplicationInstanceConfiguration } from '../data/applicationInstanceConfiguration';
+import {
+  MESSAGING_GATEWAY_FEATURE_TEMPLATE,
+  defaultMessagingGatewaySettings,
+  validateMessagingGatewaySettings,
+  type MessagingGatewayAuthPolicy,
+  type MessagingGatewayChannel,
+  type MessagingGatewayTemplateSettings
+} from '../data/messagingGatewayFeatureTemplate';
 
 interface SchoolRegistrationWizardProps {
   isOpen: boolean;
@@ -105,6 +114,9 @@ export const SchoolRegistrationWizard: React.FC<SchoolRegistrationWizardProps> =
   const [workflowSteps, setWorkflowSteps] = useState<ProvisioningWorkflowStepRecord[]>([]);
   const [templates, setTemplates] = useState<ApplicationTemplateRecord[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('school-standard');
+  const [messagingSettings, setMessagingSettings] = useState<MessagingGatewayTemplateSettings>(() =>
+    defaultMessagingGatewaySettings()
+  );
   const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey);
 
   useEffect(() => {
@@ -156,6 +168,57 @@ export const SchoolRegistrationWizard: React.FC<SchoolRegistrationWizardProps> =
   };
 
   const activeTemplate = templates.find(t => t.templateId === selectedTemplateId);
+  const messagingEnabled = selectedFeatures.includes(MESSAGING_GATEWAY_FEATURE_TEMPLATE.featureId);
+  const messagingSettingsValidation = messagingEnabled
+    ? validateMessagingGatewaySettings(messagingSettings)
+    : { valid: true, errors: [] as string[] };
+
+  const updateMessagingSettings = (patch: Partial<MessagingGatewayTemplateSettings>) => {
+    setMessagingSettings(previous => {
+      const next: MessagingGatewayTemplateSettings = { ...previous, ...patch };
+      const channels = new Set<MessagingGatewayChannel>(['email']);
+      if (next.smsEnabled) channels.add('sms');
+      if (next.whatsappEnabled) channels.add('whatsapp');
+      const permittedChannels = Array.from(channels);
+      const preferredChannel = permittedChannels.includes(next.preferredChannel)
+        ? next.preferredChannel
+        : (next.smsEnabled ? 'sms' : next.whatsappEnabled ? 'whatsapp' : 'email');
+      return {
+        ...next,
+        permittedChannels,
+        preferredChannel
+      };
+    });
+  };
+
+  let builtApplicationConfiguration: SchoolProvisioningRequest['applicationConfiguration'] | undefined;
+  let configurationBuildError = '';
+  if (messagingEnabled) {
+    if (!messagingSettingsValidation.valid) {
+      configurationBuildError = messagingSettingsValidation.errors.join(' ');
+    } else {
+      try {
+        builtApplicationConfiguration = buildApplicationInstanceConfiguration({
+          applicationId,
+          templateId: activeTemplate?.templateId || 'school-standard',
+          templateVersion: activeTemplate?.templateVersion || '1',
+          enabledCapabilities: selectedFeatures,
+          centralServiceDependencies: [MESSAGING_GATEWAY_FEATURE_TEMPLATE.centralServiceId],
+          deploymentArchitecture: 'shared_database',
+          featureConfigurations: {
+            [MESSAGING_GATEWAY_FEATURE_TEMPLATE.featureId]: {
+              templateId: MESSAGING_GATEWAY_FEATURE_TEMPLATE.templateId,
+              templateVersion: MESSAGING_GATEWAY_FEATURE_TEMPLATE.templateVersion,
+              settings: messagingSettingsValidation.settings ?? messagingSettings
+            }
+          }
+        });
+      } catch (err) {
+        configurationBuildError = err instanceof Error ? err.message : 'Messaging configuration is invalid.';
+      }
+    }
+  }
+
   const payload: SchoolProvisioningRequest = {
     school,
     configuration,
@@ -165,6 +228,7 @@ export const SchoolRegistrationWizard: React.FC<SchoolRegistrationWizardProps> =
     templateId: activeTemplate?.templateId || 'school-standard',
     templateVersion: activeTemplate?.templateVersion || '1',
     enabledFeatures: selectedFeatures,
+    ...(builtApplicationConfiguration ? { applicationConfiguration: builtApplicationConfiguration } : {}),
     commercial: {
       commercialModel,
       planReference,
@@ -421,6 +485,138 @@ export const SchoolRegistrationWizard: React.FC<SchoolRegistrationWizardProps> =
                 ))}
               </div>
             </div>
+            {messagingEnabled && (
+              <div className="sm:col-span-2 rounded-xl border border-slate-700 bg-slate-950/60 p-4 space-y-3">
+                <div>
+                  <h3 className="font-semibold text-white">SMS & WhatsApp Communication Gateway Configuration</h3>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Connects this school instance to central_messaging. Provider credentials and webhook secrets stay exclusively in Curriculum Server vault storage.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 text-xs text-slate-200">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={messagingSettings.smsEnabled}
+                      onChange={e => updateMessagingSettings({ smsEnabled: e.target.checked })}
+                    />
+                    <span>Enable SMS delivery</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={messagingSettings.whatsappEnabled}
+                      onChange={e => updateMessagingSettings({ whatsappEnabled: e.target.checked })}
+                    />
+                    <span>Enable WhatsApp delivery</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={messagingSettings.authDeliveryEnabled}
+                      onChange={e => updateMessagingSettings({ authDeliveryEnabled: e.target.checked })}
+                    />
+                    <span>Enable SMS/WhatsApp OTP & MFA</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={messagingSettings.schoolCommsEnabled}
+                      onChange={e => updateMessagingSettings({ schoolCommsEnabled: e.target.checked })}
+                    />
+                    <span>Enable parent/staff school broadcasts</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={messagingSettings.fallbackEnabled}
+                      onChange={e => updateMessagingSettings({ fallbackEnabled: e.target.checked })}
+                    />
+                    <span>Allow explicit secondary failover</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={messagingSettings.shareTenantConfigWithFlow !== false}
+                      onChange={e => updateMessagingSettings({ shareTenantConfigWithFlow: e.target.checked })}
+                    />
+                    <span>Share school config with Curriculum Flow</span>
+                  </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 text-sm text-slate-300">
+                  <label className="block">
+                    <span className="mb-1 block text-xs">Preferred channel</span>
+                    <select
+                      value={messagingSettings.preferredChannel}
+                      onChange={e => updateMessagingSettings({ preferredChannel: e.target.value as MessagingGatewayChannel })}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+                    >
+                      {messagingSettings.permittedChannels.map(ch => (
+                        <option key={ch} value={ch}>{ch.toUpperCase()}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs">Auth OTP channel policy</span>
+                    <select
+                      value={messagingSettings.authChannelPolicy}
+                      onChange={e => updateMessagingSettings({ authChannelPolicy: e.target.value as MessagingGatewayAuthPolicy })}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+                    >
+                      {MESSAGING_GATEWAY_FEATURE_TEMPLATE.supportedAuthChannelPolicies.map(policy => (
+                        <option key={policy} value={policy}>{policy}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs">Requested SMS Sender ID (3–11 chars)</span>
+                    <input
+                      type="text"
+                      maxLength={11}
+                      value={messagingSettings.smsSenderName || ''}
+                      placeholder="e.g. CurricFlow"
+                      onChange={e => updateMessagingSettings({ smsSenderName: e.target.value })}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs">WhatsApp E.164 Sender (if dedicated)</span>
+                    <input
+                      type="text"
+                      value={messagingSettings.whatsappSenderNumber || ''}
+                      placeholder="+2348000000000"
+                      onChange={e => updateMessagingSettings({ whatsappSenderNumber: e.target.value })}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs">Daily quota</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={1000000}
+                      value={messagingSettings.dailyQuota ?? 1000}
+                      onChange={e => updateMessagingSettings({ dailyQuota: Math.max(0, Number(e.target.value || 0)) })}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white tabular-nums"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs">Monthly quota</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={20000000}
+                      value={messagingSettings.monthlyQuota ?? 20000}
+                      onChange={e => updateMessagingSettings({ monthlyQuota: Math.max(0, Number(e.target.value || 0)) })}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white tabular-nums"
+                    />
+                  </label>
+                </div>
+                {configurationBuildError && (
+                  <p role="alert" className="text-xs text-rose-300">{configurationBuildError}</p>
+                )}
+              </div>
+            )}
             <h3 className="sm:col-span-2 mt-2 font-semibold text-white">Commercial configuration</h3>
             <label className="block text-sm text-slate-300">
               <span className="mb-1.5 block">Commercial model</span>

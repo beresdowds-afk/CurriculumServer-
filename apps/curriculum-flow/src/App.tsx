@@ -25,6 +25,7 @@ import { StudentDashboardTab } from '../../../src/components/StudentDashboardTab
 import { ParentDashboardTab } from '../../../src/components/ParentDashboardTab';
 import { AdminAssistantDashboardTab } from '../../../src/components/AdminAssistantDashboardTab';
 import { LogisticsSupportSuiteTab } from '../../../src/components/LogisticsSupportSuiteTab';
+import { SchoolMessagingGatewayTab } from '../../../src/components/SchoolMessagingGatewayTab';
 import { QualityAssuranceTab } from '../../../src/components/QualityAssuranceTab';
 import { UserProfilesTab } from '../../../src/components/UserProfilesTab';
 
@@ -178,6 +179,8 @@ const handleHash = () => {
     setActiveTab('student_dashboard');
   } else if (hash === 'parent_dashboard') {
     setActiveTab('parent_dashboard');
+  } else if (hash === 'messaging_gateway' || hash === 'messaging' || hash === 'communications') {
+    setActiveTab('messaging_gateway');
   }
 };
 
@@ -357,6 +360,10 @@ const handleHash = () => {
 
             {activeTab === 'logistics_suite' && (
               <LogisticsSupportSuiteTab authenticatedUser={authenticatedUser} />
+            )}
+
+            {activeTab === 'messaging_gateway' && (
+              <SchoolMessagingGatewayTab schoolName={schoolBrand.schoolName} />
             )}
 
             {activeTab === 'quality_assurance' && (

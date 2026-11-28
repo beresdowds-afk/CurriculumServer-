@@ -50,6 +50,7 @@ import { instanceLifecycleManager } from './server/instanceLifecycleManager';
 import { costGovernanceManager } from './server/costGovernanceManager';
 import { productionHardeningEngine } from './server/productionHardeningEngine';
 import { homepageEngineManager } from './server/homepageEngineManager';
+import { createHomepageRouter } from './server/homepageRoutes';
 import { proxyBillingPaymentsRequest } from './server/billingPaymentsProxy';
 import type { SchoolProvisioningConfirmation, SchoolProvisioningRequest } from './packages/shared-types/src/apiContracts';
 import { postgresRuntime, DatabaseFailure } from './server/db/postgres';
@@ -106,6 +107,8 @@ import { createAiGatewayRouter, sendAiGatewayError } from './server/ai/routes';
 import { authenticateAiRequest } from './server/ai/authAndEntitlement';
 import { PLATFORM_GCP_ENVIRONMENT, resolveGeminiRuntimeConfig } from './server/ai/modelConfig';
 import { AiGatewayError, type AuthenticatedAiCaller } from './server/ai/types';
+import { createCmagRouters, buildCmagSystemWorkerPrincipal } from './server/messaging/routes';
+import { CmagEventHooks } from './server/messaging/eventHooks';
 import {
   hashInvitationToken,
   hashPassword,
@@ -492,6 +495,27 @@ function getInstanceQuestionBankService(): InstanceQuestionBankService {
 
 function getTeachingEvidenceService(): TeachingEvidenceService {
   return new TeachingEvidenceService(postgresRuntime.getPool());
+}
+
+let cachedCmagEventHooks: CmagEventHooks | undefined;
+function getCmagEventHooks(): CmagEventHooks {
+  cachedCmagEventHooks ??= new CmagEventHooks(postgresRuntime.getPool());
+  return cachedCmagEventHooks;
+}
+const safeCmagWorkflowHooks = {
+  emitTenantWorkflowNotification: async (event: Parameters<CmagEventHooks['emitTenantWorkflowNotification']>[0]) =>
+    postgresRuntime.configured ? getCmagEventHooks().emitTenantWorkflowNotification(event) : { queued: false }
+};
+
+let cachedCmagRouters: ReturnType<typeof createCmagRouters> | undefined;
+function getCmagRouters() {
+  cachedCmagRouters ??= createCmagRouters({
+    getPool: () => postgresRuntime.getPool(),
+    isConfigured: () => postgresRuntime.configured,
+    authorizationMiddleware,
+    requirePlatformAdmin: authorizationMiddleware.platformAdministrator
+  });
+  return cachedCmagRouters;
 }
 
 const sharedServiceRateLimiter = createSlidingWindowRateLimiter({
@@ -2110,6 +2134,25 @@ app.post(
   async (req: Request, res: Response) => {
     try {
       const data = await logisticsRepository().authorizeExeatDeparture(logisticsActor(req), req.params.exeatId);
+      if (postgresRuntime.configured) {
+        const actor = logisticsActor(req);
+        const guardianId = typeof (data as any)?.guardianId === 'string' ? (data as any).guardianId : undefined;
+        const studentId = typeof (data as any)?.studentId === 'string' ? (data as any).studentId : undefined;
+        const toPhone = typeof req.body?.guardianPhone === 'string' ? req.body.guardianPhone : undefined;
+        if (guardianId || toPhone) {
+          void getCmagEventHooks().emitTenantWorkflowNotification({
+            tenantId: actor.tenantId,
+            category: 'logistics',
+            purpose: 'exeat_departure_authorized',
+            guardianId,
+            studentId,
+            toPhone,
+            message: `Exeat departure authorized for request ${req.params.exeatId}.`,
+            idempotencyKey: `exeat-departure:${req.params.exeatId}`,
+            actorSubject: actor.userId
+          }).catch(() => {});
+        }
+      }
       res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
     } catch (error) {
       respondLogisticsFailure(req, res, error);
@@ -4014,6 +4057,20 @@ app.post('/api/v1/schools/provision', requireProvisioningPlatformAdmin, async (r
     }
 
     const data = toSchoolProvisioningConfirmation(record);
+    if (postgresRuntime.configured && !record.idempotentReplay) {
+      const alertPhone = typeof process.env.PLATFORM_ALERT_PHONE === 'string' ? process.env.PLATFORM_ALERT_PHONE.trim() : '';
+      const alertEmail = typeof process.env.PLATFORM_ALERT_EMAIL === 'string' ? process.env.PLATFORM_ALERT_EMAIL.trim() : initiatedBy;
+      void getCmagEventHooks().emitPlatformOperationalAlert({
+        category: 'platform_provisioning',
+        purpose: 'school_instance_provisioned',
+        toPhone: alertPhone || undefined,
+        toEmail: alertPhone ? undefined : alertEmail,
+        channel: alertPhone ? 'sms' : 'email',
+        message: `School ${data.schoolName} (${data.schoolId}) provisioned by ${initiatedBy}.`,
+        idempotencyKey: `provision-alert:${data.schoolId}`,
+        metadata: { schoolId: data.schoolId, tenantId: data.tenantId, applicationId: data.applicationId }
+      }).catch(() => {});
+    }
     res.status(record.idempotentReplay ? 200 : 201).json({
       success: true,
       data,
@@ -4479,7 +4536,8 @@ app.use('/api/v1/shared', sharedServiceRateLimiter);
 const sharedServiceApiPaths: Record<CentralSharedServiceId, string> = {
   central_curriculum: '/api/v1/shared/curriculum',
   central_textbooks: '/api/v1/shared/textbooks',
-  central_vehicle_tracking: '/api/v1/shared/vehicle-tracking'
+  central_vehicle_tracking: '/api/v1/shared/vehicle-tracking',
+  central_messaging: '/api/v1/shared/messaging'
 };
 
 for (const serviceId of Object.keys(sharedServiceApiPaths) as CentralSharedServiceId[]) {
@@ -5664,7 +5722,8 @@ async function getCurrentSchoolId(req: Request, res: Response): Promise<string |
 
 app.use('/api/v1', createSchoolFinanceRouter({
   getPool: () => postgresRuntime.getPool(),
-  authorizationMiddleware
+  authorizationMiddleware,
+  cmagHooks: safeCmagWorkflowHooks
 }));
 
 app.use(
@@ -5676,9 +5735,15 @@ app.use(
   }),
   createAttendanceDeviceIngestionRouter({
     getPool: () => postgresRuntime.getPool(),
-    authorizationMiddleware
+    authorizationMiddleware,
+    cmagHooks: safeCmagWorkflowHooks
   })
 );
+
+const cmagRouters = getCmagRouters();
+app.use('/api/v1', cmagRouters.authOtpRouter, cmagRouters.webhookRouter);
+app.use('/api/v1/platform/messaging', cmagRouters.platformRouter);
+app.use('/api/v1/messaging', cmagRouters.tenantRouter);
 
 app.get('/api/v1/schools/me/students', schoolAdministrationGuards.studentRead, async (req: Request, res: Response) => {
   try {
@@ -6024,6 +6089,18 @@ app.post('/api/v1/schools/me/admissions/:admissionId/review', schoolAdministrati
     const data = await getSchoolAdministrationRepository().reviewAdmission(
       (req as any).authorizedPrincipal, schoolId, req.params.admissionId, req.body || {}
     );
+    if (postgresRuntime.configured && (typeof (data as any)?.guardianPhone === 'string' || typeof req.body?.guardianPhone === 'string')) {
+      const principal = (req as any).authorizedPrincipal;
+      void getCmagEventHooks().emitTenantWorkflowNotification({
+        tenantId: principal.tenantId,
+        category: 'admissions',
+        purpose: 'admission_reviewed',
+        toPhone: typeof req.body?.guardianPhone === 'string' ? req.body.guardianPhone : (data as any).guardianPhone,
+        message: `Admission application ${req.params.admissionId} status updated to ${String((data as any)?.status || req.body?.decision || 'reviewed')}.`,
+        idempotencyKey: `admission-review:${req.params.admissionId}:${String((data as any)?.status || '')}`,
+        actorSubject: principal.userId
+      }).catch(() => {});
+    }
     res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
   } catch (error) {
     schoolAdministrationFailure(req, res, error);
@@ -6037,6 +6114,18 @@ app.post('/api/v1/schools/me/admissions/:admissionId/enroll', schoolAdministrati
     const data = await getSchoolAdministrationRepository().enrollAdmission(
       (req as any).authorizedPrincipal, schoolId, req.params.admissionId, req.body || {}
     );
+    if (postgresRuntime.configured && (typeof (data as any)?.guardianPhone === 'string' || typeof req.body?.guardianPhone === 'string')) {
+      const principal = (req as any).authorizedPrincipal;
+      void getCmagEventHooks().emitTenantWorkflowNotification({
+        tenantId: principal.tenantId,
+        category: 'admissions',
+        purpose: 'admission_enrolled',
+        toPhone: typeof req.body?.guardianPhone === 'string' ? req.body.guardianPhone : (data as any).guardianPhone,
+        message: `Student enrollment confirmed for admission ${req.params.admissionId}.`,
+        idempotencyKey: `admission-enroll:${req.params.admissionId}`,
+        actorSubject: principal.userId
+      }).catch(() => {});
+    }
     res.json({ success: true, data, correlationId: (req as any).correlationId, timestamp: new Date().toISOString() });
   } catch (error) {
     schoolAdministrationFailure(req, res, error);
@@ -7410,117 +7499,9 @@ app.get('/api/v1/cbt/health', (_req: Request, res: Response) => {
 });
 
 // -------------------------------------------------------------
-// MULTI-TENANT HOMEPAGE & BRANDING ENGINE ENDPOINTS
+// MULTI-TENANT HOMEPAGE, LANDING FOOTER & GENERATOR ENGINE
 // -------------------------------------------------------------
-
-// Public: Get all available homepage template definitions
-app.get('/api/v1/homepage/templates', (_req: Request, res: Response) => {
-  const templates = homepageEngineManager.getTemplates();
-  res.json({ success: true, data: templates });
-});
-
-// Public: Resolve domain/hostname to instance ID
-app.get('/api/v1/homepage/resolve', (req: Request, res: Response) => {
-  const domain = req.query.domain as string;
-  if (!domain) {
-    res.status(400).json({ success: false, error: 'Domain query parameter is required' });
-    return;
-  }
-  const resolvedInstanceId = homepageEngineManager.resolveInstanceByDomain(domain);
-  res.json({ 
-    success: true, 
-    data: { 
-      domain, 
-      resolvedInstanceId, 
-      isResolved: !!resolvedInstanceId 
-    } 
-  });
-});
-
-// Public: Get published homepage configuration for an instance or domain
-app.get('/api/v1/homepage/instance/:idOrDomain', (req: Request, res: Response) => {
-  const config = homepageEngineManager.getPublicHomepage(req.params.idOrDomain);
-  if (!config) {
-    res.status(404).json({ 
-      success: false, 
-      error: `No published homepage configuration found for instance or domain '${req.params.idOrDomain}'` 
-    });
-    return;
-  }
-  res.json({ success: true, data: config });
-});
-
-// Administrative: Get full homepage configuration (draft, published, versions)
-app.get('/api/v1/server/homepage/:instanceId', requireSchoolAuth, (req: Request, res: Response) => {
-  try {
-    const actorContext = (req as any).tenantContext;
-    const data = homepageEngineManager.getAdminHomepage(req.params.instanceId, actorContext);
-    res.json({ success: true, data });
-  } catch (err: any) {
-    const status = err.message?.startsWith('ACCESS_DENIED') ? 403 : 400;
-    res.status(status).json({ success: false, error: err.message });
-  }
-});
-
-// Administrative: Save draft configuration
-app.put('/api/v1/server/homepage/:instanceId/draft', requireSchoolAuth, (req: Request, res: Response) => {
-  try {
-    const actorContext = (req as any).tenantContext;
-    const actorEmail = actorContext?.email || 'admin@school.sch.ng';
-    const updatedDraft = homepageEngineManager.saveDraft(
-      req.params.instanceId,
-      req.body,
-      actorEmail,
-      actorContext
-    );
-    res.json({ success: true, data: updatedDraft });
-  } catch (err: any) {
-    const status = err.message?.startsWith('ACCESS_DENIED') ? 403 : 400;
-    res.status(status).json({ success: false, error: err.message });
-  }
-});
-
-// Administrative: Publish draft configuration to live version
-app.post('/api/v1/server/homepage/:instanceId/publish', requireSchoolAuth, (req: Request, res: Response) => {
-  try {
-    const actorContext = (req as any).tenantContext;
-    const actorEmail = actorContext?.email || 'admin@school.sch.ng';
-    const changelog = req.body?.changelog || 'Published homepage updates from visual editor';
-    const published = homepageEngineManager.publishHomepage(
-      req.params.instanceId,
-      actorEmail,
-      changelog,
-      actorContext
-    );
-    res.json({ success: true, data: published });
-  } catch (err: any) {
-    const status = err.message?.startsWith('ACCESS_DENIED') ? 403 : 400;
-    res.status(status).json({ success: false, error: err.message });
-  }
-});
-
-// Administrative: Rollback to previous version snapshot
-app.post('/api/v1/server/homepage/:instanceId/rollback', requireSchoolAuth, (req: Request, res: Response) => {
-  try {
-    const actorContext = (req as any).tenantContext;
-    const actorEmail = actorContext?.email || 'admin@school.sch.ng';
-    const targetVersion = Number(req.body?.targetVersionNumber);
-    if (!targetVersion) {
-      res.status(400).json({ success: false, error: 'targetVersionNumber is required' });
-      return;
-    }
-    const restored = homepageEngineManager.rollbackVersion(
-      req.params.instanceId,
-      targetVersion,
-      actorEmail,
-      actorContext
-    );
-    res.json({ success: true, data: restored });
-  } catch (err: any) {
-    const status = err.message?.startsWith('ACCESS_DENIED') ? 403 : 400;
-    res.status(status).json({ success: false, error: err.message });
-  }
-});
+app.use('/api/v1', createHomepageRouter({ manager: homepageEngineManager }));
 
 // -------------------------------------------------------------
 // CURRICULUM INFRASTRUCTURE PROVISIONING AGENT (CIPA) APIS
@@ -7621,6 +7602,9 @@ app.get('/api/v1/sync/poll', (req: Request, res: Response) => {
 async function startServer() {
   if (postgresRuntime.configured) {
     textbookGenerationEngine.configurePool(postgresRuntime.getPool());
+    if (process.env.CMAG_WORKER_DISABLED !== 'true') {
+      getCmagRouters().getDeliveryEngine().startWorker(buildCmagSystemWorkerPrincipal());
+    }
   }
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -7644,6 +7628,7 @@ async function startServer() {
   });
 
   const shutdown = () => {
+    getCmagRouters().getDeliveryEngine().stopWorker();
     server.close(() => {
       void postgresRuntime.close().catch(() => {
         console.error('PostgreSQL pool shutdown failed.');

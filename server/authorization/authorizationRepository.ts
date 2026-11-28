@@ -48,7 +48,7 @@ export interface AuthorizationSource {
 }
 
 export interface SessionCreationOptions {
-  authMethod?: 'password' | 'google_oidc' | 'invitation' | 'mfa_verified';
+  authMethod?: 'password' | 'google_oidc' | 'invitation' | 'mfa_verified' | 'otp_sms' | 'otp_whatsapp' | 'otp_email';
   mfaVerified?: boolean;
   ipAddress?: string;
   userAgent?: string;

@@ -26,25 +26,54 @@ import {
 } from 'lucide-react';
 import { UserRole } from '../types';
 import { unifiedApiClient } from '../services/unifiedApiClient';
+import { LandingFooter } from './LandingFooter';
+import { EditFooterModal } from './EditFooterModal';
+import { homepageClient } from '../services/homepageClient';
+import { createDefaultLandingFooter } from '../data/homepageTemplatesData';
+import type { LandingFooterConfig } from '../types/homepageEngine';
 
 interface CurriculumFlowPublicHomeProps {
   onEnterSchoolWorkspace: () => void;
   onSelectRoleLogin: (role: UserRole) => void;
   onOpenUniversalOnboarding?: () => void;
   onSwitchToServer: () => void;
+  initialFooter?: LandingFooterConfig;
+  canEditFooter?: boolean;
 }
 
 export const CurriculumFlowPublicHome: React.FC<CurriculumFlowPublicHomeProps> = ({
   onEnterSchoolWorkspace,
   onSelectRoleLogin,
   onOpenUniversalOnboarding,
-  onSwitchToServer
+  onSwitchToServer,
+  initialFooter,
+  canEditFooter = true
 }) => {
   const [selectedRole, setSelectedRole] = useState<UserRole>('principal');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
+  const [footerConfig, setFooterConfig] = useState<LandingFooterConfig>(() =>
+    initialFooter || homepageClient.getCachedPlatformFooter('curriculum_flow')
+  );
+  const [isEditFooterOpen, setIsEditFooterOpen] = useState(false);
+
+  React.useEffect(() => {
+    if (initialFooter) {
+      setFooterConfig(initialFooter);
+      return;
+    }
+    let mounted = true;
+    void homepageClient.getPlatformFooter('curriculum_flow').then(cfg => {
+      if (mounted) setFooterConfig(cfg);
+    });
+    const unsub = homepageClient.subscribePlatformFooter('curriculum_flow', setFooterConfig);
+    return () => {
+      mounted = false;
+      unsub();
+    };
+  }, [initialFooter]);
 
   const handleRoleQuickLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -548,58 +577,35 @@ export const CurriculumFlowPublicHome: React.FC<CurriculumFlowPublicHomeProps> =
       {/* ------------------------------------------------------------- */}
       {/* 8. ACADEMIC FOOTER                                            */}
       {/* ------------------------------------------------------------- */}
-      <footer className="bg-[#05070B] py-12 text-slate-400 text-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-4 gap-8">
-          <div>
-            <div className="flex items-center gap-2 text-white font-bold text-sm">
-              <GraduationCap className="w-4 h-4 text-emerald-400" />
-              <span>CURRICULUM FLOW</span>
-            </div>
-            <p className="mt-3 leading-relaxed">
-              Institutional academic operations, curriculum governance, biometric attendance, continuous assessments, and bursary accounting.
-            </p>
-          </div>
+      <LandingFooter
+        variant="curriculum_flow"
+        footer={footerConfig}
+        canEditFooter={canEditFooter}
+        onEditFooter={() => setIsEditFooterOpen(true)}
+        onSwitchToServer={onSwitchToServer}
+      />
 
-          <div>
-            <h4 className="text-white font-bold text-xs uppercase tracking-wider mb-3">Academic Modules</h4>
-            <ul className="space-y-2">
-              <li><span>NERDC 2026 Curriculum</span></li>
-              <li><span>Lesson Approval Chain</span></li>
-              <li><span>Lockdown CBT Kiosks</span></li>
-              <li><span>Adaptive Remedials</span></li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="text-white font-bold text-xs uppercase tracking-wider mb-3">Administrative Tools</h4>
-            <ul className="space-y-2">
-              <li><span>Biometric RFID Attendance</span></li>
-              <li><span>Paystack/OPay Bursary</span></li>
-              <li><span>Parent Portal Sync</span></li>
-              <li><span>SMS/WhatsApp Broadcast</span></li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="text-white font-bold text-xs uppercase tracking-wider mb-3">Curriculum Platform</h4>
-            <ul className="space-y-2">
-              <li><button onClick={onSwitchToServer} className="hover:text-white transition-colors">Curriculum Server SaaS</button></li>
-              <li><span>Sovereign Instance Deployment</span></li>
-              <li><span>Customer-Selectable Cloud</span></li>
-              <li><span>Privacy & NDPR Compliance</span></li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10 pt-6 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© {new Date().getFullYear()} Curriculum Flow Academic OS. All rights reserved.</p>
-          <div className="flex items-center gap-6">
-            <span>Powered by Curriculum Server</span>
-            <span aria-hidden="true">·</span>
-            <span>Independent Frontend Deployments</span>
-          </div>
-        </div>
-      </footer>
+      <EditFooterModal
+        isOpen={isEditFooterOpen}
+        title="Edit Footer — Curriculum Flow"
+        accentTone="emerald"
+        initialValues={{
+          copyrightText: footerConfig.copyrightText,
+          institutionalAddress: footerConfig.institutionalAddress,
+          email: footerConfig.email,
+          phoneNumber: footerConfig.phoneNumber
+        }}
+        defaultValues={createDefaultLandingFooter('curriculum_flow')}
+        onLiveChange={(vals) => {
+          setFooterConfig(prev => ({ ...prev, ...vals }));
+        }}
+        onSave={async (vals) => {
+          const res = await homepageClient.updatePlatformFooter('curriculum_flow', vals);
+          setFooterConfig(res.config);
+          setIsEditFooterOpen(false);
+        }}
+        onCancel={() => setIsEditFooterOpen(false)}
+      />
     </div>
   );
 };

@@ -21,13 +21,16 @@ import {
   Box,
   Zap,
   Cloud,
-  HardDrive
+  HardDrive,
+  MessageSquare,
+  Layout
 } from 'lucide-react';
 
 export type ServerNavTab = 
   | 'platform_overview'
   | 'universal_onboarding'
   | 'tenant_control_center'
+  | 'landing_page_generator'
   | 'docker_orchestration'
   | 'provision_school'
   | 'application_registry'
@@ -36,6 +39,7 @@ export type ServerNavTab =
   | 'storage_database'
   | 'domain_management'
   | 'api_webhooks'
+  | 'messaging_gateway'
   | 'pricing_management'
   | 'customer_portal'
   | 'curriculum_changes_audit'
@@ -71,6 +75,7 @@ export const CurriculumServerSidebar: React.FC<CurriculumServerSidebarProps> = (
         { id: 'platform_overview' as ServerNavTab, label: 'Platform Overview', icon: Activity, badge: 'Live' },
         { id: 'universal_onboarding' as ServerNavTab, label: 'Universal Onboarding', icon: Sparkles, badge: 'Phase 8' },
         { id: 'tenant_control_center' as ServerNavTab, label: 'Instance Registry', icon: Layers, count: tenantCount },
+        { id: 'landing_page_generator' as ServerNavTab, label: 'Landing Page Generator', icon: Layout, badge: 'Editor' },
         { id: 'application_registry' as ServerNavTab, label: 'Application & Feature Registry', icon: Box, badge: 'Phase 4' },
         { id: 'iiap_engine' as ServerNavTab, label: 'IIAPE Architecture Profiles', icon: Zap, badge: 'Phase 5' },
         { id: 'gcp_provisioning' as ServerNavTab, label: 'GCP Provisioning Adapters', icon: Cloud, badge: 'Phase 6' },
@@ -84,6 +89,7 @@ export const CurriculumServerSidebar: React.FC<CurriculumServerSidebarProps> = (
         { id: 'storage_database' as ServerNavTab, label: 'PostgreSQL & Storage Strategy', icon: HardDrive, badge: 'Phase 7' },
         { id: 'domain_management' as ServerNavTab, label: 'Domains & SSL (.sch.ng)', icon: Globe },
         { id: 'api_webhooks' as ServerNavTab, label: 'API & Webhooks', icon: Radio },
+        { id: 'messaging_gateway' as ServerNavTab, label: 'SMS & WhatsApp Gateway', icon: MessageSquare, badge: 'CMAG' },
         { id: 'pricing_management' as ServerNavTab, label: 'Plans & Product Offers', icon: DollarSign },
         { id: 'customer_portal' as ServerNavTab, label: 'Customer Self-Service', icon: Users },
       ]

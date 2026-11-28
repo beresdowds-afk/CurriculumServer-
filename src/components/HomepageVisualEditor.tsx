@@ -35,27 +35,45 @@ import {
   ArrowDown, 
   CheckCircle2, 
   AlertCircle,
-  Video
+  Video,
+  Pencil
 } from 'lucide-react';
-import { homepageClient } from '../services/homepageClient';
+import { homepageClient, formatFooterAddress } from '../services/homepageClient';
+import { EditFooterModal } from './EditFooterModal';
+
+export interface HomepageEditorTenantMeta {
+  schoolName?: string;
+  schoolSlug?: string;
+  domain?: string;
+  copyrightText?: string;
+  institutionalAddress?: string;
+  email?: string;
+  phoneNumber?: string;
+}
 
 interface HomepageVisualEditorProps {
   instanceId: string;
+  tenantMeta?: HomepageEditorTenantMeta;
+  initialSubTab?: 'templates' | 'branding' | 'hero' | 'sections' | 'auth' | 'contact' | 'versions';
   onClose: () => void;
   onEnterWorkspace: () => void;
 }
 
 export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
   instanceId,
+  tenantMeta,
+  initialSubTab = 'templates',
   onClose,
   onEnterWorkspace
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'templates' | 'branding' | 'hero' | 'sections' | 'auth' | 'contact' | 'versions'>('templates');
+  const [activeSubTab, setActiveSubTab] = useState<'templates' | 'branding' | 'hero' | 'sections' | 'auth' | 'contact' | 'versions'>(initialSubTab);
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [loading, setLoading] = useState<boolean>(true);
   const [savingDraft, setSavingDraft] = useState<boolean>(false);
   const [publishing, setPublishing] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<null | { type: 'publish' } | { type: 'rollback'; versionNumber: number }>(null);
+  const [isFooterModalOpen, setIsFooterModalOpen] = useState<boolean>(false);
 
   // Configuration State
   const [publishedConfig, setPublishedConfig] = useState<HomepageConfiguration | null>(null);
@@ -75,18 +93,27 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
       setDraftConfig(res.draft || res.published);
       setVersions(res.versions || []);
     } catch (err: any) {
-      // Fallback: create fresh draft from default preset
+      // Fallback: create fresh draft from default preset using tenantMeta when provided
       const fallback = createDefaultPresetConfiguration(
         instanceId,
         instanceId,
-        instanceId.replace('tenant-', ''),
-        'Apex Comprehensive College',
+        tenantMeta?.schoolSlug || instanceId.replace('tenant-', ''),
+        tenantMeta?.schoolName || 'Institutional Campus Portal',
         'secondary_school',
-        'premium_academic'
+        'premium_academic',
+        tenantMeta?.domain
       );
+      if (tenantMeta?.copyrightText) fallback.contact.copyrightText = tenantMeta.copyrightText;
+      if (tenantMeta?.institutionalAddress) {
+        fallback.contact.addressText = tenantMeta.institutionalAddress;
+        fallback.contact.city = '';
+        fallback.contact.state = '';
+      }
+      if (tenantMeta?.email) fallback.contact.primaryEmail = tenantMeta.email;
+      if (tenantMeta?.phoneNumber) fallback.contact.primaryPhone = tenantMeta.phoneNumber;
       setPublishedConfig(fallback);
       setDraftConfig(fallback);
-      setFeedbackMsg({ text: `Using local draft: ${err.message}`, type: 'error' });
+      setFeedbackMsg({ text: `Loaded local editor configuration: ${err.message}`, type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -99,7 +126,7 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
     try {
       const updated = await homepageClient.saveDraft(instanceId, draftConfig);
       setDraftConfig(updated);
-      setFeedbackMsg({ text: 'Draft saved successfully. (Not visible to public visitors)', type: 'success' });
+      setFeedbackMsg({ text: 'Draft saved successfully.', type: 'success' });
     } catch (err: any) {
       setFeedbackMsg({ text: `Failed to save draft: ${err.message}`, type: 'error' });
     } finally {
@@ -109,19 +136,18 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
 
   const handlePublish = async () => {
     if (!draftConfig) return;
-    const confirmPub = window.confirm('Publish these changes to the live public homepage? Public visitors will immediately see the updated design.');
-    if (!confirmPub) return;
-
+    setPendingConfirm(null);
     setPublishing(true);
     setFeedbackMsg(null);
     try {
       const published = await homepageClient.publishHomepage(
-        instanceId, 
-        `Updated template '${draftConfig.templateId}' with ${draftConfig.sections.length} active sections`
+        instanceId,
+        `Updated template '${draftConfig.templateId}' with ${draftConfig.sections.length} active sections`,
+        draftConfig
       );
       setPublishedConfig(published);
       setDraftConfig(JSON.parse(JSON.stringify(published)));
-      setFeedbackMsg({ text: `Version v${published.versionNumber} successfully published to public domain!`, type: 'success' });
+      setFeedbackMsg({ text: `Version v${published.versionNumber} successfully published to live domain.`, type: 'success' });
       await loadEditorData();
     } catch (err: any) {
       setFeedbackMsg({ text: `Failed to publish: ${err.message}`, type: 'error' });
@@ -131,9 +157,7 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
   };
 
   const handleRollback = async (versionNum: number) => {
-    const confirmRoll = window.confirm(`Roll back the live homepage to Version v${versionNum}?`);
-    if (!confirmRoll) return;
-
+    setPendingConfirm(null);
     setPublishing(true);
     setFeedbackMsg(null);
     try {
@@ -325,9 +349,17 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
           </button>
 
           <button
-            onClick={handlePublish}
+            onClick={() => setIsFooterModalOpen(true)}
+            className="px-3 py-2 text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0"
+          >
+            <Pencil className="w-3.5 h-3.5 text-amber-400" />
+            <span>Edit Footer</span>
+          </button>
+
+          <button
+            onClick={() => setPendingConfirm({ type: 'publish' })}
             disabled={publishing}
-            className="px-4 py-2 text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white rounded-xl shadow-lg shadow-purple-950/50 transition-all flex items-center gap-1.5"
+            className="px-4 py-2 text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white rounded-xl shadow-lg shadow-purple-950/50 transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0"
           >
             <UploadCloud className="w-3.5 h-3.5" />
             <span>{publishing ? 'Publishing...' : 'Publish to Live Domain'}</span>
@@ -335,12 +367,44 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
 
           <button
             onClick={onClose}
+            aria-label="Close Visual Editor"
             className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
       </header>
+
+      {/* Non-blocking inline confirmation bar */}
+      {pendingConfirm && (
+        <div className="px-6 py-2.5 bg-amber-950/70 border-b border-amber-700/70 text-amber-100 text-xs flex flex-wrap items-center justify-between gap-3">
+          <span>
+            {pendingConfirm.type === 'publish'
+              ? 'Publish draft changes to the live instance landing page? Visitors will see updates immediately.'
+              : `Roll back live landing page to Version v${pendingConfirm.versionNumber}?`}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPendingConfirm(null)}
+              className="px-3 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                pendingConfirm.type === 'publish'
+                  ? void handlePublish()
+                  : void handleRollback(pendingConfirm.versionNumber)
+              }
+              className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold"
+            >
+              {pendingConfirm.type === 'publish' ? 'Confirm Publish' : 'Confirm Rollback'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Feedback banner */}
       {feedbackMsg && (
@@ -411,7 +475,7 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
                 activeSubTab === 'contact' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Contact
+              Footer
             </button>
             <button
               onClick={() => setActiveSubTab('versions')}
@@ -962,11 +1026,37 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
               </div>
             )}
 
-            {/* SUBTAB: CONTACT */}
+            {/* SUBTAB: FOOTER & CONTACT */}
             {activeSubTab === 'contact' && draftConfig && (
               <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <span className="font-bold text-white">Footer &amp; Institutional Contact</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsFooterModalOpen(true)}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-semibold inline-flex items-center gap-1"
+                  >
+                    <Pencil className="w-3 h-3" />
+                    <span>Edit Footer</span>
+                  </button>
+                </div>
+
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">Campus Physical Address</label>
+                  <label className="block font-semibold text-slate-300 mb-1">Copyright Text</label>
+                  <input
+                    type="text"
+                    value={draftConfig.contact.copyrightText || ''}
+                    onChange={e => setDraftConfig({
+                      ...draftConfig,
+                      contact: { ...draftConfig.contact, copyrightText: e.target.value }
+                    })}
+                    placeholder={`© ${new Date().getFullYear()} ${draftConfig.branding.institutionName}. All rights reserved.`}
+                    className="w-full bg-[#070A0F] border border-slate-700 rounded-lg p-2 text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">Institutional Address</label>
                   <input
                     type="text"
                     value={draftConfig.contact.addressText}
@@ -1019,7 +1109,7 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">Helpline Phone</label>
+                  <label className="block font-semibold text-slate-300 mb-1">Phone Number</label>
                   <input
                     type="text"
                     value={draftConfig.contact.primaryPhone}
@@ -1056,7 +1146,7 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
                       <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
                         <span className="text-[10px] text-slate-500">By: {ver.publishedBy}</span>
                         <button
-                          onClick={() => handleRollback(ver.versionNumber)}
+                          onClick={() => setPendingConfirm({ type: 'rollback', versionNumber: ver.versionNumber })}
                           className="px-2 py-1 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 rounded text-[10px] font-bold transition-all"
                         >
                           Rollback
@@ -1078,6 +1168,7 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
                 config={draftConfig}
                 onEnterWorkspace={onEnterWorkspace}
                 isAdminUser={false}
+                onUpdateConfig={(updated) => setDraftConfig(updated)}
               />
             ) : (
               <div className="p-12 text-center text-slate-500">No preview available</div>
@@ -1085,6 +1176,47 @@ export const HomepageVisualEditor: React.FC<HomepageVisualEditorProps> = ({
           </div>
         </main>
       </div>
+
+      {/* Direct Edit Footer Modal inside Visual Editor */}
+      {draftConfig && (
+        <EditFooterModal
+          isOpen={isFooterModalOpen}
+          title={`Edit Footer — ${draftConfig.branding.institutionName}`}
+          accentTone="amber"
+          initialValues={{
+            copyrightText: draftConfig.contact.copyrightText || `© ${new Date().getFullYear()} ${draftConfig.branding.institutionName}. All rights reserved.`,
+            institutionalAddress: formatFooterAddress(draftConfig.contact),
+            email: draftConfig.contact.primaryEmail,
+            phoneNumber: draftConfig.contact.primaryPhone
+          }}
+          onLiveChange={(vals) => {
+            setDraftConfig(prev =>
+              prev
+                ? {
+                    ...prev,
+                    contact: {
+                      ...prev.contact,
+                      addressText: vals.institutionalAddress,
+                      city: '',
+                      state: '',
+                      primaryEmail: vals.email,
+                      primaryPhone: vals.phoneNumber,
+                      copyrightText: vals.copyrightText
+                    }
+                  }
+                : prev
+            );
+          }}
+          onSave={async (vals) => {
+            const res = await homepageClient.updateInstanceFooter(instanceId, vals);
+            setPublishedConfig(res.config);
+            setDraftConfig(JSON.parse(JSON.stringify(res.config)));
+            setIsFooterModalOpen(false);
+            setFeedbackMsg({ text: 'Footer updated and published live.', type: 'success' });
+          }}
+          onCancel={() => setIsFooterModalOpen(false)}
+        />
+      )}
     </div>
   );
 };
